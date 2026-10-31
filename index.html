@@ -6,6 +6,7 @@
   <title>Treinador Virtual UPYOU - Análise Cirúrgica 25/10/2026</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fit-file-parser@1.9.0/dist/fit-parser.min.js"></script>
 
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; }
@@ -19,13 +20,13 @@
     .stat-box { background: #0f172a; padding: 15px; border-radius: 8px; margin-bottom: 12px; border-left: 4px solid #fc5200; }
     .stat-title { font-size: 0.85rem; color: #94a3b8; text-transform: uppercase; margin-bottom: 5px; }
     .stat-val { font-size: 1.2rem; font-weight: bold; color: #fff; }
-    #errorMsg { color: #f87171; font-weight: bold; margin-top: 15px; text-align: center; }
+    #statusMsg { color: #38bdf8; font-weight: bold; margin-top: 15px; text-align: center; }
   </style>
 </head>
 <body>
 
   <div class="card">
-    <h1>Treinador Virtual UPYOU <br><span style="font-size: 1rem; color: #94a3b8;">Foco: Atividade de 25/10/2026</span></h1>
+    <h1>Treinador Virtual UPYOU <br><span style="font-size: 1rem; color: #94a3b8;">Análise Direta: 25/10/2026 (FIT)</span></h1>
     
     <div class="upload-area" id="uploadArea" onclick="document.getElementById('zipInput').click()">
       <p>Selecione o seu ficheiro ZIP do Strava</p>
@@ -33,10 +34,9 @@
       <input type="file" id="zipInput" accept=".zip">
     </div>
 
-    <div id="errorMsg"></div>
+    <div id="statusMsg"></div>
 
     <div class="results" id="results">
-      <h3 id="actName" style="color: #38bdf8; margin-bottom: 15px;"></h3>
       <div class="stat-box">
         <div class="stat-title">Potência Média (Em Movimento / Sem Pausas)</div>
         <div class="stat-val" id="avgPwr">--</div>
@@ -48,6 +48,10 @@
       <div class="stat-box">
         <div class="stat-title">Cadência Média (Em Movimento)</div>
         <div class="stat-val" id="avgCad">--</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-title">Velocidade Média (Em Movimento)</div>
+        <div class="stat-val" id="avgSpeed">--</div>
       </div>
       <div class="stat-box">
         <div class="stat-title">Top 4 Maiores Períodos de Potência (Média de 4 minutos / 240s)</div>
@@ -62,125 +66,95 @@
       if (!file) return;
 
       document.getElementById('uploadArea').style.display = 'none';
-      document.getElementById('errorMsg').innerText = 'A carregar e a procurar a atividade de 25/10/2026 no ZIP (aguarde um momento)...';
+      document.getElementById('statusMsg').innerText = 'A procurar o ficheiro 21919041656.fit.gz no ZIP...';
 
-      // Pausa essencial para o navegador atualizar o texto no ecrã antes de travar na leitura do ZIP
       setTimeout(async () => {
         try {
           const jszip = new JSZip();
           const zip = await jszip.loadAsync(file);
           
           let targetEntry = null;
-          let targetText = "";
-
-          for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
-            if (zipEntry.dir) continue;
-            const lower = relativePath.toLowerCase();
-            if (!lower.includes('activities/') || !lower.match(/\.(gpx|tcx)(\.gz)?$/)) continue;
-
-            const raw = await zipEntry.async("uint8array");
-            let text = "";
-            if (lower.endsWith('.gz')) {
-              text = new TextDecoder().decode(pako.inflate(raw));
-            } else {
-              text = new TextDecoder().decode(raw);
-            }
-
-            if (text.includes('2026-10-25')) {
+          zip.forEach((relativePath, zipEntry) => {
+            if (relativePath.includes('21919041656.fit.gz')) {
               targetEntry = zipEntry;
-              targetText = text;
-              break;
             }
+          });
+
+          if (!targetEntry) {
+            throw new Error("Ficheiro 21919041656.fit.gz não encontrado no ZIP.");
           }
 
-          if (!targetText) {
-            throw new Error("Nenhuma atividade encontrada com a data de 25 de outubro de 2026 neste ZIP.");
-          }
+          document.getElementById('statusMsg').innerText = 'A descompactar e a analisar dados binários FIT...';
+          const rawData = await targetEntry.async("uint8array");
+          const decompressed = pako.inflate(rawData);
 
-          document.getElementById('errorMsg').innerText = '';
-          analyzeActivity(targetText, targetEntry.name);
+          let FitParserClass = window.FitParser;
+          if (FitParserClass && FitParserClass.default) {
+            FitParserClass = FitParserClass.default;
+          }
+          const parser = new FitParserClass({ force: true, speedUnit: 'km/h' });
+
+          parser.parse(decompressed.buffer, (error, data) => {
+            if (error) throw new Error("Erro ao interpretar dados FIT: " + error);
+
+            const records = data.records || [];
+            if (records.length === 0) throw new Error("Nenhum registo encontrado no ficheiro FIT.");
+
+            // Descontar pausas (considera em movimento se potência, cadência ou velocidade forem > 0)
+            const movingRecords = records.filter(r => (r.power || 0) > 0 || (r.cadence || 0) > 0 || (r.speed || 0) > 0);
+
+            const avgPwr = movingRecords.length ? Math.round(movingRecords.reduce((acc, r) => acc + (r.power || 0), 0) / movingRecords.length) : 0;
+            
+            const validHr = movingRecords.filter(r => (r.heart_rate || 0) > 0);
+            const avgHr = validHr.length ? Math.round(validHr.reduce((acc, r) => acc + r.heart_rate, 0) / validHr.length) : 0;
+
+            const validCad = movingRecords.filter(r => (r.cadence || 0) > 0);
+            const avgCad = validCad.length ? Math.round(validCad.reduce((acc, r) => acc + r.cadence, 0) / validCad.length) : 0;
+
+            const validSpeed = movingRecords.filter(r => (r.speed || 0) > 0);
+            const avgSpeed = validSpeed.length ? (validSpeed.reduce((acc, r) => acc + r.speed, 0) / validSpeed.length).toFixed(1) : 0;
+
+            document.getElementById('statusMsg').innerText = '';
+            document.getElementById('results').style.display = 'block';
+
+            document.getElementById('avgPwr').innerText = `${avgPwr} W`;
+            document.getElementById('avgHr').innerText = `${avgHr} bpm`;
+            document.getElementById('avgCad').innerText = `${avgCad} rpm`;
+            document.getElementById('avgSpeed').innerText = `${avgSpeed} km/h`;
+
+            // Top 4 períodos de 4 minutos (240 segundos)
+            let powers = records.map(r => r.power || 0);
+            const windowSize = 240;
+            let intervals = [];
+
+            for (let i = 0; i <= powers.length - windowSize; i++) {
+              let sum = 0;
+              for (let j = 0; j < windowSize; j++) {
+                sum += powers[i + j];
+              }
+              intervals.push({ avg: Math.round(sum / windowSize), index: i });
+            }
+
+            intervals.sort((a, b) => b.avg - a.avg);
+
+            let top4 = [];
+            for (const item of intervals) {
+              if (!top4.some(existing => Math.abs(existing.index - item.index) < windowSize)) {
+                top4.push(item);
+                if (top4.length === 4) break;
+              }
+            }
+
+            let top4Html = top4.length > 0 ? top4.map((item, idx) => `<b>${idx + 1}º esforço:</b> ${item.avg} W (Média de 4 min)`).join('<br>') : 'Dados insuficientes para blocos de 4 min.';
+            document.getElementById('top4Mins').innerHTML = top4Html;
+          });
 
         } catch (err) {
-          document.getElementById('errorMsg').innerText = 'Erro: ' + err.message;
+          document.getElementById('statusMsg').style.color = '#f87171';
+          document.getElementById('statusMsg').innerText = 'Erro: ' + err.message;
         }
       }, 150);
     });
-
-    function analyzeActivity(xmlText, fileName) {
-      document.getElementById('results').style.display = 'block';
-      document.getElementById('actName').innerText = `Ficheiro Encontrado: ${fileName.split('/').pop()}`;
-
-      let records = [];
-      const trkpts = [...xmlText.matchAll(/<trkpt[\s\S]*?<\/trkpt>|<Trackpoint>[\s\S]*?<\/Trackpoint>/gi)];
-
-      trkpts.forEach((pt, idx) => {
-        const block = pt[0];
-        const tMatch = block.match(/<time>([^<]+)<\/time>/i);
-        const pMatch = block.match(/<power>(\d+)<\/power>|<Watts>(\d+)<\/Watts>|<[^:]+:power>(\d+)<\/[^:]+:power>/i);
-        const hMatch = block.match(/<[^:]+:hr>(\d+)<\/[^:]+:hr>|<HeartRateBpm>[\s\S]*?<Value>(\d+)<\/Value>[\s\S]*?<\/HeartRateBpm>|<hr>(\d+)<\/hr>/i);
-        const cMatch = block.match(/<[^:]+:cad>(\d+)<\/[^:]+:cad>|<Cadence>(\d+)<\/Cadence>|<cad>(\d+)<\/cad>/i);
-
-        const time = tMatch ? new Date(tMatch[1]).getTime() / 1000 : idx;
-        const power = pMatch ? parseInt(pMatch[1] || pMatch[2] || pMatch[3]) : 0;
-        const hr = hMatch ? parseInt(hMatch[1] || hMatch[2] || hMatch[3]) : 0;
-        const cad = cMatch ? parseInt(cMatch[1] || cMatch[2] || cMatch[3]) : 0;
-
-        records.push({ time, power, hr, cad });
-      });
-
-      records.sort((a, b) => a.time - b.time);
-
-      // Descontar pausas (apenas valores ativos)
-      const movingRecords = records.filter(r => r.power > 0 || r.cad > 0);
-
-      const avgPwr = movingRecords.length ? Math.round(movingRecords.reduce((acc, r) => acc + r.power, 0) / movingRecords.length) : 0;
-      
-      const validHr = movingRecords.filter(r => r.hr > 0 && r.hr < 220);
-      const avgHr = validHr.length ? Math.round(validHr.reduce((acc, r) => acc + r.hr, 0) / validHr.length) : 0;
-
-      const validCad = movingRecords.filter(r => r.cad > 0 && r.cad < 180);
-      const avgCad = validCad.length ? Math.round(validCad.reduce((acc, r) => acc + r.cad, 0) / validCad.length) : 0;
-
-      document.getElementById('avgPwr').innerText = `${avgPwr} W`;
-      document.getElementById('avgHr').innerText = `${avgHr} bpm`;
-      document.getElementById('avgCad').innerText = `${avgCad} rpm`;
-
-      // Top 4 períodos de 4 minutos (240s)
-      let timeline = [];
-      if (records.length > 1) {
-        let startT = records[0].time;
-        let endT = records[records.length - 1].time;
-        let recMap = new Map(records.map(r => [r.time, r.power]));
-
-        for (let t = startT; t <= endT; t++) {
-          timeline.push(recMap.get(t) || 0);
-        }
-      }
-
-      const windowSize = 240;
-      let intervals = [];
-
-      for (let i = 0; i <= timeline.length - windowSize; i++) {
-        let sum = 0;
-        for (let j = 0; j < windowSize; j++) {
-          sum += timeline[i + j];
-        }
-        intervals.push({ avg: Math.round(sum / windowSize), index: i });
-      }
-
-      intervals.sort((a, b) => b.avg - a.avg);
-
-      let top4 = [];
-      for (const item of intervals) {
-        if (!top4.some(existing => Math.abs(existing.index - item.index) < windowSize)) {
-          top4.push(item);
-          if (top4.length === 4) break;
-        }
-      }
-
-      let top4Html = top4.length > 0 ? top4.map((item, idx) => `<b>${idx + 1}º esforço:</b> ${item.avg} W (Média de 4 min)`).join('<br>') : 'Dados insuficientes.';
-      document.getElementById('top4Mins').innerHTML = top4Html;
-    }
   </script>
 </body>
 </html>

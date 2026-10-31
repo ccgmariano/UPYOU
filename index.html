@@ -75,15 +75,12 @@
   </div>
 
   <script>
-    // Apanhador de erros para mostrar na tela o que falhou
     window.onerror = function(msg, url, lineNo) {
-      document.getElementById('uploadArea').style.display = 'none';
-      document.getElementById('progressBox').style.display = 'block';
-      document.getElementById('debugError').innerText = 'ERRO: ' + msg + ' (Linha: ' + lineNo + ')';
+      document.getElementById('debugError').innerText = 'ERRO: ' + msg;
       return false;
     };
 
-    let fitEntries = [];
+    let activityEntries = [];
     let parser = null;
 
     document.getElementById('zipInput').addEventListener('change', async (event) => {
@@ -92,31 +89,30 @@
 
       document.getElementById('uploadArea').style.display = 'none';
       document.getElementById('progressBox').style.display = 'block';
-      updateProgress(5, 'A ler o ficheiro (Isto pode demorar até 1 minuto em ficheiros grandes)...');
+      updateProgress(5, 'A ler o ficheiro ZIP gigante...');
 
-      // Pausa forçada para a tela atualizar
       await new Promise(resolve => setTimeout(resolve, 200));
 
       try {
         const jszip = new JSZip();
         const zip = await jszip.loadAsync(file);
         
-        fitEntries = [];
+        activityEntries = [];
         zip.forEach((relativePath, zipEntry) => {
-          if (relativePath.endsWith('.fit.gz') || relativePath.endsWith('.fit')) {
-            fitEntries.push(zipEntry);
+          const lowerPath = relativePath.toLowerCase();
+          // Mapeia ficheiros GPX, TCX e FIT (comprimidos ou não)
+          if (lowerPath.match(/\.(fit|gpx|tcx)(\.gz)?$/)) {
+            activityEntries.push(zipEntry);
           }
         });
 
-        if (fitEntries.length === 0) {
-          throw new Error("Nenhum ficheiro .fit ou .fit.gz encontrado dentro do ZIP.");
-        }
+        if (activityEntries.length === 0) throw new Error("Nenhum ficheiro de treino encontrado no ZIP.");
 
-        updateProgress(100, `${fitEntries.length} ficheiros de treino localizados no ZIP.`);
+        updateProgress(100, `${activityEntries.length} ficheiros localizados no ZIP.`);
         document.getElementById('analyzeBtn').style.display = 'inline-block';
 
       } catch (err) {
-        document.getElementById('debugError').innerText = 'Erro ao abrir ZIP: ' + err.message;
+        document.getElementById('debugError').innerText = 'Erro: ' + err.message;
       }
     });
 
@@ -137,10 +133,7 @@
 
     function parseFitFile(buffer) {
       return new Promise((resolve) => {
-        if (!parser) {
-          // Inicializa o parser apenas na hora de usar, para evitar erros iniciais
-          parser = new window.FitParser({ force: true, speedUnit: 'km/h', lengthUnit: 'km' });
-        }
+        if (!parser) parser = new window.FitParser({ force: true });
         parser.parse(buffer, (error, data) => {
           if (error || !data || !data.records) resolve(null);
           else resolve(data);
@@ -150,38 +143,69 @@
 
     async function startAnalysis() {
       document.getElementById('analyzeBtn').style.display = 'none';
-      
       let allActivities = [];
 
-      for (let i = 0; i < fitEntries.length; i++) {
-        if (i % 3 === 0) {
-          updateProgress((i / fitEntries.length) * 100, `A analisar ficheiro ${i + 1} de ${fitEntries.length}...`);
+      for (let i = 0; i < activityEntries.length; i++) {
+        if (i % 5 === 0) {
+          updateProgress((i / activityEntries.length) * 100, `A processar ficheiro ${i + 1} de ${activityEntries.length}...`);
           await new Promise(r => setTimeout(r, 0)); 
         }
 
         try {
-          const entry = fitEntries[i];
+          const entry = activityEntries[i];
+          const fileName = entry.name.toLowerCase();
           const rawData = await entry.async("uint8array");
           
-          let fitBuffer = rawData;
-          if (entry.name.endsWith('.gz')) {
-            try { fitBuffer = pako.inflate(rawData); } catch(e) {}
+          let buffer = rawData;
+          if (fileName.endsWith('.gz')) {
+            try { buffer = pako.inflate(rawData); } catch(e) {}
           }
 
-          const data = await parseFitFile(fitBuffer);
-          if (data && data.records && data.records.length > 0) {
-            const powers = data.records.map(r => r.power || 0);
-            const max20m = getRollingMax(powers, 1200);
-            const max1h = getRollingMax(powers, 3600);
-            let ascent = data.sessions && data.sessions[0] && data.sessions[0].total_ascent ? data.sessions[0].total_ascent : 0;
-            let date = data.sessions && data.sessions[0] && data.sessions[0].start_time ? new Date(data.sessions[0].start_time).toLocaleDateString('pt-BR') : 'Data desconhecida';
+          let powers = [];
+          let ascent = 0;
+          let date = 'Data desconhecida';
 
-            if (max20m > 0 || ascent > 0) {
-              allActivities.push({ date, max20m, max1h, ascent });
+          // Leitura ultrarrápida nativa para GPX e TCX
+          if (fileName.includes('.gpx') || fileName.includes('.tcx')) {
+            const text = new TextDecoder().decode(buffer);
+            
+            // Extrai a data
+            const timeMatch = text.match(/<time>([^<]+)<\/time>|<Id>([^<]+)<\/Id>/i);
+            if (timeMatch) date = new Date(timeMatch[1] || timeMatch[2]).toLocaleDateString('pt-BR');
+
+            // Extrai a potência (GPX e TCX usam tags ligeiramente diferentes)
+            const pMatches = [...text.matchAll(/<power>(\d+)<\/power>|<[^:]+:power>(\d+)<\/[^:]+:power>|<Watts>(\d+)<\/Watts>/gi)];
+            powers = pMatches.map(m => parseInt(m[1] || m[2] || m[3] || 0));
+
+            // Extrai o ganho de elevação acumulado
+            const eMatches = [...text.matchAll(/<ele>([\d.-]+)<\/ele>|<AltitudeMeters>([\d.-]+)<\/AltitudeMeters>/gi)];
+            let lastEle = null;
+            for (const m of eMatches) {
+              let ele = parseFloat(m[1] || m[2]);
+              if (lastEle !== null && ele > lastEle) ascent += (ele - lastEle);
+              lastEle = ele;
+            }
+          } 
+          // Leitura binária para ficheiros FIT
+          else if (fileName.includes('.fit')) {
+            const data = await parseFitFile(buffer);
+            if (data && data.records) {
+              powers = data.records.map(r => r.power || 0);
+              if (data.sessions && data.sessions[0]) {
+                ascent = data.sessions[0].total_ascent || 0;
+                date = data.sessions[0].start_time ? new Date(data.sessions[0].start_time).toLocaleDateString('pt-BR') : date;
+              }
             }
           }
+
+          const max20m = getRollingMax(powers, 1200);
+          const max1h = getRollingMax(powers, 3600);
+          
+          if (max20m > 0 || ascent > 0) {
+            allActivities.push({ date, max20m, max1h, ascent: Math.round(ascent) });
+          }
         } catch (e) {
-          // Ignora ficheiros corrompidos e continua
+          // Ignora falhas isoladas e prossegue
         }
       }
 
@@ -194,27 +218,33 @@
       document.getElementById('dashboard').style.display = 'block';
 
       if (activities.length === 0) {
-        document.getElementById('res1hPower').innerText = 'Sem dados.';
+        document.getElementById('res1hPower').innerText = 'Sem dados válidos.';
         return;
       }
 
-      const best1h = activities.reduce((prev, curr) => (prev.max1h > curr.max1h) ? prev : curr);
-      document.getElementById('res1hPower').innerText = `${best1h.max1h} W`;
-      document.getElementById('res1hDate').innerText = `Registado em: ${best1h.date}`;
+      const actsWithPower = activities.filter(a => a.max1h > 0 || a.max20m > 0);
+      
+      if (actsWithPower.length > 0) {
+        const best1h = actsWithPower.reduce((prev, curr) => (prev.max1h > curr.max1h) ? prev : curr);
+        document.getElementById('res1hPower').innerText = `${best1h.max1h} W`;
+        document.getElementById('res1hDate').innerText = `Registado em: ${best1h.date}`;
+
+        const sorted20m = [...actsWithPower].sort((a, b) => b.max20m - a.max20m).slice(0, 3);
+        const listEl = document.getElementById('res20mList');
+        listEl.innerHTML = '';
+        sorted20m.forEach((act, index) => {
+          const li = document.createElement('li');
+          li.innerHTML = `<span><strong>${index + 1}º</strong> - ${act.max20m} W</span><span style="color: #94a3b8; font-size: 0.9rem;">${act.date}</span>`;
+          listEl.appendChild(li);
+        });
+      } else {
+        document.getElementById('res1hPower').innerText = '-- W';
+        document.getElementById('res20mList').innerHTML = '<li>Sem dados de potência</li>';
+      }
 
       const bestElev = activities.reduce((prev, curr) => (prev.ascent > curr.ascent) ? prev : curr);
       document.getElementById('resElevation').innerText = `${bestElev.ascent} m`;
       document.getElementById('resElevDate').innerText = `Registado em: ${bestElev.date}`;
-
-      const sorted20m = [...activities].sort((a, b) => b.max20m - a.max20m).slice(0, 3);
-      const listEl = document.getElementById('res20mList');
-      listEl.innerHTML = '';
-      
-      sorted20m.forEach((act, index) => {
-        const li = document.createElement('li');
-        li.innerHTML = `<span><strong>${index + 1}º</strong> - ${act.max20m} W</span><span style="color: #94a3b8; font-size: 0.9rem;">${act.date}</span>`;
-        listEl.appendChild(li);
-      });
     }
 
     function updateProgress(percent, text) {

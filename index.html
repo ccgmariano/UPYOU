@@ -115,17 +115,15 @@
       }
     });
 
-    // Novo motor: Sincroniza a potência com a linha do tempo exata segundo a segundo
     function getRollingMax(records, windowSeconds) {
       if (!records || records.length < 2) return 0;
       
-      records.sort((a, b) => a.time - b.time); // Ordena cronologicamente
+      records.sort((a, b) => a.time - b.time); 
       let startTime = records[0].time;
       let endTime = records[records.length - 1].time;
       
       if (endTime - startTime < windowSeconds) return 0;
 
-      // Cria um mapa segundo a segundo para lidar com o Garmin Smart Recording (saltos de 3s)
       let dense = new Int16Array(endTime - startTime + 1);
       let recIdx = 0;
 
@@ -136,8 +134,7 @@
         }
         
         let timeDiff = currentTime - records[recIdx].time;
-        // Se ficou sem gravar por mais de 5 segundos, assumimos potência 0 (ex: parou de pedalar)
-        if (timeDiff > 5) {
+        if (timeDiff > 10) {
           dense[t] = 0;
         } else {
           dense[t] = records[recIdx].power;
@@ -145,14 +142,20 @@
       }
 
       let maxAvg = 0;
-      let currentSum = 0;
-      for (let i = 0; i < windowSeconds; i++) currentSum += dense[i];
-      maxAvg = currentSum / windowSeconds;
-
-      for (let i = windowSeconds; i < dense.length; i++) {
-        currentSum += dense[i] - dense[i - windowSeconds];
+      
+      for (let i = 0; i <= dense.length - windowSeconds; i++) {
+        let currentSum = 0;
+        let hasData = false;
+        
+        for (let j = 0; j < windowSeconds; j++) {
+          currentSum += dense[i + j];
+          if (dense[i + j] > 0) hasData = true;
+        }
+        
         let avg = currentSum / windowSeconds;
-        if (avg > maxAvg) maxAvg = avg;
+        if (hasData && avg > maxAvg) {
+          maxAvg = avg;
+        }
       }
 
       return Math.round(maxAvg);
@@ -198,7 +201,6 @@
             const timeMatch = text.match(/<time>([^<]+)<\/time>|<Id>([^<]+)<\/Id>/i);
             if (timeMatch) date = new Date(timeMatch[1] || timeMatch[2]).toLocaleDateString('pt-BR');
 
-            // Regex de Altimetria
             const eMatches = [...text.matchAll(/<ele>([\d.-]+)<\/ele>|<AltitudeMeters>([\d.-]+)<\/AltitudeMeters>/gi)];
             let lastEle = null;
             for (const m of eMatches) {
@@ -207,7 +209,6 @@
               lastEle = ele;
             }
 
-            // Regex de Potência correlacionada com o Tempo (resolve o problema dos XML)
             const trkpts = [...text.matchAll(/<trkpt[\s\S]*?<\/trkpt>|<Trackpoint>[\s\S]*?<\/Trackpoint>/gi)];
             for (const pt of trkpts) {
               const block = pt[0];
@@ -221,7 +222,6 @@
             }
           } 
           else if (fileName.includes('.fit')) {
-            // Conversão EXATA para o parser FIT funcionar e não dar erro silencioso
             let arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
             const data = await parseFitFile(arrayBuffer);
             if (data && data.records) {

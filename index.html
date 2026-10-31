@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Treinador Virtual UPYOU - Análise Completa</title>
+  <title>Treinador Virtual UPYOU - V3</title>
   
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
@@ -45,7 +45,7 @@
 <body>
 
   <div class="card">
-    <h1>Treinador Virtual UPYOU <br><span style="font-size: 1rem; color: #94a3b8;">Análise Completa Segundo a Segundo</span></h1>
+    <h1>Treinador Virtual UPYOU <br><span style="font-size: 1rem; color: #94a3b8;">Motor V3: Processamento em Lote Assíncrono</span></h1>
     
     <div class="upload-area" id="uploadArea" onclick="document.getElementById('zipInput').click()">
       <p>Selecione o ficheiro ZIP gigante exportado do Strava</p>
@@ -55,12 +55,12 @@
 
     <div class="progress-box" id="progressBox">
       <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressBar"></div></div>
-      <div class="status-text" id="statusText">A aguardar ficheiro...</div>
+      <div class="status-text" id="statusText">A aguardar interação...</div>
       <div id="debugError"></div>
     </div>
 
     <div style="text-align: center;">
-      <button class="btn" id="analyzeBtn" style="display: none; margin-top: 20px;" onclick="startAnalysis()">Analisar Todo o Histórico (Pode demorar minutos)</button>
+      <button class="btn" id="analyzeBtn" style="display: none; margin-top: 20px;" onclick="startAnalysis()">Analisar Todo o Histórico (Pode demorar vários minutos)</button>
     </div>
 
     <div class="dashboard" id="dashboard">
@@ -75,7 +75,6 @@
   </div>
 
   <script>
-    // Recuperar a função de visualização de erro na tela
     window.onerror = function(msg, url, lineNo) {
       document.getElementById('debugError').innerText = 'ERRO: ' + msg + ' (Linha ' + lineNo + ')';
       return false;
@@ -85,38 +84,39 @@
     let allActivities = [];
     let currentPage = 1;
     const itemsPerPage = 50;
-    let parser = null;
 
-    document.getElementById('zipInput').addEventListener('change', async (event) => {
+    document.getElementById('zipInput').addEventListener('change', (event) => {
       const file = event.target.files[0];
       if (!file) return;
 
       document.getElementById('uploadArea').style.display = 'none';
       document.getElementById('progressBox').style.display = 'block';
-      updateProgress(5, 'A carregar o ficheiro ZIP para a memória (Por favor, aguarde)...');
+      
+      // Atualiza o ecrã antes de travar a thread com o ZIP gigante
+      updateProgress(2, 'A carregar o ficheiro ZIP para a memória (Por favor, aguarde, não clique em nada)...');
 
-      // PAUSA CRUCIAL para o navegador ter tempo de desenhar a interface antes de travar a ler o ZIP
-      await new Promise(resolve => setTimeout(resolve, 300));
+      // O setTimeout liberta o navegador para desenhar a barra de progresso antes de fazer o trabalho pesado
+      setTimeout(async () => {
+        try {
+          const jszip = new JSZip();
+          const zip = await jszip.loadAsync(file);
+          
+          activityEntries = [];
+          zip.forEach((relativePath, zipEntry) => {
+            const lowerPath = relativePath.toLowerCase();
+            if (lowerPath.match(/\.(fit|gpx|tcx)(\.gz)?$/)) {
+              activityEntries.push(zipEntry);
+            }
+          });
 
-      try {
-        const jszip = new JSZip();
-        const zip = await jszip.loadAsync(file);
-        
-        activityEntries = [];
-        zip.forEach((relativePath, zipEntry) => {
-          const lowerPath = relativePath.toLowerCase();
-          if (lowerPath.match(/\.(fit|gpx|tcx)(\.gz)?$/)) {
-            activityEntries.push(zipEntry);
-          }
-        });
-
-        if (activityEntries.length === 0) throw new Error("Nenhum ficheiro suportado encontrado no ZIP.");
-        
-        updateProgress(100, `${activityEntries.length} ficheiros localizados! Pronto para iniciar a extração.`);
-        document.getElementById('analyzeBtn').style.display = 'inline-block';
-      } catch (err) {
-        document.getElementById('debugError').innerText = 'Erro: ' + err.message;
-      }
+          if (activityEntries.length === 0) throw new Error("Nenhum ficheiro suportado encontrado no ZIP.");
+          
+          updateProgress(100, `${activityEntries.length} ficheiros localizados! Pronto para iniciar a extração.`);
+          document.getElementById('analyzeBtn').style.display = 'inline-block';
+        } catch (err) {
+          document.getElementById('debugError').innerText = 'Erro ao ler ZIP: ' + err.message;
+        }
+      }, 150);
     });
 
     async function decompressGzip(uint8Array) {
@@ -125,15 +125,17 @@
       return new Uint8Array(buffer);
     }
 
-    // Função de Parser FIT adaptada para evitar falhas do construtor
+    // Instanciação segura do leitor FIT para não dar erro "not a constructor"
     function parseFitFile(buffer) {
       return new Promise((resolve, reject) => {
-        let FitParserClass = window.FitParser;
-        if (typeof FitParserClass !== 'function' && window.FitParser && window.FitParser.default) {
-            FitParserClass = window.FitParser.default;
+        let FP = window.FitParser;
+        if (FP && typeof FP !== 'function' && FP.default) {
+            FP = FP.default;
         }
-        
-        if (!parser) parser = new FitParserClass({ force: true, speedUnit: 'km/h' });
+        if (typeof FP !== 'function') {
+            return reject("Biblioteca FitParser falhou a inicialização.");
+        }
+        const parser = new FP({ force: true, speedUnit: 'km/h' });
         
         parser.parse(buffer, (error, data) => {
           if (error) reject(error);
@@ -180,10 +182,10 @@
       allActivities = [];
 
       for (let i = 0; i < activityEntries.length; i++) {
-        // Pausa muito rápida a cada ficheiro para não bloquear o navegador
-        if (i % 5 === 0) {
-          updateProgress((i / activityEntries.length) * 100, `A extrair dados: ficheiro ${i + 1} de ${activityEntries.length}...`);
-          await new Promise(r => setTimeout(r, 0));
+        // Pausa a cada 10 ficheiros para não bloquear o navegador e mostrar o progresso
+        if (i % 10 === 0) {
+          updateProgress((i / activityEntries.length) * 100, `A processar ficheiro ${i + 1} de ${activityEntries.length}... (Isto pode demorar alguns minutos)`);
+          await new Promise(r => setTimeout(r, 0)); 
         }
 
         try {
@@ -201,6 +203,7 @@
           let ascent = 0;
           let dateStr = 'Data Desconhecida';
           let timestamp = 0;
+          let errorMsg = "Sucesso";
 
           if (fileName.includes('.gpx') || fileName.includes('.tcx')) {
             const text = new TextDecoder().decode(buffer);
@@ -240,24 +243,28 @@
           } 
           else if (fileName.includes('.fit')) {
             let arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
-            const data = await parseFitFile(arrayBuffer);
-            if (data && data.records) {
-              for (const r of data.records) {
-                records.push({ 
-                  time: r.timestamp ? Math.floor(r.timestamp.getTime() / 1000) : 0, 
-                  power: r.power || 0,
-                  hr: r.heart_rate || 0,
-                  cad: r.cadence || 0
-                });
-              }
-              if (data.sessions && data.sessions[0]) {
-                ascent = data.sessions[0].total_ascent || 0;
-                if (data.sessions[0].start_time) {
-                  const d = new Date(data.sessions[0].start_time);
-                  dateStr = d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR');
-                  timestamp = d.getTime();
+            try {
+              const data = await parseFitFile(arrayBuffer);
+              if (data && data.records) {
+                for (const r of data.records) {
+                  records.push({ 
+                    time: r.timestamp ? Math.floor(r.timestamp.getTime() / 1000) : 0, 
+                    power: r.power || 0,
+                    hr: r.heart_rate || 0,
+                    cad: r.cadence || 0
+                  });
+                }
+                if (data.sessions && data.sessions[0]) {
+                  ascent = data.sessions[0].total_ascent || 0;
+                  if (data.sessions[0].start_time) {
+                    const d = new Date(data.sessions[0].start_time);
+                    dateStr = d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR');
+                    timestamp = d.getTime();
+                  }
                 }
               }
+            } catch (fitErr) {
+              errorMsg = "Erro Leitor FIT";
             }
           }
 
@@ -268,8 +275,8 @@
           let maxCad = 0, sumCad = 0, countCad = 0;
 
           records.forEach(r => {
-             if (r.power > maxPwr) maxPwr = r.power;
-             if (r.power > 0) { sumPwr += r.power; countPwr++; }
+             if (r.power > maxPwr && r.power < 1500) maxPwr = r.power;
+             if (r.power > 0 && r.power < 1500) { sumPwr += r.power; countPwr++; }
              
              if (r.hr > maxHR && r.hr < 220) maxHR = r.hr;
              if (r.hr > 0 && r.hr < 220) { sumHR += r.hr; countHR++; }
@@ -281,11 +288,13 @@
           let max20m = 0;
           if (countPwr > 50) max20m = getRollingMax(records, 1200);
 
-          if (records.length > 10) {
+          if (records.length > 5 || errorMsg !== "Sucesso") {
             allActivities.push({ 
               fileName: entry.name, 
               dateStr, 
               timestamp, 
+              error: errorMsg,
+              points: records.length,
               ascent: Math.round(ascent),
               max20m,
               maxPwr, avgPwr: countPwr > 0 ? Math.round(sumPwr / countPwr) : 0,
@@ -294,16 +303,16 @@
             });
           }
         } catch (e) {
-          // Ignora a atividade que eventualmente esteja corrompida e avança para a próxima
+          // Ignora a atividade em caso de erro fatal de leitura do buffer e passa para a próxima
         }
       }
 
-      // Ordenar por data
+      // Ordenar por data (as mais recentes primeiro)
       allActivities.sort((a, b) => b.timestamp - a.timestamp);
 
       updateProgress(100, 'Extração finalizada!');
       document.getElementById('progressBox').style.display = 'none';
-      document.getElementById('totalActs').innerText = `Total de Ficheiros Processados: ${allActivities.length}`;
+      document.getElementById('totalActs').innerText = `Total de Ficheiros Processados com Sucesso: ${allActivities.length}`;
       
       renderPage(1);
     }
@@ -362,6 +371,11 @@
 
       document.getElementById('topPagination').innerHTML = html;
       document.getElementById('bottomPagination').innerHTML = html;
+    }
+
+    function updateProgress(percent, text) {
+      document.getElementById('progressBar').style.width = percent + '%';
+      document.getElementById('statusText').innerText = text;
     }
   </script>
 </body>

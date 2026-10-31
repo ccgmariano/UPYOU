@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Treinador Virtual UPYOU - Motor Definitivo</title>
+  <title>Treinador Virtual UPYOU - Histórico Geral</title>
   
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
 
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; flex-direction: column; align-items: center; padding: 40px 20px; }
-    .card { background: #1e293b; padding: 30px; border-radius: 12px; width: 100%; max-width: 900px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
+    .card { background: #1e293b; padding: 30px; border-radius: 12px; width: 100%; max-width: 1000px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
     h1 { text-align: center; margin-bottom: 20px; color: #f8fafc; }
     .upload-area { border: 2px dashed #475569; border-radius: 8px; padding: 30px; text-align: center; cursor: pointer; transition: border-color 0.2s; }
     .upload-area:hover { border-color: #fc5200; }
@@ -24,9 +24,14 @@
     #debugError { color: #f87171; margin-top: 15px; font-size: 0.9rem; text-align: center; font-weight: bold; }
     
     .dashboard { margin-top: 25px; display: none; }
+    .pagination { display: flex; justify-content: center; gap: 8px; margin: 20px 0; flex-wrap: wrap; }
+    .page-btn { background: #334155; border: none; color: white; padding: 8px 14px; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
+    .page-btn:hover { background: #475569; }
+    .page-btn.active { background: #fc5200; font-weight: bold; }
+
     .activity-grid { display: grid; grid-template-columns: 1fr; gap: 15px; margin-top: 20px; }
     .activity-item { background: #0f172a; padding: 20px; border-radius: 8px; border-left: 4px solid #fc5200; }
-    .act-title { font-size: 1.1rem; font-weight: bold; margin-bottom: 5px; color: #f8fafc; }
+    .act-title { font-size: 1.2rem; font-weight: bold; margin-bottom: 5px; color: #f8fafc; }
     .act-sub { font-size: 0.85rem; color: #94a3b8; margin-bottom: 15px; }
     
     .act-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
@@ -38,23 +43,27 @@
 <body>
 
   <div class="card">
-    <h1>Treinador Virtual UPYOU <br><span style="font-size: 1rem; color: #94a3b8;">Teste de Leitura Cirúrgica de Ficheiro Único</span></h1>
+    <h1>Treinador Virtual UPYOU <br><span style="font-size: 1rem; color: #94a3b8;">Leitor Geral do Export do Strava</span></h1>
     
     <div class="upload-area" id="uploadArea" onclick="document.getElementById('zipInput').click()">
-      <p>Selecione o seu ficheiro ZIP do Strava</p>
+      <p>Selecione o seu ficheiro ZIP (ex: export_4280310.zip)</p>
       <span class="btn">Escolher Ficheiro .ZIP</span>
       <input type="file" id="zipInput" accept=".zip">
     </div>
 
     <div class="progress-box" id="progressBox">
       <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressBar"></div></div>
-      <div class="status-text" id="statusText">A analisar...</div>
+      <div class="status-text" id="statusText">A aguardar ficheiro...</div>
       <div id="debugError"></div>
     </div>
 
     <div class="dashboard" id="dashboard">
-      <h2>Resultado da Extração</h2>
+      <div style="text-align: center; margin-bottom: 10px;">
+        <span id="totalActs" style="color: #94a3b8; font-weight: bold;"></span>
+      </div>
+      <div class="pagination" id="topPagination"></div>
       <div class="activity-grid" id="activityGrid"></div>
+      <div class="pagination" id="bottomPagination"></div>
     </div>
   </div>
 
@@ -64,147 +73,150 @@
       return false;
     };
 
-    document.getElementById('zipInput').addEventListener('change', async (event) => {
+    let allActivities = [];
+    let currentPage = 1;
+    const itemsPerPage = 50;
+
+    document.getElementById('zipInput').addEventListener('change', (event) => {
       const file = event.target.files[0];
       if (!file) return;
 
       document.getElementById('uploadArea').style.display = 'none';
       document.getElementById('progressBox').style.display = 'block';
-      updateProgress(20, 'A abrir o ZIP e a ignorar pastas...');
+      updateProgress(5, 'A ler o arquivo ZIP do Strava...');
 
-      try {
-        const jszip = new JSZip();
-        const zip = await jszip.loadAsync(file);
-        
-        let targetEntry = null;
+      setTimeout(async () => {
+        try {
+          const jszip = new JSZip();
+          const zip = await jszip.loadAsync(file);
+          
+          let activityEntries = [];
 
-        // SOLUÇÃO DO ITEM 1: Varre o ZIP focando no NOME do ficheiro e ignorando a pasta "activities/"
-        zip.forEach((relativePath, zipEntry) => {
-          // Ignora se for diretório/pasta pura
-          if (zipEntry.dir) return;
+          // MAPEAMENTO CORRETO (ITEM 1): Ignora pastas e apanha qualquer .gpx, .tcx ou .fit (incluindo .gz)
+          zip.forEach((relativePath, zipEntry) => {
+            if (zipEntry.dir) return;
+            const lowerPath = relativePath.toLowerCase();
+            
+            // Verifica se está dentro de activities e tem extensão suportada
+            if (lowerPath.includes('activities/') && lowerPath.match(/\.(fit|gpx|tcx)(\.gz)?$/)) {
+              activityEntries.push(zipEntry);
+            }
+          });
 
-          // Obtém apenas o nome do ficheiro (ex: de "activities/Pedalada_da_tarde.gpx" extrai "pedalada_da_tarde.gpx")
-          const fileName = relativePath.split('/').pop().toLowerCase();
-
-          // Vamos procurar pelo ficheiro de teste que você enviou antes, para validar
-          if (fileName === 'pedalada_da_tarde.gpx') {
-            targetEntry = zipEntry;
+          if (activityEntries.length === 0) {
+            throw new Error("Nenhum ficheiro de atividade foi encontrado na pasta 'activities/' do ZIP.");
           }
-        });
 
-        if (!targetEntry) {
-          throw new Error("O ficheiro de teste 'Pedalada_da_tarde.gpx' não foi encontrado dentro do ZIP.");
+          updateProgress(20, `${activityEntries.length} atividades encontradas. A processar metadados...`);
+
+          allActivities = [];
+          for (let i = 0; i < activityEntries.length; i++) {
+            if (i % 50 === 0) {
+              updateProgress(20 + Math.round((i / activityEntries.length) * 70), `A analisar atividade ${i} de ${activityEntries.length}...`);
+              await new Promise(r => setTimeout(r, 0));
+            }
+
+            try {
+              const entry = activityEntries[i];
+              const rawData = await entry.async("uint8array");
+              let textContent = "";
+
+              if (entry.name.toLowerCase().endsWith('.gz')) {
+                const decompressed = pako.inflate(rawData);
+                textContent = new TextDecoder().decode(decompressed);
+              } else {
+                textContent = new TextDecoder().decode(rawData);
+              }
+
+              // Extrai data do ficheiro GPX/TCX se houver tag <time>
+              const timeMatch = textContent.match(/<time>([^<]+)<\/time>|<Id>([^<]+)<\/Id>/i);
+              const dateStr = timeMatch ? new Date(timeMatch[1] || timeMatch[2]).toLocaleString('pt-BR') : 'Data Desconhecida';
+              const timestamp = timeMatch ? new Date(timeMatch[1] || timeMatch[2]).getTime() : 0;
+
+              // Extração rápida de picos de potência para validação
+              let maxPwr = 0;
+              const pMatches = [...textContent.matchAll(/<power>(\d+)<\/power>|<[^:]+:power>(\d+)<\/[^:]+:power>/gi)];
+              for (const pm of pMatches) {
+                const val = parseInt(pm[1] || pm[2]);
+                if (val > maxPwr && val < 1500) maxPwr = val;
+              }
+
+              allActivities.push({
+                fileName: entry.name.split('/').pop(),
+                dateStr,
+                timestamp: isNaN(timestamp) ? 0 : timestamp,
+                maxPwr
+              });
+            } catch (e) {
+              // Ignora ficheiros individuais corrompidos
+            }
+          }
+
+          // Ordenar da mais recente para a mais antiga
+          allActivities.sort((a, b) => b.timestamp - a.timestamp);
+
+          updateProgress(100, 'Processamento concluído!');
+          document.getElementById('progressBox').style.display = 'none';
+          document.getElementById('dashboard').style.display = 'block';
+          document.getElementById('totalActs').innerText = `Total de Atividades Mapeadas: ${allActivities.length}`;
+
+          renderPage(1);
+
+        } catch (err) {
+          document.getElementById('debugError').innerText = 'Erro: ' + err.message;
         }
-
-        updateProgress(60, 'Ficheiro localizado com sucesso! A ler dados...');
-        
-        const rawData = await targetEntry.async("uint8array");
-        let textContent = "";
-
-        // Verifica se está compactado em .gz ou se é texto puro
-        if (targetEntry.name.toLowerCase().endsWith('.gz')) {
-          const decompressed = pako.inflate(rawData);
-          textContent = new TextDecoder().decode(decompressed);
-        } else {
-          textContent = new TextDecoder().decode(rawData);
-        }
-
-        updateProgress(90, 'A processar métricas...');
-        parseAndRenderGPX(textContent, targetEntry.name);
-
-      } catch (err) {
-        document.getElementById('debugError').innerText = 'Erro: ' + err.message;
-      }
+      }, 200);
     });
 
-    function parseAndRenderGPX(xmlText, fileName) {
-      // Extração de dados cirúrgica baseada no formato real do seu GPX
-      const timeMatch = xmlText.match(/<time>([^<]+)<\/time>/i);
-      const dateStr = timeMatch ? new Date(timeMatch[1]).toLocaleString('pt-BR') : 'Data Desconhecida';
-
-      let powers = [];
-      let hrs = [];
-      let cads = [];
-      let ascent = 0;
-
-      // Regex universal para encontrar blocos de pontos de trilho
-      const trkpts = [...xmlText.matchAll(/<trkpt[\s\S]*?<\/trkpt>/gi)];
-      let lastEle = null;
-
-      for (const pt of trkpts) {
-        const block = pt[0];
-
-        // Altimetria
-        const eleMatch = block.match(/<ele>([\d.-]+)<\/ele>/i);
-        if (eleMatch) {
-          const ele = parseFloat(eleMatch[1]);
-          if (lastEle !== null && ele > lastEle) ascent += (ele - lastEle);
-          lastEle = ele;
-        }
-
-        // Potência (<power> ou extensões)
-        const pMatch = block.match(/<power>(\d+)<\/power>|<[^:]+:power>(\d+)<\/[^:]+:power>/i);
-        if (pMatch) powers.push(parseInt(pMatch[1] || pMatch[2]));
-
-        // Frequência Cardíaca
-        const hMatch = block.match(/<gpxtpx:hr>(\d+)<\/gpxtpx:hr>|<hr>(\d+)<\/hr>/i);
-        if (hMatch) hrs.push(parseInt(hMatch[1] || hMatch[2]));
-
-        // Cadência
-        const cMatch = block.match(/<gpxtpx:cad>(\d+)<\/gpxtpx:cad>|<cad>(\d+)<\/cad>/i);
-        if (cMatch) cads.push(parseInt(cMatch[1] || cMatch[2]));
-      }
-
-      // Cálculos de estatísticas reais
-      const maxPwr = powers.length > 0 ? Math.max(...powers) : 0;
-      const validPwr = powers.filter(p => p > 0);
-      const avgPwr = validPwr.length > 0 ? Math.round(validPwr.reduce((a,b)=>a+b,0) / validPwr.length) : 0;
-
-      const maxHR = hrs.length > 0 ? Math.max(...hrs) : 0;
-      const validHR = hrs.filter(h => h > 0);
-      const avgHR = validHR.length > 0 ? Math.round(validHR.reduce((a,b)=>a+b,0) / validHR.length) : 0;
-
-      const validCad = cads.filter(c => c > 0);
-      const avgCad = validCad.length > 0 ? Math.round(validCad.reduce((a,b)=>a+b,0) / validCad.length) : 0;
-
-      updateProgress(100, 'Concluído!');
-      document.getElementById('progressBox').style.display = 'none';
-      document.getElementById('dashboard').style.display = 'block';
-
+    function renderPage(page) {
+      currentPage = page;
       const grid = document.getElementById('activityGrid');
-      grid.innerHTML = `
-        <div class="activity-item">
-          <div class="act-title">${dateStr}</div>
-          <div class="act-sub">Ficheiro: ${fileName} | Pontos analisados: ${trkpts.length}</div>
-          
+      grid.innerHTML = '';
+
+      const startIndex = (page - 1) * itemsPerPage;
+      const endIndex = startIndex + itemsPerPage;
+      const pageActs = allActivities.slice(startIndex, endIndex);
+
+      pageActs.forEach(act => {
+        const item = document.createElement('div');
+        item.className = 'activity-item';
+        item.innerHTML = `
+          <div class="act-title">${act.dateStr}</div>
+          <div class="act-sub">Ficheiro: ${act.fileName}</div>
           <div class="act-stats">
             <div class="stat-box">
-              <div class="stat-label">Pico de Potência</div>
-              <div class="stat-val" style="color: #fc5200;">${maxPwr} W</div>
-            </div>
-            <div class="stat-box">
-              <div class="stat-label">Potência Média</div>
-              <div class="stat-val" style="color: #fc5200;">${avgPwr} W</div>
-            </div>
-            <div class="stat-box">
-              <div class="stat-label">BPM Máximo</div>
-              <div class="stat-val" style="color: #ef4444;">${maxHR} bpm</div>
-            </div>
-            <div class="stat-box">
-              <div class="stat-label">BPM Médio</div>
-              <div class="stat-val" style="color: #ef4444;">${avgHR} bpm</div>
-            </div>
-            <div class="stat-box">
-              <div class="stat-label">Cadência Média</div>
-              <div class="stat-val" style="color: #3b82f6;">${avgCad} rpm</div>
-            </div>
-            <div class="stat-box">
-              <div class="stat-label">Elevação Acumulada</div>
-              <div class="stat-val" style="color: #10b981;">${Math.round(ascent)} m</div>
+              <div class="stat-label">Pico de Potência Encontrado</div>
+              <div class="stat-val" style="color: #fc5200;">${act.maxPwr > 0 ? act.maxPwr + ' W' : '--'}</div>
             </div>
           </div>
-        </div>
-      `;
+        `;
+        grid.appendChild(item);
+      });
+
+      renderPagination();
+      window.scrollTo(0, 0);
+    }
+
+    function renderPagination() {
+      const totalPages = Math.ceil(allActivities.length / itemsPerPage);
+      let html = '';
+      
+      let startP = Math.max(1, currentPage - 4);
+      let endP = Math.min(totalPages, startP + 9);
+      if (endP - startP < 9) startP = Math.max(1, endP - 9);
+
+      if (currentPage > 1) {
+        html += `<button class="page-btn" onclick="renderPage(${currentPage - 1})">« Ant</button>`;
+      }
+      for (let i = startP; i <= endP; i++) {
+        html += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="renderPage(${i})">${i}</button>`;
+      }
+      if (currentPage < totalPages) {
+        html += `<button class="page-btn" onclick="renderPage(${currentPage + 1})">Seg »</button>`;
+      }
+
+      document.getElementById('topPagination').innerHTML = html;
+      document.getElementById('bottomPagination').innerHTML = html;
     }
 
     function updateProgress(percent, text) {

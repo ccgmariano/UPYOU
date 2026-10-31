@@ -43,7 +43,7 @@
 <body>
 
   <div class="card">
-    <h1>Treinador Virtual UPYOU <br><span style="font-size: 1rem; color: #94a3b8;">Leitor Geral do Export do Strava</span></h1>
+    <h1>Treinador Virtual UPYOU <br><span style="font-size: 1rem; color: #94a3b8;">Leitor Geral do Export do Strava (TCX & GPX)</span></h1>
     
     <div class="upload-area" id="uploadArea" onclick="document.getElementById('zipInput').click()">
       <p>Selecione o seu ficheiro ZIP (ex: export_4280310.zip)</p>
@@ -92,12 +92,9 @@
           
           let activityEntries = [];
 
-          // MAPEAMENTO CORRETO (ITEM 1): Ignora pastas e apanha qualquer .gpx, .tcx ou .fit (incluindo .gz)
           zip.forEach((relativePath, zipEntry) => {
             if (zipEntry.dir) return;
             const lowerPath = relativePath.toLowerCase();
-            
-            // Verifica se está dentro de activities e tem extensão suportada
             if (lowerPath.includes('activities/') && lowerPath.match(/\.(fit|gpx|tcx)(\.gz)?$/)) {
               activityEntries.push(zipEntry);
             }
@@ -128,17 +125,17 @@
                 textContent = new TextDecoder().decode(rawData);
               }
 
-              // Extrai data do ficheiro GPX/TCX se houver tag <time>
+              // Extrai data do ficheiro GPX / TCX
               const timeMatch = textContent.match(/<time>([^<]+)<\/time>|<Id>([^<]+)<\/Id>/i);
               const dateStr = timeMatch ? new Date(timeMatch[1] || timeMatch[2]).toLocaleString('pt-BR') : 'Data Desconhecida';
               const timestamp = timeMatch ? new Date(timeMatch[1] || timeMatch[2]).getTime() : 0;
 
-              // Extração rápida de picos de potência para validação
+              // Extração robusta de potência para GPX e TCX (<power>, <Watts>, ou extensões Garmin)
               let maxPwr = 0;
-              const pMatches = [...textContent.matchAll(/<power>(\d+)<\/power>|<[^:]+:power>(\d+)<\/[^:]+:power>/gi)];
+              const pMatches = [...textContent.matchAll(/<power>(\d+)<\/power>|<Watts>(\d+)<\/Watts>|<[^:]+:power>(\d+)<\/[^:]+:power>/gi)];
               for (const pm of pMatches) {
-                const val = parseInt(pm[1] || pm[2]);
-                if (val > maxPwr && val < 1500) maxPwr = val;
+                const val = parseInt(pm[1] || pm[2] || pm[3]);
+                if (val > maxPwr && val < 2000) maxPwr = val;
               }
 
               allActivities.push({

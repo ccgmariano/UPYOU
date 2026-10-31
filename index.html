@@ -89,7 +89,7 @@
 
       document.getElementById('uploadArea').style.display = 'none';
       document.getElementById('progressBox').style.display = 'block';
-      updateProgress(5, 'A ler o ficheiro ZIP gigante...');
+      updateProgress(5, 'A descompactar ZIP (Pode demorar um pouco)...');
 
       await new Promise(resolve => setTimeout(resolve, 200));
 
@@ -100,7 +100,6 @@
         activityEntries = [];
         zip.forEach((relativePath, zipEntry) => {
           const lowerPath = relativePath.toLowerCase();
-          // Mapeia ficheiros GPX, TCX e FIT (comprimidos ou não)
           if (lowerPath.match(/\.(fit|gpx|tcx)(\.gz)?$/)) {
             activityEntries.push(zipEntry);
           }
@@ -116,18 +115,46 @@
       }
     });
 
-    function getRollingMax(powers, windowSeconds) {
-      if (!powers || powers.length < windowSeconds) return 0;
-      let maxAvg = 0;
-      let currentSum = 0;
-      for (let i = 0; i < powers.length; i++) {
-        currentSum += powers[i];
-        if (i >= windowSeconds) {
-          currentSum -= powers[i - windowSeconds];
-          let avg = currentSum / windowSeconds;
-          if (avg > maxAvg) maxAvg = avg;
+    // Novo motor: Sincroniza a potência com a linha do tempo exata segundo a segundo
+    function getRollingMax(records, windowSeconds) {
+      if (!records || records.length < 2) return 0;
+      
+      records.sort((a, b) => a.time - b.time); // Ordena cronologicamente
+      let startTime = records[0].time;
+      let endTime = records[records.length - 1].time;
+      
+      if (endTime - startTime < windowSeconds) return 0;
+
+      // Cria um mapa segundo a segundo para lidar com o Garmin Smart Recording (saltos de 3s)
+      let dense = new Int16Array(endTime - startTime + 1);
+      let recIdx = 0;
+
+      for (let t = 0; t <= (endTime - startTime); t++) {
+        let currentTime = startTime + t;
+        while (recIdx < records.length - 1 && records[recIdx + 1].time <= currentTime) {
+          recIdx++;
+        }
+        
+        let timeDiff = currentTime - records[recIdx].time;
+        // Se ficou sem gravar por mais de 5 segundos, assumimos potência 0 (ex: parou de pedalar)
+        if (timeDiff > 5) {
+          dense[t] = 0;
+        } else {
+          dense[t] = records[recIdx].power;
         }
       }
+
+      let maxAvg = 0;
+      let currentSum = 0;
+      for (let i = 0; i < windowSeconds; i++) currentSum += dense[i];
+      maxAvg = currentSum / windowSeconds;
+
+      for (let i = windowSeconds; i < dense.length; i++) {
+        currentSum += dense[i] - dense[i - windowSeconds];
+        let avg = currentSum / windowSeconds;
+        if (avg > maxAvg) maxAvg = avg;
+      }
+
       return Math.round(maxAvg);
     }
 
@@ -147,7 +174,7 @@
 
       for (let i = 0; i < activityEntries.length; i++) {
         if (i % 5 === 0) {
-          updateProgress((i / activityEntries.length) * 100, `A processar ficheiro ${i + 1} de ${activityEntries.length}...`);
+          updateProgress((i / activityEntries.length) * 100, `A extrair métricas do ficheiro ${i + 1} de ${activityEntries.length}...`);
           await new Promise(r => setTimeout(r, 0)); 
         }
 
@@ -161,23 +188,17 @@
             try { buffer = pako.inflate(rawData); } catch(e) {}
           }
 
-          let powers = [];
+          let powerRecords = [];
           let ascent = 0;
           let date = 'Data desconhecida';
 
-          // Leitura ultrarrápida nativa para GPX e TCX
           if (fileName.includes('.gpx') || fileName.includes('.tcx')) {
             const text = new TextDecoder().decode(buffer);
             
-            // Extrai a data
             const timeMatch = text.match(/<time>([^<]+)<\/time>|<Id>([^<]+)<\/Id>/i);
             if (timeMatch) date = new Date(timeMatch[1] || timeMatch[2]).toLocaleDateString('pt-BR');
 
-            // Extrai a potência (GPX e TCX usam tags ligeiramente diferentes)
-            const pMatches = [...text.matchAll(/<power>(\d+)<\/power>|<[^:]+:power>(\d+)<\/[^:]+:power>|<Watts>(\d+)<\/Watts>/gi)];
-            powers = pMatches.map(m => parseInt(m[1] || m[2] || m[3] || 0));
-
-            // Extrai o ganho de elevação acumulado
+            // Regex de Altimetria
             const eMatches = [...text.matchAll(/<ele>([\d.-]+)<\/ele>|<AltitudeMeters>([\d.-]+)<\/AltitudeMeters>/gi)];
             let lastEle = null;
             for (const m of eMatches) {
@@ -185,12 +206,30 @@
               if (lastEle !== null && ele > lastEle) ascent += (ele - lastEle);
               lastEle = ele;
             }
+
+            // Regex de Potência correlacionada com o Tempo (resolve o problema dos XML)
+            const trkpts = [...text.matchAll(/<trkpt[\s\S]*?<\/trkpt>|<Trackpoint>[\s\S]*?<\/Trackpoint>/gi)];
+            for (const pt of trkpts) {
+              const block = pt[0];
+              const tMatch = block.match(/<time>([^<]+)<\/time>/i);
+              const pMatch = block.match(/<power>(\d+)<\/power>|<[^:]+:power>(\d+)<\/[^:]+:power>|<Watts>(\d+)<\/Watts>/i);
+              if (tMatch && pMatch) {
+                const timeStr = Math.floor(new Date(tMatch[1]).getTime() / 1000);
+                const pVal = parseInt(pMatch[1] || pMatch[2] || pMatch[3] || 0);
+                powerRecords.push({ time: timeStr, power: pVal });
+              }
+            }
           } 
-          // Leitura binária para ficheiros FIT
           else if (fileName.includes('.fit')) {
-            const data = await parseFitFile(buffer);
+            // Conversão EXATA para o parser FIT funcionar e não dar erro silencioso
+            let arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+            const data = await parseFitFile(arrayBuffer);
             if (data && data.records) {
-              powers = data.records.map(r => r.power || 0);
+              for (const r of data.records) {
+                if (r.timestamp && r.power !== undefined) {
+                  powerRecords.push({ time: Math.floor(r.timestamp.getTime() / 1000), power: r.power });
+                }
+              }
               if (data.sessions && data.sessions[0]) {
                 ascent = data.sessions[0].total_ascent || 0;
                 date = data.sessions[0].start_time ? new Date(data.sessions[0].start_time).toLocaleDateString('pt-BR') : date;
@@ -198,14 +237,14 @@
             }
           }
 
-          const max20m = getRollingMax(powers, 1200);
-          const max1h = getRollingMax(powers, 3600);
+          const max20m = getRollingMax(powerRecords, 1200);
+          const max1h = getRollingMax(powerRecords, 3600);
           
           if (max20m > 0 || ascent > 0) {
             allActivities.push({ date, max20m, max1h, ascent: Math.round(ascent) });
           }
         } catch (e) {
-          // Ignora falhas isoladas e prossegue
+          // Ignora ficheiros quebrados do Strava
         }
       }
 
@@ -239,7 +278,7 @@
         });
       } else {
         document.getElementById('res1hPower').innerText = '-- W';
-        document.getElementById('res20mList').innerHTML = '<li>Sem dados de potência</li>';
+        document.getElementById('res20mList').innerHTML = '<li>Sem dados com medidor de potência</li>';
       }
 
       const bestElev = activities.reduce((prev, curr) => (prev.ascent > curr.ascent) ? prev : curr);

@@ -9,15 +9,16 @@
 
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; }
-    .card { background: #1e293b; padding: 30px; border-radius: 12px; width: 100%; max-width: 800px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
+    .card { background: #1e293b; padding: 30px; border-radius: 12px; width: 100%; max-width: 850px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
     h1 { text-align: center; color: #f8fafc; margin-bottom: 20px; }
     .upload-area { border: 2px dashed #475569; border-radius: 8px; padding: 30px; text-align: center; cursor: pointer; }
     .upload-area:hover { border-color: #fc5200; }
     input[type="file"] { display: none; }
     .btn { display: inline-block; background: #fc5200; color: white; padding: 10px 20px; border-radius: 6px; font-weight: 600; cursor: pointer; border: none; margin-top: 10px; }
     .results { margin-top: 25px; display: none; }
-    .stat-box { background: #0f172a; padding: 15px; border-radius: 8px; margin-bottom: 12px; border-left: 4px solid #fc5200; }
-    .stat-title { font-size: 0.85rem; color: #94a3b8; text-transform: uppercase; margin-bottom: 5px; }
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 15px; margin-bottom: 15px; }
+    .stat-box { background: #0f172a; padding: 15px; border-radius: 8px; border-left: 4px solid #fc5200; }
+    .stat-title { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; margin-bottom: 5px; }
     .stat-val { font-size: 1.2rem; font-weight: bold; color: #fff; }
     #statusMsg { color: #38bdf8; font-weight: bold; margin-top: 15px; text-align: center; }
   </style>
@@ -25,7 +26,7 @@
 <body>
 
   <div class="card">
-    <h1>Treinador Virtual UPYOU <br><span style="font-size: 1rem; color: #94a3b8;">Análise em Movimento: 25 de out. de 2026</span></h1>
+    <h1>Treinador Virtual UPYOU <br><span style="font-size: 1rem; color: #94a3b8;">Análise Exclusiva: 25 de Outubro de 2026</span></h1>
     
     <div class="upload-area" id="uploadArea" onclick="document.getElementById('zipInput').click()">
       <p>Selecione o seu ficheiro ZIP do Strava</p>
@@ -36,26 +37,30 @@
     <div id="statusMsg"></div>
 
     <div class="results" id="results">
-      <h3 id="actInfo" style="color: #38bdf8; margin-bottom: 15px;"></h3>
-      <div class="stat-box">
-        <div class="stat-title">Potência Média (Em Movimento / Sem Pausas)</div>
-        <div class="stat-val" id="avgPwr">--</div>
+      <h3 id="actTitle" style="color: #38bdf8; margin-bottom: 20px; text-align: center;"></h3>
+      
+      <div class="stat-grid">
+        <div class="stat-box">
+          <div class="stat-title">Potência Média (Em Movimento)</div>
+          <div class="stat-val" id="avgPwr">--</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-title">Frequência Cardíaca Média (Em Movimento)</div>
+          <div class="stat-val" id="avgHr">--</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-title">Cadência Média (Em Movimento)</div>
+          <div class="stat-val" id="avgCad">--</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-title">Velocidade Média (Em Movimento)</div>
+          <div class="stat-val" id="avgSpeed">--</div>
+        </div>
       </div>
-      <div class="stat-box">
-        <div class="stat-title">Frequência Cardíaca Média (Em Movimento)</div>
-        <div class="stat-val" id="avgHr">--</div>
-      </div>
-      <div class="stat-box">
-        <div class="stat-title">Cadência Média (Em Movimento)</div>
-        <div class="stat-val" id="avgCad">--</div>
-      </div>
-      <div class="stat-box">
-        <div class="stat-title">Velocidade Média (Em Movimento)</div>
-        <div class="stat-val" id="avgSpeed">--</div>
-      </div>
-      <div class="stat-box">
-        <div class="stat-title">Top 4 Maiores Períodos de Potência (Média de 4 minutos / 240s)</div>
-        <div class="stat-val" id="top4Mins" style="font-size: 1rem; line-height: 1.6;">--</div>
+
+      <div class="stat-box" style="border-left-color: #38bdf8;">
+        <div class="stat-title">Top 4 Maiores Períodos de Potência (Média de 4 Minutos / 240s)</div>
+        <div class="stat-val" id="top4Mins" style="font-size: 0.95rem; line-height: 1.6; font-weight: normal;">--</div>
       </div>
     </div>
   </div>
@@ -66,77 +71,49 @@
       if (!file) return;
 
       document.getElementById('uploadArea').style.display = 'none';
-      document.getElementById('statusMsg').innerText = 'A ler o activities.csv para mapear a atividade...';
+      document.getElementById('statusMsgto').style = '';
+      document.getElementById('statusMsg').innerText = 'A abrir o ZIP e a procurar o treino de 25/10/2026...';
 
       setTimeout(async () => {
         try {
           const jszip = new JSZip();
           const zip = await jszip.loadAsync(file);
           
-          let csvEntry = null;
-          zip.forEach((relativePath, zipEntry) => {
-            if (relativePath.toLowerCase().includes('activities.csv')) {
-              csvEntry = zipEntry;
-            }
-          });
+          let targetText = "";
+          let foundName = "";
 
-          if (!csvEntry) throw new Error("Ficheiro 'activities.csv' não encontrado no ZIP.");
+          // Varre o ZIP à procura de qualquer ficheiro que contenha a data exata 2026-10-25
+          for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
+            if (zipEntry.dir) continue;
+            const lower = relativePath.toLowerCase();
+            // Verifica se está na pasta activities e tem extensão suportada (gpx, tcx, fit)
+            if (!lower.includes('activities/')) continue;
 
-          const csvText = await csvEntry.async("string");
-          const lines = csvText.split('\n');
-
-          let targetFileName = "";
-          let csvRowData = null;
-
-          for (let i = 1; i < lines.length; i++) {
-            const line = lines[i];
-            if (line.includes('25 de out. de 2026')) {
-              const matchFile = line.match(/(activities\/[^,"]+\.(fit|gpx|tcx)\.gz)/i);
-              if (matchFile) {
-                targetFileName = matchFile[1];
-                csvRowData = line;
+            const raw = await zipEntry.async("uint8array");
+            let text = "";
+            if (lower.endsWith('.gz')) {
+              try {
+                text = new TextDecoder().decode(pako.inflate(raw));
+              } catch (e) {
+                continue; // Se falhar a descompressão .gz, passa para o próximo
               }
+            } else {
+              text = new TextDecoder().decode(raw);
+            }
+
+            if (text.includes('2026-10-25')) {
+              targetText = text;
+              foundName = relativePath.split('/').pop();
               break;
             }
           }
 
-          if (!targetFileName) throw new Error("Atividade de 25 de out. de 2026 não encontrada no CSV.");
-
-          document.getElementById('statusMsg').innerText = `A abrir o ficheiro ${targetFileName}...`;
-
-          let targetActivityEntry = null;
-          zip.forEach((relativePath, zipEntry) => {
-            if (relativePath.toLowerCase().includes(targetFileName.toLowerCase())) {
-              targetActivityEntry = zipEntry;
-            }
-          });
-
-          if (!targetActivityEntry) throw new Error(`Ficheiro ${targetFileName} não encontrado no ZIP.`);
-
-          const rawData = await targetActivityEntry.async("uint8array");
-          
-          // Se for .fit.gz descompactamos com pako. Como o binário FIT puro exige decodificação complexa de estruturas endian, 
-          // vamos extrair as métricas com base no cabeçalho/estatísticas consolidadas do CSV e simular a curva de potência em movimento,
-          // ou se for GPX/TCX fazemos o parsing XML direto. Como o do dia 25 é .fit.gz, vamos tratar os dados descompactados:
-          
-          let textContent = "";
-          let isFit = targetFileName.endsWith('.fit.gz');
-
-          if (!isFit) {
-            textContent = new TextDecoder().decode(pako.inflate(rawData));
+          if (!targetText) {
+            throw new Error("Não foi encontrada nenhuma atividade com a data de 25 de outubro de 2026 dentro do ZIP.");
           }
 
           document.getElementById('statusMsg').innerText = '';
-          document.getElementById('results').style.display = 'block';
-          document.getElementById('actInfo').innerText = `Atividade de 25 de out. de 2026 (${targetFileName.split('/').pop()})`;
-
-          if (isFit) {
-            // Para .fit.gz mapeado via CSV, exibimos os dados extraídos das colunas consolidadas em movimento do próprio CSV do Strava
-            // (que já excluem as pausas nativamente no relatório do Strava)
-            parseCsvRowMetrics(csvRowData);
-          } else {
-            parseXmlActivity(textContent);
-          }
+          processActivityData(targetText, foundName);
 
         } catch (err) {
           document.getElementById('statusMsg').style.color = '#f87171';
@@ -145,61 +122,124 @@
       }, 150);
     });
 
-    function parseCsvRowMetrics(rowLine) {
-      // O CSV do Strava contém colunas como Distância, Tempo em Movimento, Potência Média, Frequência Cardíaca Média, etc.
-      // Vamos parsear os valores entre aspas / vírgulas de forma segura
-      const cols = [];
-      let inQuote = false;
-      let currentVal = '';
-      for (let i = 0; i < rowLine.length; i++) {
-        let char = rowLine[i];
-        if (char === '"') {
-          inQuote = !inQuote;
-        } else if (char === ',' && !inQuote) {
-          cols.push(currentVal);
-          currentVal = '';
-        } else {
-          currentVal += char;
-        }
-      }
-      cols.push(currentVal);
+    function processActivityData(xmlText, fileName) {
+      document.getElementById('results').style.display = 'block';
+      document.getElementById('actTitle').innerText = `Atividade: ${fileName}`;
 
-      // Com base na estrutura padrão do Strava activities.csv:
-      // Procuramos valores numéricos relevantes nas colunas de médias em movimento
-      // Exibimos os dados já descontando as pausas conforme registado pelo Strava
-      document.getElementById('avgPwr').innerText = `${cols[12] ? Math.round(parseFloat(cols[12])) : '--'} W`;
-      document.getElementById('avgHr').innerText = `${cols[10] ? Math.round(parseFloat(cols[10])) : '--'} bpm`;
-      document.getElementById('avgCad').innerText = `${cols[11] ? Math.round(parseFloat(cols[11])) : '--'} rpm`;
-      document.getElementById('avgSpeed').innerText = `${cols[6] ? (parseFloat(cols[6]) * 3.6).toFixed(1) : '--'} km/h`;
-      document.getElementById('top4Mins').innerHTML = `<b>Nota:</b> Dados extraídos diretamente do relatório oficial de movimento do Strava para esta atividade .FIT`;
-    }
-
-    function parseXmlActivity(xmlText) {
       let records = [];
       const trkpts = [...xmlText.matchAll(/<trkpt[\s\S]*?<\/trkpt>|<Trackpoint>[\s\S]*?<\/Trackpoint>/gi)];
 
+      let prevLat = null, prevLon = null, prevTime = null;
+
       trkpts.forEach((pt, idx) => {
         const block = pt[0];
-        const pMatch = block.match(/<power>(\d+)<\/power>|<Watts>(\d+)<\/Watts>/i);
-        const hMatch = block.match(/<[^:]+:hr>(\d+)<\/[^:]+:hr>|<Value>(\d+)<\/Value>/i);
-        const cMatch = block.match(/<[^:]+:cad>(\d+)<\/[^:]+:cad>|<Cadence>(\d+)<\/Cadence>/i);
 
-        const power = pMatch ? parseInt(pMatch[1] || pMatch[2]) : 0;
-        const hr = hMatch ? parseInt(hMatch[1] || hMatch[2]) : 0;
-        const cad = cMatch ? parseInt(cMatch[1] || cMatch[2]) : 0;
+        const tMatch = block.match(/<time>([^<]+)<\/time>/i);
+        const pMatch = block.match(/<power>([\d.-]+)<\/power>|<Watts>([\d.-]+)<\/Watts>|<[^:]+:power>([\d.-]+)<\/[^:]+:power>/i);
+        const hMatch = block.match(/<[^:]+:hr>([\d.-]+)<\/[^:]+:hr>|<HeartRateBpm>[\s\S]*?<Value>([\d.-]+)<\/Value>[\s\S]*?<\/HeartRateBpm>|<hr>([\d.-]+)<\/hr>/i);
+        const cMatch = block.match(/<[^:]+:cad>([\d.-]+)<\/[^:]+:cad>|<Cadence>([\d.-]+)<\/Cadence>|<cad>([\d.-]+)<\/cad>/i);
+        
+        const lat = parseFloat(block.match(/lat="([-\d.]+)"/i)?.[1] || 0);
+        const lon = parseFloat(block.match(/lon="([-\d.]+)"/i)?.[1] || 0);
 
-        records.push({ power, hr, cad });
+        const time = tMatch ? new Date(tMatch[1]).getTime() / 1000 : idx;
+        const power = pMatch ? parseInt(pMatch[1] || pMatch[2] || pMatch[3]) : 0;
+        const hr = hMatch ? parseInt(hMatch[1] || hMatch[2] || hMatch[3]) : 0;
+        const cad = cMatch ? parseInt(cMatch[1] || cMatch[2] || cMatch[3]) : 0;
+
+        // Cálculo de velocidade instantânea se houver coordenadas e variação de tempo
+        let speed = 0;
+        if (prevLat !== null && prevTime !== null && time > prevTime) {
+          const distKm = getDistanceFromLatLonInKm(prevLat, prevLon, lat, lon);
+          const hours = (time - prevTime) / 3600;
+          if (hours > 0) speed = distKm / hours; // km/h
+        }
+
+        prevLat = lat;
+        prevLon = lon;
+        prevTime = time;
+
+        records.push({ time, power, hr, cad, speed });
       });
 
+      // Ordenar cronologicamente por segurança
+      records.sort((a, b) => a.time - b.time);
+
+      // FILTRAR PAUSAS: Consideramos em movimento rigoroso quando a potência > 0 OU cadência > 0
       const movingRecords = records.filter(r => r.power > 0 || r.cad > 0);
-      const avgPwr = movingRecords.length ? Math.round(movingRecords.reduce((a, r) => a + r.power, 0) / movingRecords.length) : 0;
-      const avgHr = movingRecords.length ? Math.round(movingRecords.reduce((a, r) => a + r.hr, 0) / movingRecords.length) : 0;
-      const avgCad = movingRecords.length ? Math.round(movingRecords.reduce((a, r) => a + r.cad, 0) / movingRecords.length) : 0;
+
+      // Médias em movimento (excluindo pausas)
+      const avgPwr = movingRecords.length ? Math.round(movingRecords.reduce((acc, r) => acc + r.power, 0) / movingRecords.length) : 0;
+      
+      const validHr = movingRecords.filter(r => r.hr > 0 && r.hr < 220);
+      const avgHr = validHr.length ? Math.round(validHr.reduce((acc, r) => acc + r.hr, 0) / validHr.length) : 0;
+
+      const validCad = movingRecords.filter(r => r.cad > 0 && r.cad < 180);
+      const avgCad = validCad.length ? Math.round(validCad.reduce((acc, r) => acc + r.cad, 0) / validCad.length) : 0;
+
+      const validSpeed = movingRecords.filter(r => r.speed > 0 && r.speed < 120);
+      const avgSpeed = validSpeed.length ? (validSpeed.reduce((acc, r) => acc + r.speed, 0) / validSpeed.length).toFixed(1) : 0;
 
       document.getElementById('avgPwr').innerText = `${avgPwr} W`;
       document.getElementById('avgHr').innerText = `${avgHr} bpm`;
       document.getElementById('avgCad').innerText = `${avgCad} rpm`;
-      document.getElementById('avgSpeed').innerText = `Calculado via XML`;
+      document.getElementById('avgSpeed').innerText = `${avgSpeed} km/h`;
+
+      // TOP 4 PERÍODOS DE 4 MINUTOS (240 segundos) com rolling average rigoroso e sem sobreposição direta
+      let timeline = [];
+      if (records.length > 1) {
+        let startT = records[0].time;
+        let endT = records[records.length - 1].time;
+        let recMap = new Map(records.map(r => [r.time, r.power]));
+
+        for (let t = startT; t <= endT; t++) {
+          timeline.push(recMap.get(t) || 0); // Pausa preenche com 0
+        }
+      }
+
+      const windowSize = 240; // 4 minutos
+      let intervals = [];
+
+      for (let i = 0; i <= timeline.length - windowSize; i++) {
+        let sum = 0;
+        for (let j = 0; j < windowSize; j++) {
+          sum += timeline[i + j];
+        }
+        intervals.push({ avg: Math.round(sum / windowSize), index: i });
+      }
+
+      intervals.sort((a, b) => b.avg - a.avg);
+
+      let top4 = [];
+      for (const item of intervals) {
+        if (!top4.some(existing => Math.abs(existing.index - item.index) < windowSize)) {
+          top4.push(item);
+          if (top4.length === 4) break;
+        }
+      }
+
+      let top4Html = top4.length > 0 
+        ? top4.map((item, idx) => `<b>${idx + 1}º esforço:</b> <span style="color: #fc5200; font-weight: bold;">${item.avg} W</span> (Média de 4 min)`).join('<br>') 
+        : 'Dados insuficientes para blocos de 4 min.';
+      
+      document.getElementById('top4Mins').innerHTML = top4Html;
+    }
+
+    // Fórmula Haversine para cálculo de distância entre coordenadas GPS
+    function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
+      const R = 6371; // Raio da terra em km
+      const dLat = deg2rad(lat2 - lat1);
+      const dLon = deg2rad(lon2 - lon1);
+      const a = 
+        Math.sin(dLat/2) * Math.sin(dLat/2) +
+        Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * 
+        Math.sin(dLon/2) * Math.sin(dLon/2); 
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+      return R * c;
+    }
+
+    function deg2rad(deg) {
+      return deg * (Math.PI/180);
     }
   </script>
 </body>

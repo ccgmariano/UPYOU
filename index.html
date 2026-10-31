@@ -3,9 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Análise de Treinos Strava</title>
-  <!-- Biblioteca JSZip via CDN -->
+  <title>Treinador Virtual Strava</title>
+  
+  <!-- Bibliotecas para processar ZIP, GZ e ficheiros FIT no navegador -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fit-file-parser@1.9.0/dist/fit-parser.min.js"></script>
+
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -21,14 +25,11 @@
       padding: 30px;
       border-radius: 12px;
       width: 100%;
-      max-width: 600px;
+      max-width: 650px;
       box-shadow: 0 10px 25px rgba(0,0,0,0.3);
     }
-    h1 {
-      font-size: 1.5rem;
-      margin-bottom: 20px;
-      text-align: center;
-    }
+    h1, h2 { text-align: center; margin-bottom: 20px; }
+    
     .upload-area {
       border: 2px dashed #475569;
       border-radius: 8px;
@@ -37,12 +38,9 @@
       cursor: pointer;
       transition: border-color 0.2s;
     }
-    .upload-area:hover {
-      border-color: #fc5200; /* Cor Strava */
-    }
-    input[type="file"] {
-      display: none;
-    }
+    .upload-area:hover { border-color: #fc5200; }
+    input[type="file"] { display: none; }
+    
     .btn {
       display: inline-block;
       background: #fc5200;
@@ -52,51 +50,50 @@
       font-weight: 600;
       cursor: pointer;
       margin-top: 10px;
+      border: none;
+      font-size: 1rem;
     }
-    .progress-box {
+    .btn:disabled { background: #475569; cursor: not-allowed; }
+    
+    .progress-box { margin-top: 25px; display: none; }
+    .progress-bar-bg { background: #334155; border-radius: 6px; height: 12px; overflow: hidden; }
+    .progress-bar-fill { background: #fc5200; width: 0%; height: 100%; transition: width 0.1s; }
+    .status-text { margin-top: 8px; font-size: 0.875rem; color: #94a3b8; text-align: center; font-variant-numeric: tabular-nums; }
+    
+    .dashboard {
       margin-top: 25px;
       display: none;
-    }
-    .progress-bar-bg {
-      background: #334155;
-      border-radius: 6px;
-      height: 12px;
-      overflow: hidden;
-    }
-    .progress-bar-fill {
-      background: #fc5200;
-      width: 0%;
-      height: 100%;
-      transition: width 0.1s;
-    }
-    .status-text {
-      margin-top: 8px;
-      font-size: 0.875rem;
-      color: #94a3b8;
-      text-align: center;
-    }
-    .results {
-      margin-top: 25px;
       background: #0f172a;
-      padding: 15px;
+      padding: 20px;
       border-radius: 8px;
-      font-size: 0.9rem;
-      display: none;
     }
-    .results p {
-      margin: 6px 0;
+    .metric-box {
+      background: #1e293b;
+      border-left: 4px solid #fc5200;
+      padding: 15px;
+      margin-bottom: 15px;
+      border-radius: 4px;
     }
-    .success {
-      color: #4ade80;
+    .metric-title { font-size: 0.85rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
+    .metric-value { font-size: 1.5rem; font-weight: bold; margin: 5px 0; color: #f8fafc; }
+    .metric-date { font-size: 0.8rem; color: #64748b; }
+    
+    .podium-list { list-style: none; padding: 0; margin: 10px 0 0 0; }
+    .podium-list li {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid #334155;
     }
+    .podium-list li:last-child { border-bottom: none; }
   </style>
 </head>
 <body>
 
   <div class="card">
-    <h1>Analisador de Dados Strava</h1>
+    <h1>Treinador Virtual Strava</h1>
     
-    <div class="upload-area" onclick="document.getElementById('zipInput').click()">
+    <div class="upload-area" id="uploadArea" onclick="document.getElementById('zipInput').click()">
       <p>Selecione o ficheiro ZIP exportado do Strava</p>
       <span class="btn">Escolher Ficheiro .ZIP</span>
       <input type="file" id="zipInput" accept=".zip">
@@ -106,83 +103,192 @@
       <div class="progress-bar-bg">
         <div class="progress-bar-fill" id="progressBar"></div>
       </div>
-      <div class="status-text" id="statusText">A preparar descompressão...</div>
+      <div class="status-text" id="statusText">A preparar...</div>
     </div>
 
-    <div class="results" id="resultsBox">
-      <h3 style="margin-top: 0;">Ficheiros Identificados:</h3>
-      <p id="csvStatus"></p>
-      <p id="fitCountStatus"></p>
+    <div style="text-align: center;">
+      <button class="btn" id="analyzeBtn" style="display: none; margin-top: 20px;" onclick="startAnalysis()">Analisar Desempenho (Extrair Métricas)</button>
+    </div>
+
+    <div class="dashboard" id="dashboard">
+      <h2>Resumo do Atleta</h2>
+      
+      <div class="metric-box">
+        <div class="metric-title">Melhor Potência (1 Hora)</div>
+        <div class="metric-value" id="res1hPower">-- W</div>
+        <div class="metric-date" id="res1hDate">--</div>
+      </div>
+
+      <div class="metric-box">
+        <div class="metric-title">Top 3 - Potência de 20 Minutos</div>
+        <ul class="podium-list" id="res20mList">
+          <!-- Injetado via JS -->
+        </ul>
+      </div>
+
+      <div class="metric-box">
+        <div class="metric-title">Maior Subida (Ganho de Elevação)</div>
+        <div class="metric-value" id="resElevation">-- m</div>
+        <div class="metric-date" id="resElevDate">--</div>
+      </div>
     </div>
   </div>
 
   <script>
-    const zipInput = document.getElementById('zipInput');
-    const progressBox = document.getElementById('progressBox');
-    const progressBar = document.getElementById('progressBar');
-    const statusText = document.getElementById('statusText');
-    const resultsBox = document.getElementById('resultsBox');
-    const csvStatus = document.getElementById('csvStatus');
-    const fitCountStatus = document.getElementById('fitCountStatus');
+    let fitEntries = [];
+    const parser = new FitParser({ force: true, speedUnit: 'km/h', lengthUnit: 'km' });
 
-    zipInput.addEventListener('change', async (event) => {
+    // Lida com o carregamento do ZIP
+    document.getElementById('zipInput').addEventListener('change', async (event) => {
       const file = event.target.files[0];
       if (!file) return;
 
-      // Exibir elementos de progresso
-      progressBox.style.display = 'block';
-      resultsBox.style.display = 'none';
-      progressBar.style.width = '0%';
-      statusText.innerText = 'A carregar ficheiro ZIP na memória...';
+      document.getElementById('uploadArea').style.display = 'none';
+      document.getElementById('progressBox').style.display = 'block';
+      updateProgress(0, 'A mapear ficheiros no ZIP...');
 
       try {
         const jszip = new JSZip();
+        const zip = await jszip.loadAsync(file);
         
-        // Carrega o ZIP lendo metadados e estrutura interna
-        const zip = await jszip.loadAsync(file, {
-          onUpdate: (metadata) => {
-            const percent = metadata.percent.toFixed(0);
-            progressBar.style.width = percent + '%';
-            statusText.innerText = `A descompactar estrutura: ${percent}%`;
-          }
-        });
-
-        statusText.innerText = 'Estrutura descompactada! A mapear ficheiros...';
-
-        let csvFile = null;
-        let fitFiles = [];
-
-        // Percorrer a lista de ficheiros contidos no ZIP
+        fitEntries = [];
         zip.forEach((relativePath, zipEntry) => {
-          if (relativePath.endsWith('activities.csv')) {
-            csvFile = zipEntry;
-          } else if (relativePath.endsWith('.fit.gz') || relativePath.endsWith('.fit')) {
-            fitFiles.push(zipEntry);
+          if (relativePath.endsWith('.fit.gz') || relativePath.endsWith('.fit')) {
+            fitEntries.push(zipEntry);
           }
         });
 
-        // Mostrar resumo
-        progressBox.style.display = 'none';
-        resultsBox.style.display = 'block';
-
-        if (csvFile) {
-          csvStatus.innerHTML = `<span class="success">✓</span> activities.csv encontrado (${(csvFile._data.uncompressedSize / 1024).toFixed(1)} KB)`;
-        } else {
-          csvStatus.innerHTML = `<span style="color: #f87171;">✗</span> activities.csv não encontrado no arquivo.`;
-        }
-
-        fitCountStatus.innerHTML = `<span class="success">✓</span> ${fitFiles.length} atividades (.fit / .fit.gz) localizadas.`;
-
-        // Disponibilizar referências globais para a próxima etapa
-        window.stravaZip = zip;
-        window.stravaCsvEntry = csvFile;
-        window.stravaFitEntries = fitFiles;
+        updateProgress(100, `${fitEntries.length} ficheiros de treino localizados.`);
+        document.getElementById('analyzeBtn').style.display = 'inline-block';
 
       } catch (err) {
-        statusText.innerText = 'Erro ao processar ficheiro: ' + err.message;
-        progressBar.style.backgroundColor = '#ef4444';
+        updateProgress(0, 'Erro ao abrir ZIP: ' + err.message);
       }
     });
+
+    // Calcula a média móvel de potência
+    function getRollingMax(powers, windowSeconds) {
+      if (!powers || powers.length < windowSeconds) return 0;
+      let maxAvg = 0;
+      let currentSum = 0;
+      
+      for (let i = 0; i < powers.length; i++) {
+        currentSum += powers[i];
+        if (i >= windowSeconds) {
+          currentSum -= powers[i - windowSeconds];
+          let avg = currentSum / windowSeconds;
+          if (avg > maxAvg) maxAvg = avg;
+        }
+      }
+      return Math.round(maxAvg);
+    }
+
+    // Função auxiliar para analisar um único ficheiro FIT
+    function parseFitFile(buffer) {
+      return new Promise((resolve) => {
+        parser.parse(buffer, (error, data) => {
+          if (error || !data || !data.records) {
+            resolve(null);
+          } else {
+            resolve(data);
+          }
+        });
+      });
+    }
+
+    // Inicia o processamento em lote
+    async function startAnalysis() {
+      document.getElementById('analyzeBtn').style.display = 'none';
+      document.getElementById('dashboard').style.display = 'none';
+      
+      let allActivities = [];
+
+      for (let i = 0; i < fitEntries.length; i++) {
+        // Atualiza a interface a cada ficheiro para não bloquear o navegador
+        if (i % 5 === 0) {
+          updateProgress((i / fitEntries.length) * 100, `A analisar ficheiro ${i + 1} de ${fitEntries.length}... (Isto pode levar alguns minutos)`);
+          await new Promise(r => setTimeout(r, 0)); 
+        }
+
+        try {
+          const entry = fitEntries[i];
+          const rawData = await entry.async("uint8array");
+          
+          // Descompacta se for .gz
+          let fitBuffer = rawData;
+          if (entry.name.endsWith('.gz')) {
+            try { fitBuffer = pako.inflate(rawData); } catch(e) {}
+          }
+
+          const data = await parseFitFile(fitBuffer);
+          if (data && data.records && data.records.length > 0) {
+            // Extrai potências, considerando 0 onde houver falha de sinal
+            const powers = data.records.map(r => r.power || 0);
+            
+            const max20m = getRollingMax(powers, 1200); // 20 min = 1200 seg
+            const max1h = getRollingMax(powers, 3600);  // 1 hora = 3600 seg
+            
+            let ascent = 0;
+            if (data.sessions && data.sessions[0] && data.sessions[0].total_ascent) {
+              ascent = data.sessions[0].total_ascent;
+            }
+
+            let date = data.sessions && data.sessions[0] && data.sessions[0].start_time 
+                       ? new Date(data.sessions[0].start_time).toLocaleDateString('pt-BR') 
+                       : 'Data desconhecida';
+
+            // Só guarda se houver dados relevantes para poupar memória
+            if (max20m > 0 || ascent > 0) {
+              allActivities.push({ date, max20m, max1h, ascent });
+            }
+          }
+        } catch (e) {
+          console.warn('Erro ao processar ficheiro', fitEntries[i].name, e);
+        }
+      }
+
+      updateProgress(100, 'Processamento concluído!');
+      renderDashboard(allActivities);
+    }
+
+    function renderDashboard(activities) {
+      document.getElementById('progressBox').style.display = 'none';
+      document.getElementById('dashboard').style.display = 'block';
+
+      if (activities.length === 0) {
+        document.getElementById('res1hPower').innerText = 'Nenhum dado encontrado.';
+        return;
+      }
+
+      // Melhor potência de 1 hora
+      const best1h = activities.reduce((prev, curr) => (prev.max1h > curr.max1h) ? prev : curr);
+      document.getElementById('res1hPower').innerText = `${best1h.max1h} W`;
+      document.getElementById('res1hDate').innerText = `Registado em: ${best1h.date}`;
+
+      // Maior elevação
+      const bestElev = activities.reduce((prev, curr) => (prev.ascent > curr.ascent) ? prev : curr);
+      document.getElementById('resElevation').innerText = `${bestElev.ascent} m`;
+      document.getElementById('resElevDate').innerText = `Registado em: ${bestElev.date}`;
+
+      // Top 3 de 20 minutos
+      const sorted20m = [...activities].sort((a, b) => b.max20m - a.max20m).slice(0, 3);
+      const listEl = document.getElementById('res20mList');
+      listEl.innerHTML = '';
+      
+      sorted20m.forEach((act, index) => {
+        const li = document.createElement('li');
+        li.innerHTML = `
+          <span><strong>${index + 1}º</strong> - ${act.max20m} W</span>
+          <span style="color: #94a3b8; font-size: 0.9rem;">${act.date}</span>
+        `;
+        listEl.appendChild(li);
+      });
+    }
+
+    function updateProgress(percent, text) {
+      document.getElementById('progressBar').style.width = percent + '%';
+      document.getElementById('statusText').innerText = text;
+    }
   </script>
 </body>
 </html>

@@ -143,12 +143,17 @@
       const file = event.target.files[0];
       if (!file) return;
 
+      // 1. Mostra a área de progresso imediatamente
       document.getElementById('uploadArea').style.display = 'none';
       document.getElementById('progressBox').style.display = 'block';
-      updateProgress(0, 'A mapear ficheiros no ZIP...');
+      updateProgress(5, 'A carregar ficheiro gigante para a memória. Aguarde, pode demorar um pouco...');
+
+      // 2. TRUQUE MÁGICO: Pausar 100ms para forçar o navegador a desenhar a mensagem na tela ANTES de travar
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       try {
         const jszip = new JSZip();
+        // Aqui o navegador vai ficar ocupado alguns segundos lendo os 500MB
         const zip = await jszip.loadAsync(file);
         
         fitEntries = [];
@@ -158,7 +163,7 @@
           }
         });
 
-        updateProgress(100, `${fitEntries.length} ficheiros de treino localizados.`);
+        updateProgress(100, `${fitEntries.length} ficheiros de treino localizados no ZIP.`);
         document.getElementById('analyzeBtn').style.display = 'inline-block';
 
       } catch (err) {
@@ -206,7 +211,7 @@
       for (let i = 0; i < fitEntries.length; i++) {
         // Atualiza a interface a cada ficheiro para não bloquear o navegador
         if (i % 5 === 0) {
-          updateProgress((i / fitEntries.length) * 100, `A analisar ficheiro ${i + 1} de ${fitEntries.length}... (Isto pode levar alguns minutos)`);
+          updateProgress((i / fitEntries.length) * 100, `A descompactar e analisar ficheiro ${i + 1} de ${fitEntries.length}... (Isto pode levar alguns minutos)`);
           await new Promise(r => setTimeout(r, 0)); 
         }
 
@@ -237,7 +242,6 @@
                        ? new Date(data.sessions[0].start_time).toLocaleDateString('pt-BR') 
                        : 'Data desconhecida';
 
-            // Só guarda se houver dados relevantes para poupar memória
             if (max20m > 0 || ascent > 0) {
               allActivities.push({ date, max20m, max1h, ascent });
             }

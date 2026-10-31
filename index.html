@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Treinador Virtual UPYOU - Teste Isolado</title>
+  <title>Treinador Virtual UPYOU - Teste Expandido</title>
   
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
@@ -11,7 +11,7 @@
 
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; flex-direction: column; align-items: center; padding: 40px 20px; }
-    .card { background: #1e293b; padding: 30px; border-radius: 12px; width: 100%; max-width: 800px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
+    .card { background: #1e293b; padding: 30px; border-radius: 12px; width: 100%; max-width: 900px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
     h1, h2 { text-align: center; margin-bottom: 20px; }
     .upload-area { border: 2px dashed #475569; border-radius: 8px; padding: 30px; text-align: center; cursor: pointer; transition: border-color 0.2s; }
     .upload-area:hover { border-color: #fc5200; }
@@ -27,16 +27,20 @@
     .activity-grid { display: grid; grid-template-columns: 1fr; gap: 15px; }
     .activity-item { background: #0f172a; padding: 20px; border-radius: 8px; border-left: 4px solid #fc5200; }
     .act-title { font-size: 1.1rem; font-weight: bold; margin-bottom: 10px; color: #f8fafc; word-break: break-all; }
-    .act-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; font-size: 0.9rem; color: #cbd5e1; }
+    .act-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; font-size: 0.9rem; color: #cbd5e1; }
     .stat-box { background: #1e293b; padding: 10px; border-radius: 6px; text-align: center; }
     .stat-label { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; margin-bottom: 4px; }
     .stat-val { font-size: 1.2rem; font-weight: bold; color: #fff; }
+    
+    @media (max-width: 650px) {
+      .act-stats { grid-template-columns: repeat(2, 1fr); }
+    }
   </style>
 </head>
 <body>
 
   <div class="card">
-    <h1>Treinador Virtual UPYOU <br><span style="font-size: 1rem; color: #94a3b8;">Teste de Arquivos Específicos</span></h1>
+    <h1>Treinador Virtual UPYOU <br><span style="font-size: 1rem; color: #94a3b8;">Teste com Multi-Métricas (Potência, FC, RPM, km/h)</span></h1>
     
     <div class="upload-area" id="uploadArea" onclick="document.getElementById('zipInput').click()">
       <p>Selecione o ficheiro ZIP gigante exportado do Strava</p>
@@ -53,11 +57,11 @@
     </div>
 
     <div style="text-align: center;">
-      <button class="btn" id="analyzeBtn" style="display: none; margin-top: 20px;" onclick="startAnalysis()">Analisar Arquivos Específicos</button>
+      <button class="btn" id="analyzeBtn" style="display: none; margin-top: 20px;" onclick="startAnalysis()">Extrair Múltiplas Métricas</button>
     </div>
 
     <div class="dashboard" id="dashboard">
-      <h2>Estatísticas Completas dos Ficheiros</h2>
+      <h2>Estatísticas Detalhadas dos Arquivos Alvo</h2>
       <div class="activity-grid" id="activityGrid"></div>
     </div>
   </div>
@@ -68,11 +72,11 @@
       return false;
     };
 
-    // A LISTA DE ARQUIVOS QUE VOCÊ PEDIU
+    // A LISTA DE ARQUIVOS ALVO (ANTIGOS E NOVOS DA IMAGEM)
     const targetIDs = [
-      '1639704267', '3896863391', '1728442625', 
-      '11585352963', '15161366489', '17275198428', 
-      '234265972', '234274804', '234676631'
+      '1639704267', '3896863391', '1728442625', '11585352963', '15161366489', '17275198428', '234265972', '234274804', '234676631',
+      '1821389786', '1819304285', '1816858984', '1800294532', '1796070196', '1793545552', '1789877022', '1787012986', '1778288054', 
+      '1773340505', '1769469284', '1764416842', '1761071004', '1758873535', '1756895192', '1752353850', '1747047868', '1747026048', '1745559128'
     ];
 
     let activityEntries = [];
@@ -84,7 +88,7 @@
 
       document.getElementById('uploadArea').style.display = 'none';
       document.getElementById('progressBox').style.display = 'block';
-      updateProgress(5, 'A procurar os 9 ficheiros específicos no ZIP gigante...');
+      updateProgress(5, 'A procurar os ficheiros alvo no ZIP...');
 
       await new Promise(resolve => setTimeout(resolve, 200));
 
@@ -96,14 +100,13 @@
         zip.forEach((relativePath, zipEntry) => {
           const lowerPath = relativePath.toLowerCase();
           const isTarget = targetIDs.some(id => lowerPath.includes(id));
-          
           if (isTarget && lowerPath.match(/\.(fit|gpx|tcx)(\.gz)?$/)) {
             activityEntries.push(zipEntry);
           }
         });
 
         if (activityEntries.length === 0) {
-          throw new Error("Nenhum dos 9 ficheiros procurados foi encontrado dentro do ZIP.");
+          throw new Error("Nenhum ficheiro alvo foi encontrado.");
         }
 
         updateProgress(100, `${activityEntries.length} ficheiros alvo localizados!`);
@@ -116,28 +119,16 @@
 
     function getRollingMax(records, windowSeconds) {
       if (!records || records.length < 2) return 0;
-      let startTime = records[0].time;
-      let endTime = records[records.length - 1].time;
-      if (endTime - startTime < windowSeconds) return 0;
-
-      let dense = new Int16Array(endTime - startTime + 1);
-      let recIdx = 0;
-      for (let t = 0; t <= (endTime - startTime); t++) {
-        let currentTime = startTime + t;
-        while (recIdx < records.length - 1 && records[recIdx + 1].time <= currentTime) recIdx++;
-        
-        let timeDiff = currentTime - records[recIdx].time;
-        if (timeDiff > 10) dense[t] = 0; 
-        else dense[t] = records[recIdx].power;
-      }
-
+      
       let maxAvg = 0;
-      for (let i = 0; i <= dense.length - windowSeconds; i++) {
+      for (let i = 0; i <= records.length - windowSeconds; i++) {
         let currentSum = 0;
         let hasData = false;
         for (let j = 0; j < windowSeconds; j++) {
-          currentSum += dense[i + j];
-          if (dense[i + j] > 0) hasData = true;
+          if (records[i + j].power > 0) {
+            currentSum += records[i + j].power;
+            hasData = true;
+          }
         }
         let avg = currentSum / windowSeconds;
         if (hasData && avg > maxAvg) maxAvg = avg;
@@ -146,10 +137,10 @@
     }
 
     function parseFitFile(buffer) {
-      return new Promise((resolve) => {
-        if (!parser) parser = new window.FitParser({ force: true });
+      return new Promise((resolve, reject) => {
+        if (!parser) parser = new window.FitParser({ force: true, speedUnit: 'km/h' });
         parser.parse(buffer, (error, data) => {
-          if (error || !data || !data.records) resolve(null);
+          if (error) reject(error);
           else resolve(data);
         });
       });
@@ -166,8 +157,13 @@
       let allActivities = [];
 
       for (let i = 0; i < activityEntries.length; i++) {
-        updateProgress((i / activityEntries.length) * 100, `A processar ficheiro ${i + 1} de ${activityEntries.length}...`);
+        updateProgress((i / activityEntries.length) * 100, `A extrair métricas do ficheiro ${i + 1} de ${activityEntries.length}...`);
         await new Promise(r => setTimeout(r, 10)); 
+
+        let errorMsg = "Sucesso";
+        let records = [];
+        let ascent = 0;
+        let date = 'Desconhecida';
 
         try {
           const entry = activityEntries[i];
@@ -175,86 +171,106 @@
           const rawData = await entry.async("uint8array");
           
           let buffer = rawData;
-          // Descompressão à prova de balas
           if (fileName.endsWith('.gz')) {
             try {
               buffer = pako.inflate(rawData);
             } catch (gzErr) {
-              console.warn("Pako falhou no ficheiro", fileName, "Tornando a tentar com API nativa...");
               const stream = new Response(rawData).body.pipeThrough(new DecompressionStream('gzip'));
               const ab = await new Response(stream).arrayBuffer();
               buffer = new Uint8Array(ab);
             }
           }
 
-          let powerRecords = [];
-          let ascent = 0;
-          let date = 'Data desconhecida';
-
           if (fileName.includes('.gpx') || fileName.includes('.tcx')) {
             const text = new TextDecoder().decode(buffer);
             const timeMatch = text.match(/<time>([^<]+)<\/time>|<Id>([^<]+)<\/Id>/i);
             if (timeMatch) date = new Date(timeMatch[1] || timeMatch[2]).toLocaleDateString('pt-BR');
 
-            const eMatches = [...text.matchAll(/<ele>([\d.-]+)<\/ele>|<AltitudeMeters>([\d.-]+)<\/AltitudeMeters>/gi)];
-            let lastEle = null;
-            for (const m of eMatches) {
-              let ele = parseFloat(m[1] || m[2]);
-              if (lastEle !== null && ele > lastEle) ascent += (ele - lastEle);
-              lastEle = ele;
-            }
-
+            // Regex de Extensão GPX/TCX
             const trkpts = [...text.matchAll(/<trkpt[\s\S]*?<\/trkpt>|<Trackpoint>[\s\S]*?<\/Trackpoint>/gi)];
-            for (const pt of trkpts) {
-              const block = pt[0];
+            for (let idx = 0; idx < trkpts.length; idx++) {
+              const block = trkpts[idx][0];
               const tMatch = block.match(/<time>([^<]+)<\/time>/i);
               const pMatch = block.match(/<power>(\d+)<\/power>|<[^:]+:power>(\d+)<\/[^:]+:power>|<Watts>(\d+)<\/Watts>/i);
-              if (tMatch && pMatch) {
-                const timeStr = Math.floor(new Date(tMatch[1]).getTime() / 1000);
-                const pVal = parseInt(pMatch[1] || pMatch[2] || pMatch[3] || 0);
-                powerRecords.push({ time: timeStr, power: pVal });
+              const hMatch = block.match(/<[^:]+:hr>(\d+)<\/[^:]+:hr>|<HeartRateBpm>[\s\S]*?<Value>(\d+)<\/Value>[\s\S]*?<\/HeartRateBpm>/i);
+              const cMatch = block.match(/<[^:]+:cad>(\d+)<\/[^:]+:cad>|<Cadence>(\d+)<\/Cadence>/i);
+              const sMatch = block.match(/<[^:]+:speed>([\d.]+)<\/[^:]+:speed>/i);
+              
+              if (tMatch || idx >= 0) { // Garante a extração mesmo que a gravação não tenha tempo explícito no bloco
+                records.push({ 
+                  time: tMatch ? Math.floor(new Date(tMatch[1]).getTime() / 1000) : idx, 
+                  power: pMatch ? parseInt(pMatch[1] || pMatch[2] || pMatch[3]) : 0,
+                  hr: hMatch ? parseInt(hMatch[1] || hMatch[2]) : 0,
+                  cad: cMatch ? parseInt(cMatch[1] || cMatch[2]) : 0,
+                  speed: sMatch ? parseFloat(sMatch[1]) * 3.6 : 0 // Converte m/s de GPX para km/h
+                });
               }
             }
           } 
           else if (fileName.includes('.fit')) {
             let arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
-            const data = await parseFitFile(arrayBuffer);
-            if (data && data.records) {
-              for (const r of data.records) {
-                if (r.timestamp && r.power !== undefined) {
-                  powerRecords.push({ time: Math.floor(r.timestamp.getTime() / 1000), power: r.power });
+            try {
+              const data = await parseFitFile(arrayBuffer);
+              if (data && data.records) {
+                for (const r of data.records) {
+                  records.push({ 
+                    time: r.timestamp ? Math.floor(r.timestamp.getTime() / 1000) : 0, 
+                    power: r.power || 0,
+                    hr: r.heart_rate || 0,
+                    cad: r.cadence || 0,
+                    speed: r.speed || 0
+                  });
+                }
+                if (data.sessions && data.sessions[0]) {
+                  ascent = data.sessions[0].total_ascent || 0;
+                  date = data.sessions[0].start_time ? new Date(data.sessions[0].start_time).toLocaleDateString('pt-BR') : date;
                 }
               }
-              if (data.sessions && data.sessions[0]) {
-                ascent = data.sessions[0].total_ascent || 0;
-                date = data.sessions[0].start_time ? new Date(data.sessions[0].start_time).toLocaleDateString('pt-BR') : date;
-              }
+            } catch (fitErr) {
+              errorMsg = "Erro no Leitor FIT: " + fitErr;
             }
           }
 
-          powerRecords.sort((a,b) => a.time - b.time);
-          const duration = powerRecords.length > 1 ? (powerRecords[powerRecords.length-1].time - powerRecords[0].time) : 0;
-          const max20m = getRollingMax(powerRecords, 1200);
-          const max1h = getRollingMax(powerRecords, 3600);
+          // Cálculos Estatísticos
+          records.sort((a,b) => a.time - b.time);
+          const max20m = getRollingMax(records, 1200);
           
-          let max1s = 0;
-          let sumPwr = 0;
-          let countValid = 0;
-          powerRecords.forEach(r => {
-             if (r.power > max1s) max1s = r.power;
-             if (r.power > 0) { sumPwr += r.power; countValid++; }
+          let maxPwr = 0, sumPwr = 0, countPwr = 0;
+          let maxHR = 0, sumHR = 0, countHR = 0;
+          let maxCad = 0, sumCad = 0, countCad = 0;
+          let maxSpd = 0, sumSpd = 0, countSpd = 0;
+
+          records.forEach(r => {
+             // Potência
+             if (r.power > maxPwr) maxPwr = r.power;
+             if (r.power > 0) { sumPwr += r.power; countPwr++; }
+             // Batimentos
+             if (r.hr > maxHR) maxHR = r.hr;
+             if (r.hr > 0) { sumHR += r.hr; countHR++; }
+             // Cadência
+             if (r.cad > maxCad) maxCad = r.cad;
+             if (r.cad > 0) { sumCad += r.cad; countCad++; }
+             // Velocidade
+             if (r.speed > maxSpd) maxSpd = r.speed;
+             if (r.speed > 0) { sumSpd += r.speed; countSpd++; }
           });
-          const avgReal = countValid > 0 ? Math.round(sumPwr / countValid) : 0;
           
           allActivities.push({ 
-            fileName: entry.name, date, duration, max1s, avgReal, max20m, max1h, ascent: Math.round(ascent), points: powerRecords.length 
+            fileName: entry.name, date, error: errorMsg, points: records.length, max20m,
+            maxPwr, avgPwr: countPwr > 0 ? Math.round(sumPwr / countPwr) : 0,
+            maxHR, avgHR: countHR > 0 ? Math.round(sumHR / countHR) : 0,
+            maxCad, avgCad: countCad > 0 ? Math.round(sumCad / countCad) : 0,
+            maxSpd: Math.round(maxSpd * 10) / 10, avgSpd: countSpd > 0 ? Math.round((sumSpd / countSpd) * 10) / 10 : 0
           });
         } catch (e) {
-          console.error("Erro total no arquivo", activityEntries[i].name, e);
+          allActivities.push({ 
+            fileName: activityEntries[i].name, date: 'ERRO FATAL', error: e.message, points: 0,
+            maxPwr: 0, avgPwr: 0, max20m: 0, maxHR: 0, avgHR: 0, maxCad: 0, avgCad: 0, maxSpd: 0, avgSpd: 0
+          });
         }
       }
 
-      updateProgress(100, 'Processamento concluído!');
+      updateProgress(100, 'Extração finalizada!');
       renderDetailedDashboard(allActivities);
     }
 
@@ -264,37 +280,55 @@
       const grid = document.getElementById('activityGrid');
       grid.innerHTML = '';
 
-      if (activities.length === 0) {
-        grid.innerHTML = '<p style="color:#f87171;">Não conseguimos extrair dados de nenhum dos arquivos alvo.</p>';
-        return;
-      }
-
       activities.forEach(act => {
         const item = document.createElement('div');
         item.className = 'activity-item';
         item.innerHTML = `
           <div class="act-title">${act.date} — Ficheiro: ${act.fileName}</div>
-          <div style="font-size: 0.8rem; color: #64748b; margin-bottom: 15px;">Duração total da linha temporal: ${formatDuration(act.duration)} | Pontos de energia: ${act.points}</div>
+          <div style="font-size: 0.8rem; color: #64748b; margin-bottom: 15px;">
+            Status: <span style="color:${act.error === 'Sucesso' ? '#22c55e' : '#f87171'}">${act.error}</span> | 
+            Pontos de GPS/Sensores gravados: ${act.points}
+          </div>
+          
           <div class="act-stats">
+            <!-- Potência -->
             <div class="stat-box">
-              <div class="stat-label">Pico Máx (1s)</div>
-              <div class="stat-val">${act.max1s} W</div>
+              <div class="stat-label">Pico (1s)</div>
+              <div class="stat-val" style="color: #fc5200;">${act.maxPwr} W</div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-label">Média 20 min</div>
+              <div class="stat-val" style="color: #fc5200;">${act.max20m} W</div>
             </div>
             <div class="stat-box">
               <div class="stat-label">Média Contínua</div>
-              <div class="stat-val">${act.avgReal} W</div>
+              <div class="stat-val" style="color: #fc5200;">${act.avgPwr} W</div>
+            </div>
+            
+            <!-- Frequência Cardíaca -->
+            <div class="stat-box">
+              <div class="stat-label">Batimento Máx</div>
+              <div class="stat-val" style="color: #ef4444;">${act.maxHR} bpm</div>
             </div>
             <div class="stat-box">
-              <div class="stat-label">Melhor 20 min</div>
-              <div class="stat-val">${act.max20m} W</div>
+              <div class="stat-label">Batimento Médio</div>
+              <div class="stat-val" style="color: #ef4444;">${act.avgHR} bpm</div>
+            </div>
+
+            <!-- Cadência -->
+            <div class="stat-box">
+              <div class="stat-label">Cadência Máx</div>
+              <div class="stat-val" style="color: #3b82f6;">${act.maxCad} rpm</div>
             </div>
             <div class="stat-box">
-              <div class="stat-label">Melhor 1 Hora</div>
-              <div class="stat-val">${act.max1h} W</div>
+              <div class="stat-label">Cadência Média</div>
+              <div class="stat-val" style="color: #3b82f6;">${act.avgCad} rpm</div>
             </div>
+            
+            <!-- Velocidade -->
             <div class="stat-box">
-              <div class="stat-label">Ganho Elevação</div>
-              <div class="stat-val">${act.ascent} m</div>
+              <div class="stat-label">Velocidade Máx</div>
+              <div class="stat-val" style="color: #10b981;">${act.maxSpd} km/h</div>
             </div>
           </div>
         `;

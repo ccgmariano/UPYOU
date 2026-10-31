@@ -71,8 +71,10 @@
       if (!file) return;
 
       document.getElementById('uploadArea').style.display = 'none';
-      document.getElementById('statusMsgto').style = '';
-      document.getElementById('statusMsg').innerText = 'A abrir o ZIP e a procurar o treino de 25/10/2026...';
+      // Correção aplicada aqui: referência correta ao ID statusMsg
+      const msgEl = document.getElementById('statusMsg');
+      msgEl.style.color = '#38bdf8';
+      msgEl.innerText = 'A abrir o ZIP e a procurar o treino de 25/10/2026...';
 
       setTimeout(async () => {
         try {
@@ -82,11 +84,9 @@
           let targetText = "";
           let foundName = "";
 
-          // Varre o ZIP à procura de qualquer ficheiro que contenha a data exata 2026-10-25
           for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
             if (zipEntry.dir) continue;
             const lower = relativePath.toLowerCase();
-            // Verifica se está na pasta activities e tem extensão suportada (gpx, tcx, fit)
             if (!lower.includes('activities/')) continue;
 
             const raw = await zipEntry.async("uint8array");
@@ -95,7 +95,7 @@
               try {
                 text = new TextDecoder().decode(pako.inflate(raw));
               } catch (e) {
-                continue; // Se falhar a descompressão .gz, passa para o próximo
+                continue;
               }
             } else {
               text = new TextDecoder().decode(raw);
@@ -112,12 +112,12 @@
             throw new Error("Não foi encontrada nenhuma atividade com a data de 25 de outubro de 2026 dentro do ZIP.");
           }
 
-          document.getElementById('statusMsg').innerText = '';
+          msgEl.innerText = '';
           processActivityData(targetText, foundName);
 
         } catch (err) {
-          document.getElementById('statusMsg').style.color = '#f87171';
-          document.getElementById('statusMsg').innerText = 'Erro: ' + err.message;
+          msgEl.style.color = '#f87171';
+          msgEl.innerText = 'Erro: ' + err.message;
         }
       }, 150);
     });
@@ -147,12 +147,11 @@
         const hr = hMatch ? parseInt(hMatch[1] || hMatch[2] || hMatch[3]) : 0;
         const cad = cMatch ? parseInt(cMatch[1] || cMatch[2] || cMatch[3]) : 0;
 
-        // Cálculo de velocidade instantânea se houver coordenadas e variação de tempo
         let speed = 0;
         if (prevLat !== null && prevTime !== null && time > prevTime) {
           const distKm = getDistanceFromLatLonInKm(prevLat, prevLon, lat, lon);
           const hours = (time - prevTime) / 3600;
-          if (hours > 0) speed = distKm / hours; // km/h
+          if (hours > 0) speed = distKm / hours;
         }
 
         prevLat = lat;
@@ -162,13 +161,10 @@
         records.push({ time, power, hr, cad, speed });
       });
 
-      // Ordenar cronologicamente por segurança
       records.sort((a, b) => a.time - b.time);
 
-      // FILTRAR PAUSAS: Consideramos em movimento rigoroso quando a potência > 0 OU cadência > 0
       const movingRecords = records.filter(r => r.power > 0 || r.cad > 0);
 
-      // Médias em movimento (excluindo pausas)
       const avgPwr = movingRecords.length ? Math.round(movingRecords.reduce((acc, r) => acc + r.power, 0) / movingRecords.length) : 0;
       
       const validHr = movingRecords.filter(r => r.hr > 0 && r.hr < 220);
@@ -185,7 +181,6 @@
       document.getElementById('avgCad').innerText = `${avgCad} rpm`;
       document.getElementById('avgSpeed').innerText = `${avgSpeed} km/h`;
 
-      // TOP 4 PERÍODOS DE 4 MINUTOS (240 segundos) com rolling average rigoroso e sem sobreposição direta
       let timeline = [];
       if (records.length > 1) {
         let startT = records[0].time;
@@ -193,11 +188,11 @@
         let recMap = new Map(records.map(r => [r.time, r.power]));
 
         for (let t = startT; t <= endT; t++) {
-          timeline.push(recMap.get(t) || 0); // Pausa preenche com 0
+          timeline.push(recMap.get(t) || 0);
         }
       }
 
-      const windowSize = 240; // 4 minutos
+      const windowSize = 240;
       let intervals = [];
 
       for (let i = 0; i <= timeline.length - windowSize; i++) {
@@ -225,9 +220,8 @@
       document.getElementById('top4Mins').innerHTML = top4Html;
     }
 
-    // Fórmula Haversine para cálculo de distância entre coordenadas GPS
     function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
-      const R = 6371; // Raio da terra em km
+      const R = 6371;
       const dLat = deg2rad(lat2 - lat1);
       const dLon = deg2rad(lon2 - lon1);
       const a = 

@@ -57,52 +57,53 @@
   </div>
 
   <script>
-    document.getElementById('zipInput').addEventListener('change', async (event) => {
+    document.getElementById('zipInput').addEventListener('change', (event) => {
       const file = event.target.files[0];
       if (!file) return;
 
       document.getElementById('uploadArea').style.display = 'none';
-      document.getElementById('errorMsg').innerText = 'A procurar a atividade de 25/10/2026 no ZIP...';
+      document.getElementById('errorMsg').innerText = 'A carregar e a procurar a atividade de 25/10/2026 no ZIP (aguarde um momento)...';
 
-      try {
-        const jszip = new JSZip();
-        const zip = await jszip.loadAsync(file);
-        
-        let targetEntry = null;
-        let targetText = "";
+      // Pausa essencial para o navegador atualizar o texto no ecrã antes de travar na leitura do ZIP
+      setTimeout(async () => {
+        try {
+          const jszip = new JSZip();
+          const zip = await jszip.loadAsync(file);
+          
+          let targetEntry = null;
+          let targetText = "";
 
-        // Procura em todos os ficheiros do ZIP qual deles pertence a 2026-10-25
-        for (const [relativePath, zipEntry]扱う of Object.entries(zip.files)) {
-          if (zipEntry.dir) continue;
-          const lower = relativePath.toLowerCase();
-          if (!lower.includes('activities/') || !lower.match(/\.(gpx|tcx)(\.gz)?$/)) continue;
+          for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
+            if (zipEntry.dir) continue;
+            const lower = relativePath.toLowerCase();
+            if (!lower.includes('activities/') || !lower.match(/\.(gpx|tcx)(\.gz)?$/)) continue;
 
-          const raw = await zipEntry.async("uint8array");
-          let text = "";
-          if (lower.endsWith('.gz')) {
-            text = new TextDecoder().decode(pako.inflate(raw));
-          } else {
-            text = new TextDecoder().decode(raw);
+            const raw = await zipEntry.async("uint8array");
+            let text = "";
+            if (lower.endsWith('.gz')) {
+              text = new TextDecoder().decode(pako.inflate(raw));
+            } else {
+              text = new TextDecoder().decode(raw);
+            }
+
+            if (text.includes('2026-10-25')) {
+              targetEntry = zipEntry;
+              targetText = text;
+              break;
+            }
           }
 
-          // Verifica se a data do ficheiro corresponde a 25 de Outubro de 2026
-          if (text.includes('2026-10-25')) {
-            targetEntry = zipEntry;
-            targetText = text;
-            break;
+          if (!targetText) {
+            throw new Error("Nenhuma atividade encontrada com a data de 25 de outubro de 2026 neste ZIP.");
           }
+
+          document.getElementById('errorMsg').innerText = '';
+          analyzeActivity(targetText, targetEntry.name);
+
+        } catch (err) {
+          document.getElementById('errorMsg').innerText = 'Erro: ' + err.message;
         }
-
-        if (!targetText) {
-          throw new Error("Nenhuma atividade encontrada com a data de 25 de outubro de 2026 neste ZIP.");
-        }
-
-        document.getElementById('errorMsg').innerText = '';
-        analyzeActivity(targetText, targetEntry.name);
-
-      } catch (err) {
-        document.getElementById('errorMsg').innerText = 'Erro: ' + err.message;
-      }
+      }, 150);
     });
 
     function analyzeActivity(xmlText, fileName) {
@@ -127,13 +128,11 @@
         records.push({ time, power, hr, cad });
       });
 
-      // Ordenar cronologicamente
       records.sort((a, b) => a.time - b.time);
 
-      // FILTRAR PAUSAS: Consideramos em movimento quando a potência > 0 (ou cadência > 0)
+      // Descontar pausas (apenas valores ativos)
       const movingRecords = records.filter(r => r.power > 0 || r.cad > 0);
 
-      // Médias em movimento
       const avgPwr = movingRecords.length ? Math.round(movingRecords.reduce((acc, r) => acc + r.power, 0) / movingRecords.length) : 0;
       
       const validHr = movingRecords.filter(r => r.hr > 0 && r.hr < 220);
@@ -146,8 +145,7 @@
       document.getElementById('avgHr').innerText = `${avgHr} bpm`;
       document.getElementById('avgCad').innerText = `${avgCad} rpm`;
 
-      // TOP 4 PERÍODOS DE 4 MINUTOS (240 segundos)
-      // Cria uma linha temporal contínua segundo a segundo para cálculo de rolling average rigoroso
+      // Top 4 períodos de 4 minutos (240s)
       let timeline = [];
       if (records.length > 1) {
         let startT = records[0].time;
@@ -155,37 +153,32 @@
         let recMap = new Map(records.map(r => [r.time, r.power]));
 
         for (let t = startT; t <= endT; t++) {
-          timeline.push(recMap.get(t) || 0); // Pausa preenche com 0
+          timeline.push(recMap.get(t) || 0);
         }
       }
 
-      const windowSize = 240; // 4 minutos
+      const windowSize = 240;
       let intervals = [];
 
       for (let i = 0; i <= timeline.length - windowSize; i++) {
         let sum = 0;
-        let count = 0;
         for (let j = 0; j < windowSize; j++) {
           sum += timeline[i + j];
-          count++;
         }
-        let avg = Math.round(sum / windowSize);
-        intervals.push({ avg, index: i });
+        intervals.push({ avg: Math.round(sum / windowSize), index: i });
       }
 
-      // Ordenar do maior para o menor e extrair os top 4 não sobrepostos (ou top 4 distintos)
       intervals.sort((a, b) => b.avg - a.avg);
 
       let top4 = [];
       for (const item of intervals) {
-        // Garante que não pega janelas estritamente sobrepostas (distância mínima de 4 min)
         if (!top4.some(existing => Math.abs(existing.index - item.index) < windowSize)) {
           top4.push(item);
           if (top4.length === 4) break;
         }
       }
 
-      let top4Html = top4.length > 0 ? top4.map((item, idx) => `<b>${idx + 1}º esforço:</b> ${item.avg} W (Média de 4 min)`).join('<br>') : 'Dados insuficientes para blocos de 4 min.';
+      let top4Html = top4.length > 0 ? top4.map((item, idx) => `<b>${idx + 1}º esforço:</b> ${item.avg} W (Média de 4 min)`).join('<br>') : 'Dados insuficientes.';
       document.getElementById('top4Mins').innerHTML = top4Html;
     }
   </script>

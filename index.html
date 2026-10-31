@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Treinador Virtual UPYOU</title>
+  <title>Treinador Virtual UPYOU - Diagnóstico</title>
   
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
@@ -11,9 +11,9 @@
 
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; flex-direction: column; align-items: center; padding: 40px 20px; }
-    .card { background: #1e293b; padding: 30px; border-radius: 12px; width: 100%; max-width: 650px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
+    .card { background: #1e293b; padding: 30px; border-radius: 12px; width: 100%; max-width: 700px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
     h1, h2 { text-align: center; margin-bottom: 20px; }
-    .upload-area { border: 2px dashed #475569; border-radius: 8px; padding: 30px; text-align: center; cursor: pointer; transition: border-color 0.2s; }
+    .upload-area { border: 2px dashed #475569; border-radius: 8px; padding: 30px; text-align: center; cursor: pointer; }
     .upload-area:hover { border-color: #fc5200; }
     input[type="file"] { display: none; }
     .btn { display: inline-block; background: #fc5200; color: white; padding: 10px 20px; border-radius: 6px; font-weight: 600; cursor: pointer; margin-top: 10px; border: none; font-size: 1rem; }
@@ -22,20 +22,14 @@
     .progress-bar-fill { background: #fc5200; width: 0%; height: 100%; transition: width 0.1s; }
     .status-text { margin-top: 8px; font-size: 0.875rem; color: #94a3b8; text-align: center; }
     #debugError { color: #f87171; margin-top: 15px; font-size: 0.9rem; text-align: center; font-weight: bold; }
-    .dashboard { margin-top: 25px; display: none; background: #0f172a; padding: 20px; border-radius: 8px; }
-    .metric-box { background: #1e293b; border-left: 4px solid #fc5200; padding: 15px; margin-bottom: 15px; border-radius: 4px; }
-    .metric-title { font-size: 0.85rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
-    .metric-value { font-size: 1.5rem; font-weight: bold; margin: 5px 0; color: #f8fafc; }
-    .metric-date { font-size: 0.8rem; color: #64748b; }
-    .podium-list { list-style: none; padding: 0; margin: 10px 0 0 0; }
-    .podium-list li { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #334155; }
-    .podium-list li:last-child { border-bottom: none; }
+    .dashboard { margin-top: 25px; display: none; background: #0f172a; padding: 20px; border-radius: 8px; max-height: 400px; overflow-y: auto; }
+    .log-item { background: #1e293b; padding: 10px; margin-bottom: 8px; border-radius: 4px; font-size: 0.85rem; border-left: 3px solid #fc5200; }
   </style>
 </head>
 <body>
 
   <div class="card">
-    <h1>Treinador Virtual UPYOU</h1>
+    <h1>Treinador Virtual UPYOU (Modo Diagnóstico)</h1>
     
     <div class="upload-area" id="uploadArea" onclick="document.getElementById('zipInput').click()">
       <p>Selecione o ficheiro ZIP exportado do Strava</p>
@@ -47,36 +41,23 @@
       <div class="progress-bar-bg">
         <div class="progress-bar-fill" id="progressBar"></div>
       </div>
-      <div class="status-text" id="statusText">A iniciar processo...</div>
+      <div class="status-text" id="statusText">A iniciar diagnóstico...</div>
       <div id="debugError"></div>
     </div>
 
     <div style="text-align: center;">
-      <button class="btn" id="analyzeBtn" style="display: none; margin-top: 20px;" onclick="startAnalysis()">Analisar Desempenho (Extrair Métricas)</button>
+      <button class="btn" id="analyzeBtn" style="display: none; margin-top: 20px;" onclick="startAnalysis()">Executar Diagnóstico de Potência</button>
     </div>
 
     <div class="dashboard" id="dashboard">
-      <h2>Resumo do Atleta</h2>
-      <div class="metric-box">
-        <div class="metric-title">Melhor Potência (1 Hora)</div>
-        <div class="metric-value" id="res1hPower">-- W</div>
-        <div class="metric-date" id="res1hDate">--</div>
-      </div>
-      <div class="metric-box">
-        <div class="metric-title">Top 3 - Potência de 20 Minutos</div>
-        <ul class="podium-list" id="res20mList"></ul>
-      </div>
-      <div class="metric-box">
-        <div class="metric-title">Maior Subida (Ganho de Elevação)</div>
-        <div class="metric-value" id="resElevation">-- m</div>
-        <div class="metric-date" id="resElevDate">--</div>
-      </div>
+      <h2>Log de Atividades com Potência Real Detetada</h2>
+      <div id="logList"></div>
     </div>
   </div>
 
   <script>
     window.onerror = function(msg, url, lineNo) {
-      document.getElementById('debugError').innerText = 'ERRO: ' + msg;
+      document.getElementById('debugError').innerText = 'ERRO: ' + msg + ' (Linha: ' + lineNo + ')';
       return false;
     };
 
@@ -89,7 +70,7 @@
 
       document.getElementById('uploadArea').style.display = 'none';
       document.getElementById('progressBox').style.display = 'block';
-      updateProgress(5, 'A descompactar ZIP (Pode demorar um pouco)...');
+      updateProgress(5, 'A descompactar ZIP...');
 
       await new Promise(resolve => setTimeout(resolve, 200));
 
@@ -105,61 +86,13 @@
           }
         });
 
-        if (activityEntries.length === 0) throw new Error("Nenhum ficheiro de treino encontrado no ZIP.");
-
-        updateProgress(100, `${activityEntries.length} ficheiros localizados no ZIP.`);
+        updateProgress(100, `${activityEntries.length} ficheiros localizados.`);
         document.getElementById('analyzeBtn').style.display = 'inline-block';
 
       } catch (err) {
         document.getElementById('debugError').innerText = 'Erro: ' + err.message;
       }
     });
-
-    function getRollingMax(records, windowSeconds) {
-      if (!records || records.length < 2) return 0;
-      
-      records.sort((a, b) => a.time - b.time); 
-      let startTime = records[0].time;
-      let endTime = records[records.length - 1].time;
-      
-      if (endTime - startTime < windowSeconds) return 0;
-
-      let dense = new Int16Array(endTime - startTime + 1);
-      let recIdx = 0;
-
-      for (let t = 0; t <= (endTime - startTime); t++) {
-        let currentTime = startTime + t;
-        while (recIdx < records.length - 1 && records[recIdx + 1].time <= currentTime) {
-          recIdx++;
-        }
-        
-        let timeDiff = currentTime - records[recIdx].time;
-        if (timeDiff > 10) {
-          dense[t] = 0;
-        } else {
-          dense[t] = records[recIdx].power;
-        }
-      }
-
-      let maxAvg = 0;
-      
-      for (let i = 0; i <= dense.length - windowSeconds; i++) {
-        let currentSum = 0;
-        let hasData = false;
-        
-        for (let j = 0; j < windowSeconds; j++) {
-          currentSum += dense[i + j];
-          if (dense[i + j] > 0) hasData = true;
-        }
-        
-        let avg = currentSum / windowSeconds;
-        if (hasData && avg > maxAvg) {
-          maxAvg = avg;
-        }
-      }
-
-      return Math.round(maxAvg);
-    }
 
     function parseFitFile(buffer) {
       return new Promise((resolve) => {
@@ -173,11 +106,13 @@
 
     async function startAnalysis() {
       document.getElementById('analyzeBtn').style.display = 'none';
-      let allActivities = [];
+      let foundCount = 0;
+      const logList = document.getElementById('logList');
+      logList.innerHTML = '';
 
       for (let i = 0; i < activityEntries.length; i++) {
         if (i % 5 === 0) {
-          updateProgress((i / activityEntries.length) * 100, `A extrair métricas do ficheiro ${i + 1} de ${activityEntries.length}...`);
+          updateProgress((i / activityEntries.length) * 100, `A testar ficheiro ${i + 1} de ${activityEntries.length}...`);
           await new Promise(r => setTimeout(r, 0)); 
         }
 
@@ -191,99 +126,52 @@
             try { buffer = pako.inflate(rawData); } catch(e) {}
           }
 
-          let powerRecords = [];
-          let ascent = 0;
+          let powers = [];
           let date = 'Data desconhecida';
 
           if (fileName.includes('.gpx') || fileName.includes('.tcx')) {
             const text = new TextDecoder().decode(buffer);
-            
             const timeMatch = text.match(/<time>([^<]+)<\/time>|<Id>([^<]+)<\/Id>/i);
             if (timeMatch) date = new Date(timeMatch[1] || timeMatch[2]).toLocaleDateString('pt-BR');
 
-            const eMatches = [...text.matchAll(/<ele>([\d.-]+)<\/ele>|<AltitudeMeters>([\d.-]+)<\/AltitudeMeters>/gi)];
-            let lastEle = null;
-            for (const m of eMatches) {
-              let ele = parseFloat(m[1] || m[2]);
-              if (lastEle !== null && ele > lastEle) ascent += (ele - lastEle);
-              lastEle = ele;
-            }
-
-            const trkpts = [...text.matchAll(/<trkpt[\s\S]*?<\/trkpt>|<Trackpoint>[\s\S]*?<\/Trackpoint>/gi)];
-            for (const pt of trkpts) {
-              const block = pt[0];
-              const tMatch = block.match(/<time>([^<]+)<\/time>/i);
-              const pMatch = block.match(/<power>(\d+)<\/power>|<[^:]+:power>(\d+)<\/[^:]+:power>|<Watts>(\d+)<\/Watts>/i);
-              if (tMatch && pMatch) {
-                const timeStr = Math.floor(new Date(tMatch[1]).getTime() / 1000);
-                const pVal = parseInt(pMatch[1] || pMatch[2] || pMatch[3] || 0);
-                powerRecords.push({ time: timeStr, power: pVal });
-              }
-            }
+            const pMatches = [...text.matchAll(/<power>(\d+)<\/power>|<[^:]+:power>(\d+)<\/[^:]+:power>|<Watts>(\d+)<\/Watts>/gi)];
+            powers = pMatches.map(m => parseInt(m[1] || m[2] || m[3] || 0)).filter(p => p > 0);
           } 
           else if (fileName.includes('.fit')) {
             let arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
             const data = await parseFitFile(arrayBuffer);
             if (data && data.records) {
-              for (const r of data.records) {
-                if (r.timestamp && r.power !== undefined) {
-                  powerRecords.push({ time: Math.floor(r.timestamp.getTime() / 1000), power: r.power });
-                }
-              }
-              if (data.sessions && data.sessions[0]) {
-                ascent = data.sessions[0].total_ascent || 0;
-                date = data.sessions[0].start_time ? new Date(data.sessions[0].start_time).toLocaleDateString('pt-BR') : date;
+              powers = data.records.map(r => r.power).filter(p => p !== undefined && p !== null && p > 0);
+              if (data.sessions && data.sessions[0] && data.sessions[0].start_time) {
+                date = new Date(data.sessions[0].start_time).toLocaleDateString('pt-BR');
               }
             }
           }
 
-          const max20m = getRollingMax(powerRecords, 1200);
-          const max1h = getRollingMax(powerRecords, 3600);
-          
-          if (max20m > 0 || ascent > 0) {
-            allActivities.push({ date, max20m, max1h, ascent: Math.round(ascent) });
+          // Se encontrou dados de potência válidos nesta atividade
+          if (powers.length > 10) {
+            foundCount++;
+            const sum = powers.reduce((a, b) => a + b, 0);
+            const realAvg = Math.round(sum / powers.length);
+            const maxP = Math.max(...powers);
+
+            const div = document.createElement('div');
+            div.className = 'log-item';
+            div.innerHTML = `<strong>[${foundCount}] Data: ${date}</strong> — Ficheiro: ${entry.name}<br>Pontos de potência: ${powers.length} | Potência Média (sem zeros): ${realAvg} W | Pico: ${maxP} W`;
+            logList.appendChild(div);
           }
         } catch (e) {
-          // Ignora ficheiros quebrados do Strava
+          // Ignora erros individuais
         }
       }
 
-      updateProgress(100, 'Processamento concluído!');
-      renderDashboard(allActivities);
-    }
-
-    function renderDashboard(activities) {
+      updateProgress(100, 'Diagnóstico concluído!');
       document.getElementById('progressBox').style.display = 'none';
       document.getElementById('dashboard').style.display = 'block';
 
-      if (activities.length === 0) {
-        document.getElementById('res1hPower').innerText = 'Sem dados válidos.';
-        return;
+      if (foundCount === 0) {
+        logList.innerHTML = '<div class="log-item" style="border-color: #ef4444;">Nenhum ficheiro com tag de potência explícita foi detetado.</div>';
       }
-
-      const actsWithPower = activities.filter(a => a.max1h > 0 || a.max20m > 0);
-      
-      if (actsWithPower.length > 0) {
-        const best1h = actsWithPower.reduce((prev, curr) => (prev.max1h > curr.max1h) ? prev : curr);
-        document.getElementById('res1hPower').innerText = `${best1h.max1h} W`;
-        document.getElementById('res1hDate').innerText = `Registado em: ${best1h.date}`;
-
-        const sorted20m = [...actsWithPower].sort((a, b) => b.max20m - a.max20m).slice(0, 3);
-        const listEl = document.getElementById('res20mList');
-        listEl.innerHTML = '';
-        sorted20m.forEach((act, index) => {
-          const li = document.createElement('li');
-          li.innerHTML = `<span><strong>${index + 1}º</strong> - ${act.max20m} W</span><span style="color: #94a3b8; font-size: 0.9rem;">${act.date}</span>`;
-          listEl.appendChild(li);
-        });
-      } else {
-        document.getElementById('res1hPower').innerText = '-- W';
-        document.getElementById('res20mList').innerHTML = '<li>Sem dados com medidor de potência</li>';
-      }
-
-      const bestElev = activities.reduce((prev, curr) => (prev.ascent > curr.ascent) ? prev : curr);
-      document.getElementById('resElevation').innerText = `${bestElev.ascent} m`;
-      document.getElementById('resElevDate').innerText = `Registado em: ${bestElev.date}`;
     }
 
     function updateProgress(percent, text) {

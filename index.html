@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Treinador Virtual UPYOU - Motor V4</title>
+  <title>Treinador Virtual UPYOU - Motor Definitivo</title>
   
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
 
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; flex-direction: column; align-items: center; padding: 40px 20px; }
-    .card { background: #1e293b; padding: 30px; border-radius: 12px; width: 100%; max-width: 1000px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
+    .card { background: #1e293b; padding: 30px; border-radius: 12px; width: 100%; max-width: 900px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
     h1 { text-align: center; margin-bottom: 20px; color: #f8fafc; }
     .upload-area { border: 2px dashed #475569; border-radius: 8px; padding: 30px; text-align: center; cursor: pointer; transition: border-color 0.2s; }
     .upload-area:hover { border-color: #fc5200; }
@@ -24,18 +24,12 @@
     #debugError { color: #f87171; margin-top: 15px; font-size: 0.9rem; text-align: center; font-weight: bold; }
     
     .dashboard { margin-top: 25px; display: none; }
-    
-    .pagination { display: flex; justify-content: center; gap: 8px; margin: 20px 0; flex-wrap: wrap; }
-    .page-btn { background: #334155; border: none; color: white; padding: 8px 14px; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
-    .page-btn:hover { background: #475569; }
-    .page-btn.active { background: #fc5200; font-weight: bold; }
-
     .activity-grid { display: grid; grid-template-columns: 1fr; gap: 15px; margin-top: 20px; }
     .activity-item { background: #0f172a; padding: 20px; border-radius: 8px; border-left: 4px solid #fc5200; }
-    .act-title { font-size: 1.2rem; font-weight: bold; margin-bottom: 5px; color: #f8fafc; }
+    .act-title { font-size: 1.1rem; font-weight: bold; margin-bottom: 5px; color: #f8fafc; }
     .act-sub { font-size: 0.85rem; color: #94a3b8; margin-bottom: 15px; }
     
-    .act-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+    .act-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
     .stat-box { background: #1e293b; padding: 10px; border-radius: 6px; text-align: center; }
     .stat-label { font-size: 0.7rem; color: #94a3b8; text-transform: uppercase; margin-bottom: 4px; }
     .stat-val { font-size: 1.1rem; font-weight: bold; color: #fff; }
@@ -44,28 +38,23 @@
 <body>
 
   <div class="card">
-    <h1>Treinador Virtual UPYOU <br><span style="font-size: 1rem; color: #94a3b8;">Motor V4: Sincronização Híbrida de Alta Precisão</span></h1>
+    <h1>Treinador Virtual UPYOU <br><span style="font-size: 1rem; color: #94a3b8;">Teste de Leitura Cirúrgica de Ficheiro Único</span></h1>
     
     <div class="upload-area" id="uploadArea" onclick="document.getElementById('zipInput').click()">
-      <p>Selecione o ficheiro ZIP gigante exportado do Strava</p>
+      <p>Selecione o seu ficheiro ZIP do Strava</p>
       <span class="btn">Escolher Ficheiro .ZIP</span>
       <input type="file" id="zipInput" accept=".zip">
     </div>
 
     <div class="progress-box" id="progressBox">
       <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressBar"></div></div>
-      <div class="status-text" id="statusText">A aguardar interação...</div>
+      <div class="status-text" id="statusText">A analisar...</div>
       <div id="debugError"></div>
     </div>
 
     <div class="dashboard" id="dashboard">
-      <div style="text-align: center; margin-bottom: 10px;">
-        <span id="totalActs" style="color: #94a3b8; font-weight: bold;"></span>
-      </div>
-      
-      <div class="pagination" id="topPagination"></div>
+      <h2>Resultado da Extração</h2>
       <div class="activity-grid" id="activityGrid"></div>
-      <div class="pagination" id="bottomPagination"></div>
     </div>
   </div>
 
@@ -75,164 +64,147 @@
       return false;
     };
 
-    let allActivities = [];
-    let currentPage = 1;
-    const itemsPerPage = 50;
-
-    document.getElementById('zipInput').addEventListener('change', (event) => {
+    document.getElementById('zipInput').addEventListener('change', async (event) => {
       const file = event.target.files[0];
       if (!file) return;
 
       document.getElementById('uploadArea').style.display = 'none';
       document.getElementById('progressBox').style.display = 'block';
-      updateProgress(10, 'A descompactar e a ler o índice do Strava (activities.csv)...');
+      updateProgress(20, 'A abrir o ZIP e a ignorar pastas...');
 
-      setTimeout(async () => {
-        try {
-          const jszip = new JSZip();
-          const zip = await jszip.loadAsync(file);
-          
-          let csvEntry = null;
-          zip.forEach((relativePath, zipEntry) => {
-            if (relativePath.toLowerCase().endsWith('activities.csv')) {
-              csvEntry = zipEntry;
-            }
-          });
+      try {
+        const jszip = new JSZip();
+        const zip = await jszip.loadAsync(file);
+        
+        let targetEntry = null;
 
-          if (!csvEntry) throw new Error("Ficheiro activities.csv não encontrado no ZIP.");
+        // SOLUÇÃO DO ITEM 1: Varre o ZIP focando no NOME do ficheiro e ignorando a pasta "activities/"
+        zip.forEach((relativePath, zipEntry) => {
+          // Ignora se for diretório/pasta pura
+          if (zipEntry.dir) return;
 
-          updateProgress(50, 'A processar o histórico de atividades...');
-          const csvText = await csvEntry.async("string");
-          parseActivitiesCSV(csvText);
+          // Obtém apenas o nome do ficheiro (ex: de "activities/Pedalada_da_tarde.gpx" extrai "pedalada_da_tarde.gpx")
+          const fileName = relativePath.split('/').pop().toLowerCase();
 
-        } catch (err) {
-          document.getElementById('debugError').innerText = 'Erro: ' + err.message;
+          // Vamos procurar pelo ficheiro de teste que você enviou antes, para validar
+          if (fileName === 'pedalada_da_tarde.gpx') {
+            targetEntry = zipEntry;
+          }
+        });
+
+        if (!targetEntry) {
+          throw new Error("O ficheiro de teste 'Pedalada_da_tarde.gpx' não foi encontrado dentro do ZIP.");
         }
-      }, 150);
+
+        updateProgress(60, 'Ficheiro localizado com sucesso! A ler dados...');
+        
+        const rawData = await targetEntry.async("uint8array");
+        let textContent = "";
+
+        // Verifica se está compactado em .gz ou se é texto puro
+        if (targetEntry.name.toLowerCase().endsWith('.gz')) {
+          const decompressed = pako.inflate(rawData);
+          textContent = new TextDecoder().decode(decompressed);
+        } else {
+          textContent = new TextDecoder().decode(rawData);
+        }
+
+        updateProgress(90, 'A processar métricas...');
+        parseAndRenderGPX(textContent, targetEntry.name);
+
+      } catch (err) {
+        document.getElementById('debugError').innerText = 'Erro: ' + err.message;
+      }
     });
 
-    function parseActivitiesCSV(csvText) {
-      const lines = csvText.split('\n');
-      if (lines.length < 2) throw new Error("O ficheiro CSV está vazio.");
+    function parseAndRenderGPX(xmlText, fileName) {
+      // Extração de dados cirúrgica baseada no formato real do seu GPX
+      const timeMatch = xmlText.match(/<time>([^<]+)<\/time>/i);
+      const dateStr = timeMatch ? new Date(timeMatch[1]).toLocaleString('pt-BR') : 'Data Desconhecida';
 
-      const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, '').toLowerCase());
-      
-      const idxDate = headers.findIndex(h => h.includes('date') || h.includes('data'));
-      const idxName = headers.findIndex(h => h.includes('name') || h.includes('nome'));
-      const idxType = headers.findIndex(h => h.includes('type') || h.includes('tipo'));
-      const idxDist = headers.findIndex(h => h.includes('distance') || h.includes('distância'));
-      const idxTime = headers.findIndex(h => h.includes('moving time') || h.includes('tempo de movimentação'));
-      const idxElev = headers.findIndex(h => h.includes('elevation') || h.includes('ganho de elevação'));
-      const idxPwr  = headers.findIndex(h => h.includes('average power') || h.includes('potência média'));
-      const idxHR   = headers.findIndex(h => h.includes('average heart rate') || h.includes('frequência cardíaca média'));
-      const idxCad  = headers.findIndex(h => h.includes('average cadence') || h.includes('cadência média'));
+      let powers = [];
+      let hrs = [];
+      let cads = [];
+      let ascent = 0;
 
-      allActivities = [];
+      // Regex universal para encontrar blocos de pontos de trilho
+      const trkpts = [...xmlText.matchAll(/<trkpt[\s\S]*?<\/trkpt>/gi)];
+      let lastEle = null;
 
-      for (let i = 1; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line) continue;
+      for (const pt of trkpts) {
+        const block = pt[0];
 
-        const row = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
-        const clean = (val) => val ? val.replace(/^"|"$/g, '').trim() : '';
-
-        const type = idxType >= 0 ? clean(row[idxType]) : '';
-        // Considera apenas atividades de Ciclismo / Pedaladas
-        if (type.toLowerCase().includes('ride') || type.toLowerCase().includes('pedalada') || type.toLowerCase().includes('cycling')) {
-          
-          const dateStr = idxDate >= 0 ? clean(row[idxDate]) : '';
-          const timestamp = dateStr ? new Date(dateStr).getTime() : 0;
-          
-          let dist = idxDist >= 0 ? parseFloat(clean(row[idxDist])) : 0;
-          if (dist > 1000) dist = dist / 1000; // Normaliza para quilómetros
-
-          allActivities.push({
-            name: idxName >= 0 ? clean(row[idxName]) : 'Pedalada',
-            dateStr: dateStr ? new Date(dateStr).toLocaleString('pt-BR') : 'Data Desconhecida',
-            timestamp: isNaN(timestamp) ? 0 : timestamp,
-            dist: dist.toFixed(1),
-            time: idxTime >= 0 ? Math.round(parseFloat(clean(row[idxTime])) / 60) : 0,
-            elev: idxElev >= 0 ? Math.round(parseFloat(clean(row[idxElev]))) : 0,
-            pwr: idxPwr >= 0 && clean(row[idxPwr]) ? Math.round(parseFloat(clean(row[idxPwr]))) : 0,
-            hr: idxHR >= 0 && clean(row[idxHR]) ? Math.round(parseFloat(clean(row[idxHR]))) : 0,
-            cad: idxCad >= 0 && clean(row[idxCad]) ? Math.round(parseFloat(clean(row[idxCad]))) : 0
-          });
+        // Altimetria
+        const eleMatch = block.match(/<ele>([\d.-]+)<\/ele>/i);
+        if (eleMatch) {
+          const ele = parseFloat(eleMatch[1]);
+          if (lastEle !== null && ele > lastEle) ascent += (ele - lastEle);
+          lastEle = ele;
         }
+
+        // Potência (<power> ou extensões)
+        const pMatch = block.match(/<power>(\d+)<\/power>|<[^:]+:power>(\d+)<\/[^:]+:power>/i);
+        if (pMatch) powers.push(parseInt(pMatch[1] || pMatch[2]));
+
+        // Frequência Cardíaca
+        const hMatch = block.match(/<gpxtpx:hr>(\d+)<\/gpxtpx:hr>|<hr>(\d+)<\/hr>/i);
+        if (hMatch) hrs.push(parseInt(hMatch[1] || hMatch[2]));
+
+        // Cadência
+        const cMatch = block.match(/<gpxtpx:cad>(\d+)<\/gpxtpx:cad>|<cad>(\d+)<\/cad>/i);
+        if (cMatch) cads.push(parseInt(cMatch[1] || cMatch[2]));
       }
 
-      // Ordenar da mais recente para a mais antiga
-      allActivities.sort((a, b) => b.timestamp - a.timestamp);
+      // Cálculos de estatísticas reais
+      const maxPwr = powers.length > 0 ? Math.max(...powers) : 0;
+      const validPwr = powers.filter(p => p > 0);
+      const avgPwr = validPwr.length > 0 ? Math.round(validPwr.reduce((a,b)=>a+b,0) / validPwr.length) : 0;
 
-      updateProgress(100, 'Concluído com sucesso!');
+      const maxHR = hrs.length > 0 ? Math.max(...hrs) : 0;
+      const validHR = hrs.filter(h => h > 0);
+      const avgHR = validHR.length > 0 ? Math.round(validHR.reduce((a,b)=>a+b,0) / validHR.length) : 0;
+
+      const validCad = cads.filter(c => c > 0);
+      const avgCad = validCad.length > 0 ? Math.round(validCad.reduce((a,b)=>a+b,0) / validCad.length) : 0;
+
+      updateProgress(100, 'Concluído!');
       document.getElementById('progressBox').style.display = 'none';
-      document.getElementById('totalActs').innerText = `Total de Pedaladas no Histórico: ${allActivities.length}`;
-
-      renderPage(1);
-    }
-
-    function renderPage(page) {
-      currentPage = page;
       document.getElementById('dashboard').style.display = 'block';
+
       const grid = document.getElementById('activityGrid');
-      grid.innerHTML = '';
-
-      const startIndex = (page - 1) * itemsPerPage;
-      const endIndex = startIndex + itemsPerPage;
-      const pageActs = allActivities.slice(startIndex, endIndex);
-
-      pageActs.forEach(act => {
-        const item = document.createElement('div');
-        item.className = 'activity-item';
-        item.innerHTML = `
-          <div class="act-title">${act.dateStr} — ${act.name}</div>
-          <div class="act-sub">Distância: ${act.dist} km | Tempo em Movimento: ${act.time} min</div>
+      grid.innerHTML = `
+        <div class="activity-item">
+          <div class="act-title">${dateStr}</div>
+          <div class="act-sub">Ficheiro: ${fileName} | Pontos analisados: ${trkpts.length}</div>
           
           <div class="act-stats">
             <div class="stat-box">
+              <div class="stat-label">Pico de Potência</div>
+              <div class="stat-val" style="color: #fc5200;">${maxPwr} W</div>
+            </div>
+            <div class="stat-box">
               <div class="stat-label">Potência Média</div>
-              <div class="stat-val" style="color: #fc5200;">${act.pwr > 0 ? act.pwr + ' W' : '--'}</div>
+              <div class="stat-val" style="color: #fc5200;">${avgPwr} W</div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-label">BPM Máximo</div>
+              <div class="stat-val" style="color: #ef4444;">${maxHR} bpm</div>
             </div>
             <div class="stat-box">
               <div class="stat-label">BPM Médio</div>
-              <div class="stat-val" style="color: #ef4444;">${act.hr > 0 ? act.hr + ' bpm' : '--'}</div>
+              <div class="stat-val" style="color: #ef4444;">${avgHR} bpm</div>
             </div>
             <div class="stat-box">
               <div class="stat-label">Cadência Média</div>
-              <div class="stat-val" style="color: #3b82f6;">${act.cad > 0 ? act.cad + ' rpm' : '--'}</div>
+              <div class="stat-val" style="color: #3b82f6;">${avgCad} rpm</div>
             </div>
             <div class="stat-box">
-              <div class="stat-label">Elevação</div>
-              <div class="stat-val" style="color: #10b981;">${act.elev > 0 ? act.elev + ' m' : '--'}</div>
+              <div class="stat-label">Elevação Acumulada</div>
+              <div class="stat-val" style="color: #10b981;">${Math.round(ascent)} m</div>
             </div>
           </div>
-        `;
-        grid.appendChild(item);
-      });
-
-      renderPagination();
-      window.scrollTo(0, 0);
-    }
-
-    function renderPagination() {
-      const totalPages = Math.ceil(allActivities.length / itemsPerPage);
-      let html = '';
-      
-      let startP = Math.max(1, currentPage - 4);
-      let endP = Math.min(totalPages, startP + 9);
-      if (endP - startP < 9) startP = Math.max(1, endP - 9);
-
-      if (currentPage > 1) {
-        html += `<button class="page-btn" onclick="renderPage(${currentPage - 1})">« Ant</button>`;
-      }
-      for (let i = startP; i <= endP; i++) {
-        html += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="renderPage(${i})">${i}</button>`;
-      }
-      if (currentPage < totalPages) {
-        html += `<button class="page-btn" onclick="renderPage(${currentPage + 1})">Seg »</button>`;
-      }
-
-      document.getElementById('topPagination').innerHTML = html;
-      document.getElementById('bottomPagination').innerHTML = html;
+        </div>
+      `;
     }
 
     function updateProgress(percent, text) {

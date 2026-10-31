@@ -5,86 +5,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Treinador Virtual UPYOU</title>
   
-  <!-- Bibliotecas para processar ZIP, GZ e ficheiros FIT no navegador -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/fit-file-parser@1.9.0/dist/fit-parser.min.js"></script>
 
   <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #0f172a;
-      color: #f8fafc;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 40px 20px;
-    }
-    .card {
-      background: #1e293b;
-      padding: 30px;
-      border-radius: 12px;
-      width: 100%;
-      max-width: 650px;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.3);
-    }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; flex-direction: column; align-items: center; padding: 40px 20px; }
+    .card { background: #1e293b; padding: 30px; border-radius: 12px; width: 100%; max-width: 650px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
     h1, h2 { text-align: center; margin-bottom: 20px; }
-    
-    .upload-area {
-      border: 2px dashed #475569;
-      border-radius: 8px;
-      padding: 30px;
-      text-align: center;
-      cursor: pointer;
-      transition: border-color 0.2s;
-    }
+    .upload-area { border: 2px dashed #475569; border-radius: 8px; padding: 30px; text-align: center; cursor: pointer; transition: border-color 0.2s; }
     .upload-area:hover { border-color: #fc5200; }
     input[type="file"] { display: none; }
-    
-    .btn {
-      display: inline-block;
-      background: #fc5200;
-      color: white;
-      padding: 10px 20px;
-      border-radius: 6px;
-      font-weight: 600;
-      cursor: pointer;
-      margin-top: 10px;
-      border: none;
-      font-size: 1rem;
-    }
-    .btn:disabled { background: #475569; cursor: not-allowed; }
-    
+    .btn { display: inline-block; background: #fc5200; color: white; padding: 10px 20px; border-radius: 6px; font-weight: 600; cursor: pointer; margin-top: 10px; border: none; font-size: 1rem; }
     .progress-box { margin-top: 25px; display: none; }
     .progress-bar-bg { background: #334155; border-radius: 6px; height: 12px; overflow: hidden; }
     .progress-bar-fill { background: #fc5200; width: 0%; height: 100%; transition: width 0.1s; }
-    .status-text { margin-top: 8px; font-size: 0.875rem; color: #94a3b8; text-align: center; font-variant-numeric: tabular-nums; }
-    
-    .dashboard {
-      margin-top: 25px;
-      display: none;
-      background: #0f172a;
-      padding: 20px;
-      border-radius: 8px;
-    }
-    .metric-box {
-      background: #1e293b;
-      border-left: 4px solid #fc5200;
-      padding: 15px;
-      margin-bottom: 15px;
-      border-radius: 4px;
-    }
+    .status-text { margin-top: 8px; font-size: 0.875rem; color: #94a3b8; text-align: center; }
+    #debugError { color: #f87171; margin-top: 15px; font-size: 0.9rem; text-align: center; font-weight: bold; }
+    .dashboard { margin-top: 25px; display: none; background: #0f172a; padding: 20px; border-radius: 8px; }
+    .metric-box { background: #1e293b; border-left: 4px solid #fc5200; padding: 15px; margin-bottom: 15px; border-radius: 4px; }
     .metric-title { font-size: 0.85rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
     .metric-value { font-size: 1.5rem; font-weight: bold; margin: 5px 0; color: #f8fafc; }
     .metric-date { font-size: 0.8rem; color: #64748b; }
-    
     .podium-list { list-style: none; padding: 0; margin: 10px 0 0 0; }
-    .podium-list li {
-      display: flex;
-      justify-content: space-between;
-      padding: 8px 0;
-      border-bottom: 1px solid #334155;
-    }
+    .podium-list li { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #334155; }
     .podium-list li:last-child { border-bottom: none; }
   </style>
 </head>
@@ -103,7 +47,8 @@
       <div class="progress-bar-bg">
         <div class="progress-bar-fill" id="progressBar"></div>
       </div>
-      <div class="status-text" id="statusText">A preparar...</div>
+      <div class="status-text" id="statusText">A iniciar processo...</div>
+      <div id="debugError"></div>
     </div>
 
     <div style="text-align: center;">
@@ -112,20 +57,15 @@
 
     <div class="dashboard" id="dashboard">
       <h2>Resumo do Atleta</h2>
-      
       <div class="metric-box">
         <div class="metric-title">Melhor Potência (1 Hora)</div>
         <div class="metric-value" id="res1hPower">-- W</div>
         <div class="metric-date" id="res1hDate">--</div>
       </div>
-
       <div class="metric-box">
         <div class="metric-title">Top 3 - Potência de 20 Minutos</div>
-        <ul class="podium-list" id="res20mList">
-          <!-- Injetado via JS -->
-        </ul>
+        <ul class="podium-list" id="res20mList"></ul>
       </div>
-
       <div class="metric-box">
         <div class="metric-title">Maior Subida (Ganho de Elevação)</div>
         <div class="metric-value" id="resElevation">-- m</div>
@@ -135,25 +75,30 @@
   </div>
 
   <script>
-    let fitEntries = [];
-    const parser = new FitParser({ force: true, speedUnit: 'km/h', lengthUnit: 'km' });
+    // Apanhador de erros para mostrar na tela o que falhou
+    window.onerror = function(msg, url, lineNo) {
+      document.getElementById('uploadArea').style.display = 'none';
+      document.getElementById('progressBox').style.display = 'block';
+      document.getElementById('debugError').innerText = 'ERRO: ' + msg + ' (Linha: ' + lineNo + ')';
+      return false;
+    };
 
-    // Lida com o carregamento do ZIP
+    let fitEntries = [];
+    let parser = null;
+
     document.getElementById('zipInput').addEventListener('change', async (event) => {
       const file = event.target.files[0];
       if (!file) return;
 
-      // 1. Mostra a área de progresso imediatamente
       document.getElementById('uploadArea').style.display = 'none';
       document.getElementById('progressBox').style.display = 'block';
-      updateProgress(5, 'A carregar ficheiro gigante para a memória. Aguarde, pode demorar um pouco...');
+      updateProgress(5, 'A ler o ficheiro (Isto pode demorar até 1 minuto em ficheiros grandes)...');
 
-      // 2. TRUQUE MÁGICO: Pausar 100ms para forçar o navegador a desenhar a mensagem na tela ANTES de travar
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Pausa forçada para a tela atualizar
+      await new Promise(resolve => setTimeout(resolve, 200));
 
       try {
         const jszip = new JSZip();
-        // Aqui o navegador vai ficar ocupado alguns segundos lendo os 500MB
         const zip = await jszip.loadAsync(file);
         
         fitEntries = [];
@@ -163,20 +108,22 @@
           }
         });
 
+        if (fitEntries.length === 0) {
+          throw new Error("Nenhum ficheiro .fit ou .fit.gz encontrado dentro do ZIP.");
+        }
+
         updateProgress(100, `${fitEntries.length} ficheiros de treino localizados no ZIP.`);
         document.getElementById('analyzeBtn').style.display = 'inline-block';
 
       } catch (err) {
-        updateProgress(0, 'Erro ao abrir ZIP: ' + err.message);
+        document.getElementById('debugError').innerText = 'Erro ao abrir ZIP: ' + err.message;
       }
     });
 
-    // Calcula a média móvel de potência
     function getRollingMax(powers, windowSeconds) {
       if (!powers || powers.length < windowSeconds) return 0;
       let maxAvg = 0;
       let currentSum = 0;
-      
       for (let i = 0; i < powers.length; i++) {
         currentSum += powers[i];
         if (i >= windowSeconds) {
@@ -188,30 +135,27 @@
       return Math.round(maxAvg);
     }
 
-    // Função auxiliar para analisar um único ficheiro FIT
     function parseFitFile(buffer) {
       return new Promise((resolve) => {
+        if (!parser) {
+          // Inicializa o parser apenas na hora de usar, para evitar erros iniciais
+          parser = new window.FitParser({ force: true, speedUnit: 'km/h', lengthUnit: 'km' });
+        }
         parser.parse(buffer, (error, data) => {
-          if (error || !data || !data.records) {
-            resolve(null);
-          } else {
-            resolve(data);
-          }
+          if (error || !data || !data.records) resolve(null);
+          else resolve(data);
         });
       });
     }
 
-    // Inicia o processamento em lote
     async function startAnalysis() {
       document.getElementById('analyzeBtn').style.display = 'none';
-      document.getElementById('dashboard').style.display = 'none';
       
       let allActivities = [];
 
       for (let i = 0; i < fitEntries.length; i++) {
-        // Atualiza a interface a cada ficheiro para não bloquear o navegador
-        if (i % 5 === 0) {
-          updateProgress((i / fitEntries.length) * 100, `A descompactar e analisar ficheiro ${i + 1} de ${fitEntries.length}... (Isto pode levar alguns minutos)`);
+        if (i % 3 === 0) {
+          updateProgress((i / fitEntries.length) * 100, `A analisar ficheiro ${i + 1} de ${fitEntries.length}...`);
           await new Promise(r => setTimeout(r, 0)); 
         }
 
@@ -219,7 +163,6 @@
           const entry = fitEntries[i];
           const rawData = await entry.async("uint8array");
           
-          // Descompacta se for .gz
           let fitBuffer = rawData;
           if (entry.name.endsWith('.gz')) {
             try { fitBuffer = pako.inflate(rawData); } catch(e) {}
@@ -227,27 +170,18 @@
 
           const data = await parseFitFile(fitBuffer);
           if (data && data.records && data.records.length > 0) {
-            // Extrai potências, considerando 0 onde houver falha de sinal
             const powers = data.records.map(r => r.power || 0);
-            
-            const max20m = getRollingMax(powers, 1200); // 20 min = 1200 seg
-            const max1h = getRollingMax(powers, 3600);  // 1 hora = 3600 seg
-            
-            let ascent = 0;
-            if (data.sessions && data.sessions[0] && data.sessions[0].total_ascent) {
-              ascent = data.sessions[0].total_ascent;
-            }
-
-            let date = data.sessions && data.sessions[0] && data.sessions[0].start_time 
-                       ? new Date(data.sessions[0].start_time).toLocaleDateString('pt-BR') 
-                       : 'Data desconhecida';
+            const max20m = getRollingMax(powers, 1200);
+            const max1h = getRollingMax(powers, 3600);
+            let ascent = data.sessions && data.sessions[0] && data.sessions[0].total_ascent ? data.sessions[0].total_ascent : 0;
+            let date = data.sessions && data.sessions[0] && data.sessions[0].start_time ? new Date(data.sessions[0].start_time).toLocaleDateString('pt-BR') : 'Data desconhecida';
 
             if (max20m > 0 || ascent > 0) {
               allActivities.push({ date, max20m, max1h, ascent });
             }
           }
         } catch (e) {
-          console.warn('Erro ao processar ficheiro', fitEntries[i].name, e);
+          // Ignora ficheiros corrompidos e continua
         }
       }
 
@@ -260,31 +194,25 @@
       document.getElementById('dashboard').style.display = 'block';
 
       if (activities.length === 0) {
-        document.getElementById('res1hPower').innerText = 'Nenhum dado encontrado.';
+        document.getElementById('res1hPower').innerText = 'Sem dados.';
         return;
       }
 
-      // Melhor potência de 1 hora
       const best1h = activities.reduce((prev, curr) => (prev.max1h > curr.max1h) ? prev : curr);
       document.getElementById('res1hPower').innerText = `${best1h.max1h} W`;
       document.getElementById('res1hDate').innerText = `Registado em: ${best1h.date}`;
 
-      // Maior elevação
       const bestElev = activities.reduce((prev, curr) => (prev.ascent > curr.ascent) ? prev : curr);
       document.getElementById('resElevation').innerText = `${bestElev.ascent} m`;
       document.getElementById('resElevDate').innerText = `Registado em: ${bestElev.date}`;
 
-      // Top 3 de 20 minutos
       const sorted20m = [...activities].sort((a, b) => b.max20m - a.max20m).slice(0, 3);
       const listEl = document.getElementById('res20mList');
       listEl.innerHTML = '';
       
       sorted20m.forEach((act, index) => {
         const li = document.createElement('li');
-        li.innerHTML = `
-          <span><strong>${index + 1}º</strong> - ${act.max20m} W</span>
-          <span style="color: #94a3b8; font-size: 0.9rem;">${act.date}</span>
-        `;
+        li.innerHTML = `<span><strong>${index + 1}º</strong> - ${act.max20m} W</span><span style="color: #94a3b8; font-size: 0.9rem;">${act.date}</span>`;
         listEl.appendChild(li);
       });
     }

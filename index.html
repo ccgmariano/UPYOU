@@ -88,11 +88,12 @@
           const rawData = await targetEntry.async("uint8array");
           const decompressed = pako.inflate(rawData);
 
-          let FitParserClass = window.FitParser;
-          if (FitParserClass && FitParserClass.default) {
-            FitParserClass = FitParserClass.default;
+          // Correção direta da instância do FitParser
+          if (typeof window.FitParser !== 'function') {
+            throw new Error("A biblioteca FitParser não foi carregada corretamente do CDN.");
           }
-          const parser = new FitParserClass({ force: true, speedUnit: 'km/h' });
+
+          const parser = new window.FitParser({ force: true, speedUnit: 'km/h' });
 
           parser.parse(decompressed.buffer, (error, data) => {
             if (error) throw new Error("Erro ao interpretar dados FIT: " + error);
@@ -100,16 +101,15 @@
             const records = data.records || [];
             if (records.length === 0) throw new Error("Nenhum registo encontrado no ficheiro FIT.");
 
-            // Descontar pausas (considera em movimento se potência, cadência ou velocidade forem > 0)
             const movingRecords = records.filter(r => (r.power || 0) > 0 || (r.cadence || 0) > 0 || (r.speed || 0) > 0);
 
             const avgPwr = movingRecords.length ? Math.round(movingRecords.reduce((acc, r) => acc + (r.power || 0), 0) / movingRecords.length) : 0;
             
             const validHr = movingRecords.filter(r => (r.heart_rate || 0) > 0);
-            const avgHr = validHr.length ? Math.round(validHr.reduce((acc, r) => acc + r.heart_rate, 0) / validHr.length) : 0;
+            const avgHr = validHr.length ? Math.round(validHr.reduce((acc, r) => acc + (r.heart_rate || 0), 0) / validHr.length) : 0;
 
             const validCad = movingRecords.filter(r => (r.cadence || 0) > 0);
-            const avgCad = validCad.length ? Math.round(validCad.reduce((acc, r) => acc + r.cadence, 0) / validCad.length) : 0;
+            const avgCad = validCad.length ? Math.round(validCad.reduce((acc, r) => acc + (r.cadence || 0), 0) / validCad.length) : 0;
 
             const validSpeed = movingRecords.filter(r => (r.speed || 0) > 0);
             const avgSpeed = validSpeed.length ? (validSpeed.reduce((acc, r) => acc + r.speed, 0) / validSpeed.length).toFixed(1) : 0;
@@ -122,7 +122,6 @@
             document.getElementById('avgCad').innerText = `${avgCad} rpm`;
             document.getElementById('avgSpeed').innerText = `${avgSpeed} km/h`;
 
-            // Top 4 períodos de 4 minutos (240 segundos)
             let powers = records.map(r => r.power || 0);
             const windowSize = 240;
             let intervals = [];

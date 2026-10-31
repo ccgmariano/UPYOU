@@ -6,7 +6,6 @@
   <title>Treinador Virtual UPYOU</title>
   
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/fit-file-parser@1.9.0/dist/fit-parser.min.js"></script>
 
   <style>
@@ -89,7 +88,7 @@
 
       document.getElementById('uploadArea').style.display = 'none';
       document.getElementById('progressBox').style.display = 'block';
-      updateProgress(5, 'A descompactar ZIP (Pode demorar um pouco)...');
+      updateProgress(5, 'A mapear ficheiros no ZIP...');
 
       await new Promise(resolve => setTimeout(resolve, 200));
 
@@ -114,6 +113,13 @@
         document.getElementById('debugError').innerText = 'Erro: ' + err.message;
       }
     });
+
+    // Descompressão nativa do navegador (Streams API - sem falhas com .gz)
+    async function decompressGzip(uint8Array) {
+      const stream = new Response(uint8Array).body.pipeThrough(new DecompressionStream('gzip'));
+      const buffer = await new Response(stream).arrayBuffer();
+      return new Uint8Array(buffer);
+    }
 
     function getRollingMax(records, windowSeconds) {
       if (!records || records.length < 2) return 0;
@@ -182,14 +188,18 @@
           
           let buffer = rawData;
           if (fileName.endsWith('.gz')) {
-            try { buffer = pako.inflate(rawData); } catch(e) {}
+            try {
+              buffer = await decompressGzip(rawData);
+            } catch (gzErr) {
+              continue; // Ignora se estiver corrompido
+            }
           }
 
           let powerRecords = [];
           let ascent = 0;
           let date = 'Data desconhecida';
 
-          // GPX ou TCX (descompactados ou puros)
+          // GPX ou TCX descompactados
           if (fileName.includes('.gpx') || fileName.includes('.tcx')) {
             const text = new TextDecoder().decode(buffer);
             
@@ -216,7 +226,7 @@
               }
             }
           } 
-          // FIT (descompactado ou puro)
+          // FIT descompactado
           else if (fileName.includes('.fit')) {
             let arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
             const data = await parseFitFile(arrayBuffer);
@@ -240,7 +250,7 @@
             allActivities.push({ date, max20m, max1h, ascent: Math.round(ascent) });
           }
         } catch (e) {
-          // Ignora falhas isoladas
+          // Continua o loop
         }
       }
 

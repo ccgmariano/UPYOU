@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Treinador Virtual UPYOU - Análise Cirúrgica 25/10/2026</title>
+  <title>Treinador Virtual UPYOU - Análise Cirúrgica 27/10/2026</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
 
@@ -26,7 +26,7 @@
 <body>
 
   <div class="card">
-    <h1>Treinador Virtual UPYOU <br><span style="font-size: 1rem; color: #94a3b8;">Análise Exclusiva: 25 de Outubro de 2026</span></h1>
+    <h1>Treinador Virtual UPYOU <br><span style="font-size: 1rem; color: #94a3b8;">Análise Exclusiva: 27 de Outubro de 2026</span></h1>
     
     <div class="upload-area" id="uploadArea" onclick="document.getElementById('zipInput').click()">
       <p>Selecione o seu ficheiro ZIP do Strava</p>
@@ -71,49 +71,62 @@
       if (!file) return;
 
       document.getElementById('uploadArea').style.display = 'none';
-      // Correção aplicada aqui: referência correta ao ID statusMsg
       const msgEl = document.getElementById('statusMsg');
       msgEl.style.color = '#38bdf8';
-      msgEl.innerText = 'A abrir o ZIP e a procurar o treino de 25/10/2026...';
+      msgEl.innerText = 'A abrir o ZIP e a ler o activities.csv...';
 
+      // Pausa essencial para o navegador atualizar o texto no ecrã antes de processar o ZIP
       setTimeout(async () => {
         try {
           const jszip = new JSZip();
           const zip = await jszip.loadAsync(file);
           
-          let targetText = "";
-          let foundName = "";
+          let csvEntry = null;
+          zip.forEach((path, entry) => {
+            if (path.toLowerCase().includes('activities.csv')) csvEntry = entry;
+          });
 
-          for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
-            if (zipEntry.dir) continue;
-            const lower = relativePath.toLowerCase();
-            if (!lower.includes('activities/')) continue;
+          if (!csvEntry) throw new Error("O ficheiro 'activities.csv' não foi encontrado no ZIP.");
 
-            const raw = await zipEntry.async("uint8array");
-            let text = "";
-            if (lower.endsWith('.gz')) {
-              try {
-                text = new TextDecoder().decode(pako.inflate(raw));
-              } catch (e) {
-                continue;
+          const csvText = await csvEntry.async("string");
+          const lines = csvText.split('\n');
+          let targetFileName = "";
+
+          for (let i = 1; i < lines.length; i++) {
+            const line = lines[i];
+            // Altera a busca para o dia 27 de outubro de 2026
+            if (line.includes('27 de out. de 2026')) {
+              const matchFile = line.match(/(activities\/[^,"]+\.(fit|gpx|tcx)\.gz)/i);
+              if (matchFile) {
+                targetFileName = matchFile[1];
               }
-            } else {
-              text = new TextDecoder().decode(raw);
-            }
-
-            if (text.includes('2026-10-25')) {
-              targetText = text;
-              foundName = relativePath.split('/').pop();
               break;
             }
           }
 
-          if (!targetText) {
-            throw new Error("Não foi encontrada nenhuma atividade com a data de 25 de outubro de 2026 dentro do ZIP.");
+          if (!targetFileName) throw new Error("Atividade de 27 de out. de 2026 não encontrada no CSV.");
+
+          msgEl.innerText = `Ficheiro mapeado: ${targetFileName}. A carregar...`;
+
+          let targetEntry = null;
+          zip.forEach((path, entry) => {
+            if (path.toLowerCase().includes(targetFileName.toLowerCase())) {
+              targetEntry = entry;
+            }
+          });
+
+          if (!targetEntry) throw new Error(`O ficheiro ${targetFileName} não foi encontrado dentro do ZIP.`);
+
+          const raw = await targetEntry.async("uint8array");
+          let text = "";
+          if (targetFileName.endsWith('.gz')) {
+            text = new TextDecoder().decode(pako.inflate(raw));
+          } else {
+            text = new TextDecoder().decode(raw);
           }
 
           msgEl.innerText = '';
-          processActivityData(targetText, foundName);
+          processActivityData(text, targetFileName.split('/').pop());
 
         } catch (err) {
           msgEl.style.color = '#f87171';
@@ -163,6 +176,7 @@
 
       records.sort((a, b) => a.time - b.time);
 
+      // Descontar pausas rigorosamente (potência > 0 ou cadência > 0)
       const movingRecords = records.filter(r => r.power > 0 || r.cad > 0);
 
       const avgPwr = movingRecords.length ? Math.round(movingRecords.reduce((acc, r) => acc + r.power, 0) / movingRecords.length) : 0;

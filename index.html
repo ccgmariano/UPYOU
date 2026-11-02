@@ -1,11 +1,12 @@
 <!DOCTYPE html>
-<html lang="pt">
+<html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Treinador Virtual UPYOU - Análise Cirúrgica 27/10/2026</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+  <script src="https://unpkg.com/fit-file-parser@1.17.0/dist/fit-parser.min.js"></script>
 
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; }
@@ -75,7 +76,6 @@
       msgEl.style.color = '#38bdf8';
       msgEl.innerText = 'A abrir o ZIP e a ler o activities.csv...';
 
-      // Pausa essencial para o navegador atualizar o texto no ecrã antes de processar o ZIP
       setTimeout(async () => {
         try {
           const jszip = new JSZip();
@@ -94,9 +94,8 @@
 
           for (let i = 1; i < lines.length; i++) {
             const line = lines[i];
-            // Altera a busca para o dia 27 de outubro de 2026
             if (line.includes('27 de out. de 2026')) {
-              const matchFile = line.match(/(activities\/[^,"]+\.(fit|gpx|tcx)\.gz)/i);
+              const matchFile = line.match(/(activities\/[^,"]+\.fit\.gz)/i);
               if (matchFile) {
                 targetFileName = matchFile[1];
               }
@@ -106,7 +105,7 @@
 
           if (!targetFileName) throw new Error("Atividade de 27 de out. de 2026 não encontrada no CSV.");
 
-          msgEl.innerText = `Ficheiro mapeado: ${targetFileName}. A carregar...`;
+          msgEl.innerText = `Ficheiro mapeado: ${targetFileName}. A descompactar...`;
 
           let targetEntry = null;
           zip.forEach((path, entry) => {
@@ -117,16 +116,31 @@
 
           if (!targetEntry) throw new Error(`O ficheiro ${targetFileName} não foi encontrado dentro do ZIP.`);
 
-          const raw = await targetEntry.async("uint8array");
-          let text = "";
-          if (targetFileName.endsWith('.gz')) {
-            text = new TextDecoder().decode(pako.inflate(raw));
-          } else {
-            text = new TextDecoder().decode(raw);
+          const rawData = await targetEntry.async("uint8array");
+          const decompressed = pako.inflate(rawData);
+
+          // Verifica o construtor da biblioteca de forma segura
+          let FitParserClass = window.FitParser || window.fitParser;
+          if (!FitParserClass) {
+            throw new Error("A biblioteca FitParser não foi carregada corretamente do CDN.");
           }
 
-          msgEl.innerText = '';
-          processActivityData(text, targetFileName.split('/').pop());
+          msgEl.innerText = 'A interpretar dados binários FIT...';
+
+          const fitParser = new FitParserClass({
+            force: true,
+            speedUnit: 'km/h',
+            lengthUnit: 'm',
+            temperatureUnit: 'celsius',
+            mode: 'cascade'
+          });
+
+          fitParser.parse(decompressed.buffer, (error, data) => {
+            if (error) throw new Error("Erro ao interpretar FIT: " + error);
+
+            msgEl.innerText = '';
+            processActivityRecords(data.records || [], targetFileName.split('/').pop());
+          });
 
         } catch (err) {
           msgEl.style.color = '#f87171';
@@ -135,48 +149,26 @@
       }, 150);
     });
 
-    function processActivityData(xmlText, fileName) {
+    function processActivityRecords(rawRecords, fileName) {
+      if (rawRecords.length === 0) {
+        throw new Error("Nenhum registo encontrado no ficheiro FIT.");
+      }
+
       document.getElementById('results').style.display = 'block';
       document.getElementById('actTitle').innerText = `Atividade: ${fileName}`;
 
-      let records = [];
-      const trkpts = [...xmlText.matchAll(/<trkpt[\s\S]*?<\/trkpt>|<Trackpoint>[\s\S]*?<\/Trackpoint>/gi)];
-
-      let prevLat = null, prevLon = null, prevTime = null;
-
-      trkpts.forEach((pt, idx) => {
-        const block = pt[0];
-
-        const tMatch = block.match(/<time>([^<]+)<\/time>/i);
-        const pMatch = block.match(/<power>([\d.-]+)<\/power>|<Watts>([\d.-]+)<\/Watts>|<[^:]+:power>([\d.-]+)<\/[^:]+:power>/i);
-        const hMatch = block.match(/<[^:]+:hr>([\d.-]+)<\/[^:]+:hr>|<HeartRateBpm>[\s\S]*?<Value>([\d.-]+)<\/Value>[\s\S]*?<\/HeartRateBpm>|<hr>([\d.-]+)<\/hr>/i);
-        const cMatch = block.match(/<[^:]+:cad>([\d.-]+)<\/[^:]+:cad>|<Cadence>([\d.-]+)<\/Cadence>|<cad>([\d.-]+)<\/cad>/i);
-        
-        const lat = parseFloat(block.match(/lat="([-\d.]+)"/i)?.[1] || 0);
-        const lon = parseFloat(block.match(/lon="([-\d.]+)"/i)?.[1] || 0);
-
-        const time = tMatch ? new Date(tMatch[1]).getTime() / 1000 : idx;
-        const power = pMatch ? parseInt(pMatch[1] || pMatch[2] || pMatch[3]) : 0;
-        const hr = hMatch ? parseInt(hMatch[1] || hMatch[2] || hMatch[3]) : 0;
-        const cad = cMatch ? parseInt(cMatch[1] || cMatch[2] || cMatch[3]) : 0;
-
-        let speed = 0;
-        if (prevLat !== null && prevTime !== null && time > prevTime) {
-          const distKm = getDistanceFromLatLonInKm(prevLat, prevLon, lat, lon);
-          const hours = (time - prevTime) / 3600;
-          if (hours > 0) speed = distKm / hours;
-        }
-
-        prevLat = lat;
-        prevLon = lon;
-        prevTime = time;
-
-        records.push({ time, power, hr, cad, speed });
-      });
+      // Converte a estrutura proprietária do FIT para uma estrutura simples com tempo em UNIX (segundos)
+      let records = rawRecords.map(r => ({
+        time: r.timestamp ? new Date(r.timestamp).getTime() / 1000 : 0,
+        power: r.power || 0,
+        hr: r.heart_rate || 0,
+        cad: r.cadence || 0,
+        speed: r.speed || 0
+      })).filter(r => r.time > 0);
 
       records.sort((a, b) => a.time - b.time);
 
-      // Descontar pausas rigorosamente (potência > 0 ou cadência > 0)
+      // FILTRAR PAUSAS rigorosamente (em movimento quando potência ou cadência > 0)
       const movingRecords = records.filter(r => r.power > 0 || r.cad > 0);
 
       const avgPwr = movingRecords.length ? Math.round(movingRecords.reduce((acc, r) => acc + r.power, 0) / movingRecords.length) : 0;
@@ -195,6 +187,7 @@
       document.getElementById('avgCad').innerText = `${avgCad} rpm`;
       document.getElementById('avgSpeed').innerText = `${avgSpeed} km/h`;
 
+      // CONSTRUÇÃO DA TIMELINE (Preenchendo eventuais saltos de pausa com 0 para não viciar a média de 4 min)
       let timeline = [];
       if (records.length > 1) {
         let startT = records[0].time;
@@ -202,10 +195,11 @@
         let recMap = new Map(records.map(r => [r.time, r.power]));
 
         for (let t = startT; t <= endT; t++) {
-          timeline.push(recMap.get(t) || 0);
+          timeline.push(recMap.get(t) || 0); 
         }
       }
 
+      // JANELA DESLIZANTE DE 4 MINUTOS (240s)
       const windowSize = 240;
       let intervals = [];
 
@@ -219,6 +213,7 @@
 
       intervals.sort((a, b) => b.avg - a.avg);
 
+      // Seleção dos Top 4, assegurando que as janelas de tempo não se sobrepõem (distância mínima de 4 mins entre elas)
       let top4 = [];
       for (const item of intervals) {
         if (!top4.some(existing => Math.abs(existing.index - item.index) < windowSize)) {
@@ -232,22 +227,6 @@
         : 'Dados insuficientes para blocos de 4 min.';
       
       document.getElementById('top4Mins').innerHTML = top4Html;
-    }
-
-    function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
-      const R = 6371;
-      const dLat = deg2rad(lat2 - lat1);
-      const dLon = deg2rad(lon2 - lon1);
-      const a = 
-        Math.sin(dLat/2) * Math.sin(dLat/2) +
-        Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * 
-        Math.sin(dLon/2) * Math.sin(dLon/2); 
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
-      return R * c;
-    }
-
-    function deg2rad(deg) {
-      return deg * (Math.PI/180);
     }
   </script>
 </body>

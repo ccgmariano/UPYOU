@@ -13,7 +13,7 @@
     
     /* Painel Fixo Superior */
     #topDashboard { display: none; position: sticky; top: 0; z-index: 1000; background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(10px); width: 100%; border-bottom: 2px solid #fc5200; box-shadow: 0 4px 15px rgba(0,0,0,0.5); padding: 15px 20px; box-sizing: border-box; }
-    .top-stats-container { max-width: 1050px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; }
+    .top-stats-container { max-width: 1100px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; }
     .top-metric { text-align: center; }
     .top-metric span { display: block; font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; }
     .top-metric strong { font-size: 1.3rem; color: #fff; }
@@ -54,7 +54,7 @@
     .stat-val { font-size: 1.2rem; font-weight: bold; color: #fff; }
 
     /* Gráficos */
-    .chart-container { position: relative; height: 400px; width: 100%; background: #0f172a; padding: 20px; border-radius: 8px; box-sizing: border-box; border-left: 4px solid #38bdf8; margin-top: 15px;}
+    .chart-container { position: relative; height: 350px; width: 100%; background: #0f172a; padding: 20px; border-radius: 8px; box-sizing: border-box; border-left: 4px solid #38bdf8; margin-top: 15px; margin-bottom: 30px;}
     
     .filter-controls { display: flex; gap: 15px; justify-content: center; margin-bottom: 20px; flex-wrap: wrap;}
     .select-style { background: #334155; color: #fff; border: 1px solid #475569; padding: 8px 12px; border-radius: 6px; font-weight: bold; outline: none; cursor: pointer;}
@@ -89,9 +89,9 @@
       </div>
       <div class="nav-buttons">
         <button class="nav-btn active" id="btnHistory" onclick="switchView('summaryArea', this)">Histórico</button>
-        <button class="nav-btn" id="btnPowerBars" onclick="switchView('powerBarsArea', this); renderPowerBars();">Recordes (Gráfico Barras)</button>
-        <button class="nav-btn" id="btnPower" onclick="switchView('powerCurveArea', this); renderPowerCurve();">Curva de Potência (Anual)</button>
-        <button class="nav-btn" id="btnZones" onclick="switchView('zonesArea', this); renderZones();">Tempo em Zonas</button>
+        <button class="nav-btn" id="btnPowerBars" onclick="switchView('powerBarsArea', this); renderPowerBars();">Recordes de Potência</button>
+        <button class="nav-btn" id="btnZones" onclick="switchView('zonesArea', this); renderZones();">Zonas Potência</button>
+        <button class="nav-btn" id="btnHrAnalysis" onclick="switchView('hrAnalysisArea', this); renderHrAnalysis();" style="border-color: #ef4444; color: #fca5a5;">Cardio & Eficiência</button>
       </div>
     </div>
   </div>
@@ -125,10 +125,10 @@
         <div class="stat-grid">
           <div class="stat-box"><div class="stat-title">Tempo Movimento</div><div class="stat-val" id="detTime">--</div></div>
           <div class="stat-box"><div class="stat-title">Distância</div><div class="stat-val" id="detDist">--</div></div>
-          <div class="stat-box"><div class="stat-title">Velocidade Média</div><div class="stat-val" id="detSpeed">--</div></div>
+          <div class="stat-box"><div class="stat-title">Fator de Eficiência (EF)</div><div class="stat-val" id="detEf" style="color: #38bdf8;">--</div></div>
           <div class="stat-box"><div class="stat-title">Potência Média</div><div class="stat-val" id="detPwr">--</div></div>
           <div class="stat-box"><div class="stat-title">FC Média</div><div class="stat-val" id="detHr">--</div></div>
-          <div class="stat-box"><div class="stat-title">Cadência Média</div><div class="stat-val" id="detCad">--</div></div>
+          <div class="stat-box"><div class="stat-title">FC Máxima</div><div class="stat-val" id="detMaxHr" style="color: #ef4444;">--</div></div>
         </div>
 
         <div class="stat-box" style="border-left-color: #38bdf8;">
@@ -137,69 +137,72 @@
         </div>
       </div>
 
-      <!-- 3. Gráfico de Barras de Potência (NOVO) -->
+      <!-- 3. Gráfico de Barras de Potência -->
       <div id="powerBarsArea" class="view-section">
         <h2 style="color: #f8fafc; margin-top: 0; text-align: center;">Recordes de Potência no Tempo</h2>
         <div class="filter-controls">
           <select id="barPeriodSelector" class="select-style" onchange="renderPowerBars()">
             <option value="year">Por Ano</option>
-            <option value="semester">Por Semestre</option>
-            <option value="quarter">Por Trimestre</option>
             <option value="month" selected>Por Mês</option>
             <option value="week">Por Semana</option>
-            <option value="day">Por Dia (Atividade)</option>
           </select>
           <select id="barIntervalSelector" class="select-style" onchange="renderPowerBars()">
-            <option value="1">Pico de 1s</option>
-            <option value="3">Pico de 3s</option>
-            <option value="5">Pico de 5s</option>
             <option value="15">Pico de 15s</option>
             <option value="60">1 Minuto</option>
             <option value="240">4 Minutos</option>
-            <option value="300">5 Minutos</option>
-            <option value="900">15 Minutos</option>
             <option value="1200">20 Minutos</option>
             <option value="3600">60 Minutos</option>
-            <option value="7200">120 Minutos</option>
           </select>
         </div>
-        <div class="chart-container">
-          <canvas id="powerBarsChart"></canvas>
-        </div>
+        <div class="chart-container"><canvas id="powerBarsChart"></canvas></div>
       </div>
 
-      <!-- 4. Curva de Potência Anual -->
-      <div id="powerCurveArea" class="view-section">
-        <h2 style="color: #f8fafc; margin-top: 0;">Curva de Potência Histórica (Recordes por Ano)</h2>
-        <p style="color: #94a3b8; font-size: 0.9rem;">Analisa os seus melhores picos de potência sustentada nos intervalos clássicos.</p>
-        <div class="chart-container">
-          <canvas id="powerChart"></canvas>
-        </div>
-      </div>
-
-      <!-- 5. Tempo em Zonas -->
+      <!-- 4. Tempo em Zonas -->
       <div id="zonesArea" class="view-section">
         <h2 style="color: #f8fafc; margin-top: 0;">Tempo Total em Zonas de Potência</h2>
         <p style="color: #94a3b8; font-size: 0.9rem;">Acumulado de todo o histórico baseado num FTP estimado de <strong style="color:#fc5200" id="displayFtp">250W</strong>.</p>
-        <div class="chart-container">
-          <canvas id="zonesChart"></canvas>
-        </div>
+        <div class="chart-container" style="height: 400px;"><canvas id="zonesChart"></canvas></div>
+      </div>
+
+      <!-- 5. NOVO: Cardio e Eficiência (EF, Drift e HR por Zona) -->
+      <div id="hrAnalysisArea" class="view-section">
+        <h2 style="color: #fca5a5; margin-top: 0;">Análise de Eficiência Fisiológica e Cardíaca</h2>
+        <p style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 25px;">Cruza o trabalho mecânico (Watts) com o custo interno (BPM).</p>
+        
+        <h3 style="color: #f8fafc; font-size: 1rem;">Evolução do Fator de Eficiência (EF) Médio por Mês</h3>
+        <p style="color: #94a3b8; font-size: 0.8rem; margin-top: -10px;">(Watts gerados por cada 1 Batimento Cardíaco. Quanto MAIOR a barra, melhor a sua base aeróbica).</p>
+        <div class="chart-container"><canvas id="efChart"></canvas></div>
+
+        <h3 style="color: #f8fafc; font-size: 1rem; margin-top: 40px;">Desacoplamento Aeróbico (Cardiac Drift) Médio por Mês</h3>
+        <p style="color: #94a3b8; font-size: 0.8rem; margin-top: -10px;">(Perda de eficiência na 2ª metade de treinos longos >1h. O ideal é manter < 5%).</p>
+        <div class="chart-container" style="border-left-color: #ef4444;"><canvas id="driftChart"></canvas></div>
+
+        <h3 style="color: #f8fafc; font-size: 1rem; margin-top: 40px;">Assinatura Cardíaca: FC Média por Zona de Potência</h3>
+        <p style="color: #94a3b8; font-size: 0.8rem; margin-top: -10px;">(Mapeamento de todo o histórico: A quantos BPM o seu coração bate em cada Zona).</p>
+        <div class="chart-container" style="border-left-color: #22c55e;"><canvas id="hrZonesChart"></canvas></div>
       </div>
 
     </div>
   </div>
 
   <script>
-    const USER_FTP = 250; // Configure o seu FTP (usado para o gráfico de zonas)
+    const USER_FTP = 250; 
     document.getElementById('displayFtp').innerText = USER_FTP + 'W';
 
     let dbActivities = []; 
-    let globalStats = { totalDist: 0, totalTime: 0, zones: [0,0,0,0,0,0], yearlyPower: {} };
+    let globalStats = { 
+      totalDist: 0, totalTime: 0, zones: [0,0,0,0,0,0], yearlyPower: {},
+      zoneHrSum: [0,0,0,0,0,0], zoneHrCount: [0,0,0,0,0,0],
+      monthlyEf: {}, monthlyDrift: {}
+    };
     let lastScrollY = 0;
     
-    let powerChartInstance = null;
+    // Gráficos instâncias
     let zonesChartInstance = null;
     let powerBarsChartInstance = null;
+    let efChartInstance = null;
+    let driftChartInstance = null;
+    let hrZonesChartInstance = null;
 
     document.getElementById('zipInput').addEventListener('change', async (event) => {
       const file = event.target.files[0];
@@ -216,9 +219,7 @@
           const zip = await jszip.loadAsync(file);
           
           let csvEntry = null;
-          zip.forEach((path, entry) => {
-            if (path.toLowerCase().includes('activities.csv')) csvEntry = entry;
-          });
+          zip.forEach((path, entry) => { if (path.toLowerCase().includes('activities.csv')) csvEntry = entry; });
 
           if (!csvEntry) throw new Error("Ficheiro 'activities.csv' não encontrado no ZIP.");
 
@@ -229,7 +230,6 @@
           for (let i = 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
-            
             let cols = [];
             let inQuote = false, val = '';
             for (let ch of line) {
@@ -243,13 +243,11 @@
             }
             cols.push(val);
 
-            // Verifica as pedaladas (com base no tipo de atividade)
             if (cols.length > 10 && cols[3] === 'Pedalada') {
               const filePath = cols.find(c => c.toLowerCase().includes('activities/') && c.toLowerCase().endsWith('.fit.gz'));
               if (filePath) {
                 const dateMatch = cols[1].match(/\d{4}/);
-                const year = dateMatch ? dateMatch[0] : 'Histórico';
-                queue.push({ date: cols[1], name: cols[2], file: filePath, year: year });
+                queue.push({ date: cols[1], name: cols[2], file: filePath, year: dateMatch ? dateMatch[0] : 'Histórico' });
               }
             }
           }
@@ -257,9 +255,8 @@
           if (queue.length === 0) throw new Error("Nenhuma pedalada FIT localizada.");
 
           dbActivities = [];
-          globalStats = { totalDist: 0, totalTime: 0, zones: [0,0,0,0,0,0], yearlyPower: {} };
+          globalStats = { totalDist: 0, totalTime: 0, zones: [0,0,0,0,0,0], yearlyPower: {}, zoneHrSum: [0,0,0,0,0,0], zoneHrCount: [0,0,0,0,0,0], monthlyEf: {}, monthlyDrift: {} };
 
-          // Processamento em lote
           for (let i = 0; i < queue.length; i++) {
             const task = queue[i];
             progressText.innerText = `A processar atividade ${i + 1} de ${queue.length}...`;
@@ -282,7 +279,7 @@
                 }
               } catch (e) {}
             }
-            await new Promise(r => setTimeout(r, 10)); 
+            await new Promise(r => setTimeout(r, 5)); 
           }
 
           document.getElementById('initScreen').style.display = 'none';
@@ -299,7 +296,6 @@
       }, 100);
     });
 
-    // Descodificador FIT Nativo Otimizado
     function parseFitNative(u8) {
       const view = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
       let offset = view.getUint8(0);
@@ -368,35 +364,73 @@
       records.sort((a, b) => a.t - b.t);
 
       const maxDist = records.reduce((max, r) => r.d > max ? r.d : max, 0);
-      const startTimestamp = records[0].t * 1000; // Guarda momento inicial da atividade para o gráfico de barras
+      const startTimestamp = records[0].t * 1000; 
       
       const moving = records.filter(r => r.s >= 3);
-      const totalSecs = moving.length; // Tempo efetivo em movimento
+      if (moving.length === 0) return null;
+      
+      const totalSecs = moving.length; 
+      let maxHr = 0;
 
-      const avgPwr = moving.length ? Math.round(moving.reduce((acc, r) => acc + r.p, 0) / moving.length) : 0;
+      const avgPwr = Math.round(moving.reduce((acc, r) => acc + r.p, 0) / moving.length);
       const validHr = moving.filter(r => r.h > 0 && r.h < 220);
       const avgHr = validHr.length ? Math.round(validHr.reduce((acc, r) => acc + r.h, 0) / validHr.length) : 0;
-      const validCad = moving.filter(r => r.c > 0 && r.c < 180);
-      const avgCad = validCad.length ? Math.round(validCad.reduce((acc, r) => acc + r.c, 0) / validCad.length) : 0;
-      const avgSpeed = moving.length ? (moving.reduce((acc, r) => acc + r.s, 0) / moving.length).toFixed(1) : 0;
+      const avgCad = moving.filter(r => r.c > 0 && r.c < 180).reduce((acc, r, i, arr) => acc + r.c / arr.length, 0);
+      const avgSpeed = (moving.reduce((acc, r) => acc + r.s, 0) / moving.length).toFixed(1);
 
+      // Agregação de HR por Zona e Zonas Totais
       moving.forEach(r => {
+        if(r.h > maxHr) maxHr = r.h;
         if(r.p > 0) {
           const pct = r.p / USER_FTP;
-          if (pct < 0.55) globalStats.zones[0]++;
-          else if (pct < 0.75) globalStats.zones[1]++;
-          else if (pct < 0.90) globalStats.zones[2]++;
-          else if (pct < 1.05) globalStats.zones[3]++;
-          else if (pct < 1.20) globalStats.zones[4]++;
-          else globalStats.zones[5]++;
+          let z = 0;
+          if (pct < 0.55) z=0; else if (pct < 0.75) z=1; else if (pct < 0.90) z=2; else if (pct < 1.05) z=3; else if (pct < 1.20) z=4; else z=5;
+          globalStats.zones[z]++;
+          if(r.h > 0) {
+            globalStats.zoneHrSum[z] += r.h;
+            globalStats.zoneHrCount[z]++;
+          }
         }
       });
 
-      // Timeline com preenchimento zero nas pausas para evitar recordes falsos
+      // Fator de Eficiência da Atividade (EF)
+      const activityEf = avgHr > 0 ? (avgPwr / avgHr) : 0;
+
+      // Desacoplamento Aeróbico (Cardiac Drift) p/ treinos longos
+      let drift = 0;
+      if (moving.length > 3600) { // mais de 1h em movimento
+        const half = Math.floor(moving.length / 2);
+        const p1 = moving.slice(0, half).reduce((acc, r) => acc + r.p, 0) / half;
+        const h1 = moving.slice(0, half).filter(r=>r.h>0);
+        const avgH1 = h1.length ? h1.reduce((acc, r) => acc + r.h, 0) / h1.length : 0;
+        
+        const p2 = moving.slice(half).reduce((acc, r) => acc + r.p, 0) / (moving.length - half);
+        const h2 = moving.slice(half).filter(r=>r.h>0);
+        const avgH2 = h2.length ? h2.reduce((acc, r) => acc + r.h, 0) / h2.length : 0;
+
+        const ef1 = avgH1 > 0 ? p1 / avgH1 : 0;
+        const ef2 = avgH2 > 0 ? p2 / avgH2 : 0;
+        if (ef1 > 0 && ef2 > 0) drift = ((ef1 - ef2) / ef1) * 100;
+      }
+
+      // Agrega EF e Drift no Mês para o Gráfico
+      const dDate = new Date(startTimestamp);
+      const mKey = `${dDate.getFullYear()}-${String(dDate.getMonth()+1).padStart(2,'0')}`;
+      if (activityEf > 0) {
+        if (!globalStats.monthlyEf[mKey]) globalStats.monthlyEf[mKey] = { sum:0, count:0 };
+        globalStats.monthlyEf[mKey].sum += activityEf;
+        globalStats.monthlyEf[mKey].count++;
+      }
+      if (moving.length > 3600 && drift !== 0) {
+        if (!globalStats.monthlyDrift[mKey]) globalStats.monthlyDrift[mKey] = { sum:0, count:0 };
+        globalStats.monthlyDrift[mKey].sum += drift;
+        globalStats.monthlyDrift[mKey].count++;
+      }
+
+      // Power Curve (Top 4 mins para detalhes + Records Gerais)
       let timeline = [];
-      let startT = records[0].t;
       let recMap = new Map(records.map(r => [r.t, r.p]));
-      for (let t = startT; t <= records[records.length - 1].t; t++) timeline.push(recMap.get(t) || 0);
+      for (let t = records[0].t; t <= records[records.length - 1].t; t++) timeline.push(recMap.get(t) || 0);
 
       const getWindowMax = (w) => {
         if (timeline.length < w) return 0;
@@ -410,18 +444,10 @@
         return Math.round(max / w);
       };
 
-      // Grava todos os recordes exigidos para a atividade
-      const requiredIntervals = [1, 3, 5, 15, 60, 240, 300, 900, 1200, 3600, 7200];
+      const requiredIntervals = [15, 60, 240, 1200, 3600];
       const activityPowerRecords = {};
       requiredIntervals.forEach(w => activityPowerRecords[w] = getWindowMax(w));
 
-      // Atualiza a curva de potência anual global (1s, 15s, 1m, 4m, 20m)
-      if (!globalStats.yearlyPower[year]) globalStats.yearlyPower[year] = { 1:0, 15:0, 60:0, 240:0, 1200:0 };
-      [1, 15, 60, 240, 1200].forEach(w => {
-         if (activityPowerRecords[w] > globalStats.yearlyPower[year][w]) globalStats.yearlyPower[year][w] = activityPowerRecords[w];
-      });
-
-      // Extração Top 4 (Janela de 240s) p/ Detalhes
       const wSize = 240;
       let intervals = [];
       for (let i = 0; i <= timeline.length - wSize; i++) {
@@ -432,13 +458,10 @@
       intervals.sort((a, b) => b.avg - a.avg);
       let top4 = [];
       for (const item of intervals) {
-        if (!top4.some(existing => Math.abs(existing.index - item.index) < wSize)) {
-          top4.push(item);
-          if (top4.length === 4) break;
-        }
+        if (!top4.some(existing => Math.abs(existing.index - item.index) < wSize)) { top4.push(item); if (top4.length === 4) break; }
       }
 
-      return { totalSecs, distKm: (maxDist / 1000).toFixed(2), avgPwr, avgHr, avgCad, avgSpeed, top4, activityPowerRecords, startTimestamp };
+      return { totalSecs, distKm: (maxDist / 1000).toFixed(2), avgPwr, avgHr, maxHr, avgCad: Math.round(avgCad), avgSpeed, top4, activityPowerRecords, startTimestamp, activityEf, drift };
     }
 
     function updateTopPanel() {
@@ -464,28 +487,19 @@
       });
     }
 
-    // Controle de Abas
     window.switchView = function(viewId, btnElement) {
-      if(viewId !== 'detailArea' && viewId !== 'summaryArea') {
-          lastScrollY = window.scrollY; // Grava a posição de scroll se estivermos a sair do histórico
-      }
-
+      if(viewId !== 'detailArea' && viewId !== 'summaryArea') lastScrollY = window.scrollY; 
       document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
       document.getElementById(viewId).classList.add('active');
-      
       document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
       if(btnElement) btnElement.classList.add('active');
 
-      if(viewId === 'summaryArea' && lastScrollY > 0) {
-        setTimeout(() => window.scrollTo({ top: lastScrollY, behavior: 'instant' }), 10);
-      } else {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }
+      if(viewId === 'summaryArea' && lastScrollY > 0) setTimeout(() => window.scrollTo({ top: lastScrollY, behavior: 'instant' }), 10);
+      else window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
     window.viewDetails = function(index) {
-      lastScrollY = window.scrollY; // Garante o salvamento da posição da lista
-      
+      lastScrollY = window.scrollY; 
       const act = dbActivities[index];
       if (!act || !act.metrics) return;
 
@@ -500,51 +514,35 @@
       document.getElementById('detSpeed').innerText = `${m.avgSpeed} km/h`;
       document.getElementById('detPwr').innerText = `${m.avgPwr} W`;
       document.getElementById('detHr').innerText = `${m.avgHr} bpm`;
-      document.getElementById('detCad').innerText = `${m.avgCad} rpm`;
+      document.getElementById('detMaxHr').innerText = `${m.maxHr} bpm`;
+      document.getElementById('detEf').innerText = m.activityEf > 0 ? m.activityEf.toFixed(2) : '--';
 
-      let top4Html = m.top4.length > 0 
-        ? m.top4.map((item, idx) => `<b>${idx + 1}º esforço:</b> <span style="color: #fc5200; font-weight: bold;">${item.avg} W</span> (4 min)`).join('<br>') 
-        : 'Dados insuficientes.';
+      let top4Html = m.top4.length > 0 ? m.top4.map((item, idx) => `<b>${idx + 1}º esforço:</b> <span style="color: #fc5200; font-weight: bold;">${item.avg} W</span> (4 min)`).join('<br>') : 'Dados insuficientes.';
       document.getElementById('top4Mins').innerHTML = top4Html;
-      
       window.scrollTo(0, 0);
     }
-
-    window.goBackToHistory = function() {
-      switchView('summaryArea', document.getElementById('btnHistory'));
-    }
+    window.goBackToHistory = function() { switchView('summaryArea', document.getElementById('btnHistory')); }
 
     function getIsoWeek(d) {
-        const date = new Date(d.getTime());
-        date.setHours(0, 0, 0, 0);
-        date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
-        const week1 = new Date(date.getFullYear(), 0, 4);
-        return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+        const date = new Date(d.getTime()); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+        const week1 = new Date(date.getFullYear(), 0, 4); return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
     }
 
-    // 1. Gráfico de Barras Parametrizável
+    // Gráfico de Barras Potência
     window.renderPowerBars = function() {
       const period = document.getElementById('barPeriodSelector').value;
-      const intervalStr = document.getElementById('barIntervalSelector').value;
-      const interval = parseInt(intervalStr);
+      const interval = parseInt(document.getElementById('barIntervalSelector').value);
       const intervalLabel = document.getElementById('barIntervalSelector').options[document.getElementById('barIntervalSelector').selectedIndex].text;
-
       let grouped = {};
 
       dbActivities.forEach(act => {
         if(!act.metrics || !act.metrics.startTimestamp) return;
         const d = new Date(act.metrics.startTimestamp);
         let key = "";
-        const y = d.getFullYear();
-        const m = d.getMonth() + 1;
-        const dt = d.getDate();
-
+        const y = d.getFullYear(), m = d.getMonth() + 1;
         if (period === 'year') key = `${y}`;
-        else if (period === 'semester') key = `${y} - Sem ${Math.ceil(m/6)}`;
-        else if (period === 'quarter') key = `${y} - T${Math.ceil(m/3)}`;
         else if (period === 'month') key = `${y}-${String(m).padStart(2,'0')}`;
         else if (period === 'week') key = `${y}-W${String(getIsoWeek(d)).padStart(2,'0')}`;
-        else if (period === 'day') key = `${y}-${String(m).padStart(2,'0')}-${String(dt).padStart(2,'0')}`;
 
         const pwr = act.metrics.activityPowerRecords[interval] || 0;
         if (!grouped[key]) grouped[key] = [];
@@ -555,80 +553,53 @@
       const data = labels.map(l => Math.max(...grouped[l]));
 
       if (powerBarsChartInstance) powerBarsChartInstance.destroy();
-      
       const ctx = document.getElementById('powerBarsChart').getContext('2d');
       powerBarsChartInstance = new Chart(ctx, {
-          type: 'bar',
-          data: {
-              labels: labels,
-              datasets: [{
-                  label: `Melhor Potência - ${intervalLabel}`,
-                  data: data,
-                  backgroundColor: '#fc5200',
-                  borderRadius: 4
-              }]
-          },
-          options: {
-              responsive: true, maintainAspectRatio: false, color: '#f8fafc',
-              plugins: { legend: { labels: { color: '#f8fafc' } } },
-              scales: { 
-                  y: { beginAtZero: true, grid: {color: '#334155'}, ticks: { color: '#94a3b8'} }, 
-                  x: { grid: {display: false}, ticks: { color: '#94a3b8'} } 
-              }
-          }
+          type: 'bar', data: { labels: labels, datasets: [{ label: `Melhor Potência - ${intervalLabel}`, data: data, backgroundColor: '#fc5200', borderRadius: 4 }] },
+          options: { responsive: true, maintainAspectRatio: false, color: '#f8fafc', plugins: { legend: { labels: { color: '#f8fafc' } } }, scales: { y: { beginAtZero: true, grid: {color: '#334155'}, ticks: { color: '#94a3b8'} }, x: { grid: {display: false}, ticks: { color: '#94a3b8'} } } }
       });
     }
 
-    // 2. Gráfico de Curva de Potência Anual
-    window.renderPowerCurve = function() {
-      if (powerChartInstance) powerChartInstance.destroy();
-      
-      const ctx = document.getElementById('powerChart').getContext('2d');
-      const labels = ['1 Seg', '15 Seg', '1 Min', '4 Min', '20 Min'];
-      const datasets = [];
-      const colors = ['#38bdf8', '#fc5200', '#22c55e', '#a855f7', '#facc15'];
-      
-      let i = 0;
-      for (const [year, data] of Object.entries(globalStats.yearlyPower)) {
-        datasets.push({
-          label: year,
-          data: [data[1], data[15], data[60], data[240], data[1200]],
-          borderColor: colors[i % colors.length],
-          backgroundColor: colors[i % colors.length] + '40',
-          tension: 0.4, fill: true
-        });
-        i++;
-      }
-
-      powerChartInstance = new Chart(ctx, {
-        type: 'line',
-        data: { labels, datasets },
-        options: { 
-            responsive: true, maintainAspectRatio: false, color: '#f8fafc',
-            plugins: { legend: { labels: { color: '#f8fafc' } } },
-            scales: { y: { beginAtZero: true, grid: {color: '#334155'}, ticks: {color: '#94a3b8'} }, x: { grid: {color: '#334155'}, ticks: {color: '#94a3b8'} } } 
-        }
-      });
-    }
-
-    // 3. Gráfico de Zonas
+    // Gráfico de Zonas Totais
     window.renderZones = function() {
       if (zonesChartInstance) zonesChartInstance.destroy();
-
       const ctx = document.getElementById('zonesChart').getContext('2d');
       const dataHours = globalStats.zones.map(s => (s / 3600).toFixed(1));
-
       zonesChartInstance = new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-          labels: ['Z1 (Recuperação)', 'Z2 (Resistência)', 'Z3 (Tempo)', 'Z4 (Limiar)', 'Z5 (VO2 Máx)', 'Z6 (Anaeróbica)'],
-          datasets: [{
-            data: dataHours,
-            backgroundColor: ['#94a3b8', '#38bdf8', '#22c55e', '#facc15', '#fc5200', '#ef4444'],
-            borderWidth: 0
-          }]
-        },
+        type: 'doughnut', data: { labels: ['Z1 (Recuperação)', 'Z2 (Resistência)', 'Z3 (Tempo)', 'Z4 (Limiar)', 'Z5 (VO2 Máx)', 'Z6 (Anaeróbica)'], datasets: [{ data: dataHours, backgroundColor: ['#94a3b8', '#38bdf8', '#22c55e', '#facc15', '#fc5200', '#ef4444'], borderWidth: 0 }] },
         options: { responsive: true, maintainAspectRatio: false, color: '#f8fafc', plugins: { legend: { position: 'right', labels: { color: '#f8fafc' } } } }
+      });
+    }
+
+    // NOVO: Renderizar Análise Cardio & Eficiência
+    window.renderHrAnalysis = function() {
+      // 1. EF Chart
+      const efLabels = Object.keys(globalStats.monthlyEf).sort();
+      const efData = efLabels.map(l => (globalStats.monthlyEf[l].sum / globalStats.monthlyEf[l].count).toFixed(2));
+      if (efChartInstance) efChartInstance.destroy();
+      efChartInstance = new Chart(document.getElementById('efChart').getContext('2d'), {
+        type: 'bar', data: { labels: efLabels, datasets: [{ label: 'Fator de Eficiência (Média)', data: efData, backgroundColor: '#38bdf8', borderRadius: 4 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#f8fafc' } } }, scales: { y: { beginAtZero: false, grid: {color: '#334155'}, ticks: { color: '#94a3b8'} }, x: { grid: {display: false}, ticks: { color: '#94a3b8'} } } }
+      });
+
+      // 2. Drift Chart
+      const driftLabels = Object.keys(globalStats.monthlyDrift).sort();
+      const driftData = driftLabels.map(l => (globalStats.monthlyDrift[l].sum / globalStats.monthlyDrift[l].count).toFixed(1));
+      if (driftChartInstance) driftChartInstance.destroy();
+      driftChartInstance = new Chart(document.getElementById('driftChart').getContext('2d'), {
+        type: 'line', data: { labels: driftLabels, datasets: [{ label: 'Desacoplamento Aeróbico % (Drift)', data: driftData, borderColor: '#ef4444', backgroundColor: '#ef444440', tension: 0.3, fill: true }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#f8fafc' } } }, scales: { y: { beginAtZero: true, grid: {color: '#334155'}, ticks: { color: '#94a3b8'} }, x: { grid: {display: false}, ticks: { color: '#94a3b8'} } } }
+      });
+
+      // 3. HR by Power Zone Chart
+      const hrZoneData = globalStats.zoneHrSum.map((sum, i) => {
+        const count = globalStats.zoneHrCount[i];
+        return count > 0 ? Math.round(sum / count) : 0;
+      });
+      if (hrZonesChartInstance) hrZonesChartInstance.destroy();
+      hrZonesChartInstance = new Chart(document.getElementById('hrZonesChart').getContext('2d'), {
+        type: 'bar', data: { labels: ['Z1 (Recup.)', 'Z2 (Base)', 'Z3 (Tempo)', 'Z4 (Limiar)', 'Z5 (VO2 Máx)', 'Z6 (Anaerób.)'], datasets: [{ label: 'FC Média Estimada (BPM)', data: hrZoneData, backgroundColor: ['#94a3b8', '#38bdf8', '#22c55e', '#facc15', '#fc5200', '#ef4444'], borderRadius: 4 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: false, min: 100, grid: {color: '#334155'}, ticks: { color: '#94a3b8'} }, x: { grid: {display: false}, ticks: { color: '#94a3b8'} } } }
       });
     }
 

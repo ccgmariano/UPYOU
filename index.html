@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Treinador Virtual UPYOU - Análise 27/10/2026</title>
+  <title>Treinador Virtual UPYOU - Análise 25/10/2026</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
 
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; }
-    .card { background: #1e293b; padding: 30px; border-radius: 12px; width: 100%; max-width: 850px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
+    .card { background: #1e293b; padding: 30px; border-radius: 12px; width: 100%; max-width: 900px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
     h1 { text-align: center; color: #f8fafc; margin-bottom: 20px; }
     .upload-area { border: 2px dashed #475569; border-radius: 8px; padding: 30px; text-align: center; cursor: pointer; }
     .upload-area:hover { border-color: #fc5200; }
@@ -41,20 +41,28 @@
       
       <div class="stat-grid">
         <div class="stat-box">
+          <div class="stat-title">Tempo da Atividade</div>
+          <div class="stat-val" id="totalTime">--</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-title">Distância Total</div>
+          <div class="stat-val" id="totalDist">--</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-title">Velocidade Média (Em Movimento)</div>
+          <div class="stat-val" id="avgSpeed">--</div>
+        </div>
+        <div class="stat-box">
           <div class="stat-title">Potência Média (Em Movimento)</div>
           <div class="stat-val" id="avgPwr">--</div>
         </div>
         <div class="stat-box">
-          <div class="stat-title">Frequência Cardíaca Média (Em Movimento)</div>
+          <div class="stat-title">Frequência Cardíaca Média (Movimento)</div>
           <div class="stat-val" id="avgHr">--</div>
         </div>
         <div class="stat-box">
           <div class="stat-title">Cadência Média (Em Movimento)</div>
           <div class="stat-val" id="avgCad">--</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-title">Velocidade Média (Em Movimento)</div>
-          <div class="stat-val" id="avgSpeed">--</div>
         </div>
       </div>
 
@@ -102,7 +110,7 @@
             }
           }
 
-          if (!targetFileName) throw new Error("Atividade de 27 de out. de 2026 não encontrada no CSV.");
+          if (!targetFileName) throw new Error("Atividade de 25 de out. de 2026 não encontrada no CSV.");
 
           msgEl.innerText = `Ficheiro mapeado: ${targetFileName}. A descompactar...`;
 
@@ -132,7 +140,6 @@
       }, 150);
     });
 
-    // Descodificador FIT nativo e autónomo para mensagens de registo (Global Message Number 20: record)
     function parseFitNative(u8) {
       const view = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
       let offset = 0;
@@ -148,14 +155,13 @@
       while (offset < endOffset && offset < u8.length) {
         const header = view.getUint8(offset++);
         
-        // Cabeçalho de definição ou dados
         if ((header & 0x80) === 0) {
           const isDefinition = (header & 0x40) !== 0;
           const hasDevData = (header & 0x20) !== 0;
           const localMesgNum = header & 0x0F;
 
           if (isDefinition) {
-            offset++; // reservado
+            offset++;
             const arch = view.getUint8(offset++);
             const littleEndian = arch === 0;
             const globalMsgNum = view.getUint16(offset, littleEndian);
@@ -172,32 +178,22 @@
 
             if (hasDevData) {
               const numDevFields = view.getUint8(offset++);
-              for (let i = 0; i < numDevFields; i++) {
-                offset += 3;
-              }
+              for (let i = 0; i < numDevFields; i++) offset += 3;
             }
 
-            localDefinitions[localMesgNum] = {
-              globalMsgNum,
-              littleEndian,
-              fields
-            };
+            localDefinitions[localMesgNum] = { globalMsgNum, littleEndian, fields };
           } else {
             const def = localDefinitions[localMesgNum];
             if (!def) break;
 
-            let rec = { timestamp: 0, power: 0, heart_rate: 0, cadence: 0, speed: 0 };
+            let rec = { timestamp: 0, power: 0, heart_rate: 0, cadence: 0, speed: 0, distance: 0 };
             let isRecord = def.globalMsgNum === 20;
 
             for (const f of def.fields) {
               let val = 0;
-              if (f.size === 1) {
-                val = view.getUint8(offset);
-              } else if (f.size === 2) {
-                val = view.getUint16(offset, def.littleEndian);
-              } else if (f.size === 4) {
-                val = view.getUint32(offset, def.littleEndian);
-              }
+              if (f.size === 1) val = view.getUint8(offset);
+              else if (f.size === 2) val = view.getUint16(offset, def.littleEndian);
+              else if (f.size === 4) val = view.getUint32(offset, def.littleEndian);
               offset += f.size;
 
               if (isRecord) {
@@ -205,22 +201,18 @@
                 else if (f.fieldDefNum === 7) rec.power = (val !== 0xFFFF) ? val : 0;
                 else if (f.fieldDefNum === 3) rec.heart_rate = (val !== 0xFF) ? val : 0;
                 else if (f.fieldDefNum === 4) rec.cadence = (val !== 0xFF) ? val : 0;
-                else if (f.fieldDefNum === 6) rec.speed = (val !== 0xFFFF) ? (val / 1000) * 3.6 : 0;
+                else if (f.fieldDefNum === 6 || f.fieldDefNum === 73) rec.speed = (val !== 0xFFFF && val !== 0xFFFFFFFF) ? (val / 1000) * 3.6 : 0;
+                else if (f.fieldDefNum === 5) rec.distance = (val !== 0xFFFFFFFF) ? val / 100 : 0;
               }
             }
 
-            if (isRecord && rec.timestamp > 0) {
-              records.push(rec);
-            }
+            if (isRecord && rec.timestamp > 0) records.push(rec);
           }
         } else {
-          // Compressed timestamp header
           const localMesgNum = (header >> 5) & 0x03;
           const def = localDefinitions[localMesgNum];
           if (!def) break;
-          for (const f of def.fields) {
-            offset += f.size;
-          }
+          for (const f of def.fields) offset += f.size;
         }
       }
 
@@ -228,17 +220,26 @@
     }
 
     function processActivityRecords(records, fileName) {
-      if (!records || records.length === 0) {
-        throw new Error("Nenhum registo de treino localizado dentro do ficheiro FIT.");
-      }
+      if (!records || records.length === 0) throw new Error("Nenhum registo de treino localizado.");
 
       document.getElementById('results').style.display = 'block';
       document.getElementById('actTitle').innerText = `Atividade: ${fileName}`;
 
       records.sort((a, b) => a.timestamp - b.timestamp);
 
-      // FILTRAR PAUSAS: considerar em movimento rigoroso quando potência > 0 ou cadência > 0
-      const movingRecords = records.filter(r => r.power > 0 || r.cadence > 0);
+      // Distância máxima
+      const maxDist = records.reduce((max, r) => r.distance > max ? r.distance : max, 0);
+      document.getElementById('totalDist').innerText = `${(maxDist / 1000).toFixed(2)} km`;
+
+      // Tempo Total
+      const totalSecs = records[records.length - 1].timestamp - records[0].timestamp;
+      const h = Math.floor(totalSecs / 3600);
+      const m = Math.floor((totalSecs % 3600) / 60);
+      const s = totalSecs % 60;
+      document.getElementById('totalTime').innerText = `${h > 0 ? h + 'h ' : ''}${m}m ${s}s`;
+
+      // FILTRAR PAUSAS: velocidade >= 3 km/h
+      const movingRecords = records.filter(r => r.speed >= 3);
 
       const avgPwr = movingRecords.length ? Math.round(movingRecords.reduce((acc, r) => acc + r.power, 0) / movingRecords.length) : 0;
       
@@ -248,7 +249,7 @@
       const validCad = movingRecords.filter(r => r.cadence > 0 && r.cadence < 180);
       const avgCad = validCad.length ? Math.round(validCad.reduce((acc, r) => acc + r.cadence, 0) / validCad.length) : 0;
 
-      const validSpeed = movingRecords.filter(r => r.speed > 0 && r.speed < 120);
+      const validSpeed = movingRecords.filter(r => r.speed >= 3 && r.speed < 120);
       const avgSpeed = validSpeed.length ? (validSpeed.reduce((acc, r) => acc + r.speed, 0) / validSpeed.length).toFixed(1) : 0;
 
       document.getElementById('avgPwr').innerText = `${avgPwr} W`;
@@ -256,7 +257,6 @@
       document.getElementById('avgCad').innerText = `${avgCad} rpm`;
       document.getElementById('avgSpeed').innerText = `${avgSpeed} km/h`;
 
-      // Linha temporal para janelas de 4 minutos (240s)
       let timeline = [];
       if (records.length > 1) {
         let startT = records[0].timestamp;

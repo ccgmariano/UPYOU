@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Treinador Virtual UPYOU - Análise Cirúrgica 27/10/2026</title>
+  <title>Treinador Virtual UPYOU - Análise 27/10/2026</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
-  <script src="https://unpkg.com/fit-file-parser@1.17.0/dist/fit-parser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fit-decoder@1.0.1/dist/fit-decoder.min.js"></script>
 
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; }
@@ -119,28 +119,21 @@
           const rawData = await targetEntry.async("uint8array");
           const decompressed = pako.inflate(rawData);
 
-          // Verifica o construtor da biblioteca de forma segura
-          let FitParserClass = window.FitParser || window.fitParser;
-          if (!FitParserClass) {
-            throw new Error("A biblioteca FitParser não foi carregada corretamente do CDN.");
+          msgEl.innerText = 'A descodificar registos FIT...';
+
+          if (typeof fitDecoder === 'undefined' || !fitDecoder.parseFit) {
+            throw new Error("A biblioteca fitDecoder não foi carregada corretamente.");
           }
 
-          msgEl.innerText = 'A interpretar dados binários FIT...';
+          const parsed = fitDecoder.parseFit(decompressed.buffer);
+          const rawRecords = parsed.records || [];
 
-          const fitParser = new FitParserClass({
-            force: true,
-            speedUnit: 'km/h',
-            lengthUnit: 'm',
-            temperatureUnit: 'celsius',
-            mode: 'cascade'
-          });
+          if (rawRecords.length === 0) {
+            throw new Error("Nenhum registo encontrado no ficheiro FIT.");
+          }
 
-          fitParser.parse(decompressed.buffer, (error, data) => {
-            if (error) throw new Error("Erro ao interpretar FIT: " + error);
-
-            msgEl.innerText = '';
-            processActivityRecords(data.records || [], targetFileName.split('/').pop());
-          });
+          msgEl.innerText = '';
+          processActivityRecords(rawRecords, targetFileName.split('/').pop());
 
         } catch (err) {
           msgEl.style.color = '#f87171';
@@ -150,25 +143,19 @@
     });
 
     function processActivityRecords(rawRecords, fileName) {
-      if (rawRecords.length === 0) {
-        throw new Error("Nenhum registo encontrado no ficheiro FIT.");
-      }
-
       document.getElementById('results').style.display = 'block';
       document.getElementById('actTitle').innerText = `Atividade: ${fileName}`;
 
-      // Converte a estrutura proprietária do FIT para uma estrutura simples com tempo em UNIX (segundos)
       let records = rawRecords.map(r => ({
-        time: r.timestamp ? new Date(r.timestamp).getTime() / 1000 : 0,
+        time: r.timestamp ? (r.timestamp instanceof Date ? r.timestamp.getTime() / 1000 : new Date(r.timestamp).getTime() / 1000) : 0,
         power: r.power || 0,
-        hr: r.heart_rate || 0,
+        hr: r.heart_rate || r.heartRate || 0,
         cad: r.cadence || 0,
-        speed: r.speed || 0
+        speed: r.enhanced_speed ? r.enhanced_speed * 3.6 : (r.speed ? r.speed * 3.6 : 0)
       })).filter(r => r.time > 0);
 
       records.sort((a, b) => a.time - b.time);
 
-      // FILTRAR PAUSAS rigorosamente (em movimento quando potência ou cadência > 0)
       const movingRecords = records.filter(r => r.power > 0 || r.cad > 0);
 
       const avgPwr = movingRecords.length ? Math.round(movingRecords.reduce((acc, r) => acc + r.power, 0) / movingRecords.length) : 0;
@@ -187,7 +174,6 @@
       document.getElementById('avgCad').innerText = `${avgCad} rpm`;
       document.getElementById('avgSpeed').innerText = `${avgSpeed} km/h`;
 
-      // CONSTRUÇÃO DA TIMELINE (Preenchendo eventuais saltos de pausa com 0 para não viciar a média de 4 min)
       let timeline = [];
       if (records.length > 1) {
         let startT = records[0].time;
@@ -195,11 +181,10 @@
         let recMap = new Map(records.map(r => [r.time, r.power]));
 
         for (let t = startT; t <= endT; t++) {
-          timeline.push(recMap.get(t) || 0); 
+          timeline.push(recMap.get(t) || 0);
         }
       }
 
-      // JANELA DESLIZANTE DE 4 MINUTOS (240s)
       const windowSize = 240;
       let intervals = [];
 
@@ -213,7 +198,6 @@
 
       intervals.sort((a, b) => b.avg - a.avg);
 
-      // Seleção dos Top 4, assegurando que as janelas de tempo não se sobrepõem (distância mínima de 4 mins entre elas)
       let top4 = [];
       for (const item of intervals) {
         if (!top4.some(existing => Math.abs(existing.index - item.index) < windowSize)) {

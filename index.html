@@ -6,7 +6,6 @@
   <title>Treinador Virtual UPYOU - Análise 27/10/2026</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/fit-decoder@1.0.1/dist/fit-decoder.min.js"></script>
 
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; }
@@ -30,7 +29,7 @@
     <h1>Treinador Virtual UPYOU <br><span style="font-size: 1rem; color: #94a3b8;">Análise Exclusiva: 27 de Outubro de 2026</span></h1>
     
     <div class="upload-area" id="uploadArea" onclick="document.getElementById('zipInput').click()">
-      <p>Selecione o seu ficheiro ZIP do Strava</p>
+      <p>Selecione o ficheiro ZIP do Strava</p>
       <span class="btn">Escolher Ficheiro .ZIP</span>
       <input type="file" id="zipInput" accept=".zip">
     </div>
@@ -74,7 +73,7 @@
       document.getElementById('uploadArea').style.display = 'none';
       const msgEl = document.getElementById('statusMsg');
       msgEl.style.color = '#38bdf8';
-      msgEl.innerText = 'A abrir o ZIP e a ler o activities.csv...';
+      msgEl.innerText = 'A abrir o ZIP e a consultar o activities.csv...';
 
       setTimeout(async () => {
         try {
@@ -86,7 +85,7 @@
             if (path.toLowerCase().includes('activities.csv')) csvEntry = entry;
           });
 
-          if (!csvEntry) throw new Error("O ficheiro 'activities.csv' não foi encontrado no ZIP.");
+          if (!csvEntry) throw new Error("Ficheiro 'activities.csv' não encontrado no ZIP.");
 
           const csvText = await csvEntry.async("string");
           const lines = csvText.split('\n');
@@ -114,26 +113,17 @@
             }
           });
 
-          if (!targetEntry) throw new Error(`O ficheiro ${targetFileName} não foi encontrado dentro do ZIP.`);
+          if (!targetEntry) throw new Error(`Ficheiro ${targetFileName} não encontrado dentro do ZIP.`);
 
           const rawData = await targetEntry.async("uint8array");
           const decompressed = pako.inflate(rawData);
 
-          msgEl.innerText = 'A descodificar registos FIT...';
+          msgEl.innerText = 'A processar o binário FIT nativamente...';
 
-          if (typeof fitDecoder === 'undefined' || !fitDecoder.parseFit) {
-            throw new Error("A biblioteca fitDecoder não foi carregada corretamente.");
-          }
-
-          const parsed = fitDecoder.parseFit(decompressed.buffer);
-          const rawRecords = parsed.records || [];
-
-          if (rawRecords.length === 0) {
-            throw new Error("Nenhum registo encontrado no ficheiro FIT.");
-          }
+          const records = parseFitNative(decompressed);
 
           msgEl.innerText = '';
-          processActivityRecords(rawRecords, targetFileName.split('/').pop());
+          processActivityRecords(records, targetFileName.split('/').pop());
 
         } catch (err) {
           msgEl.style.color = '#f87171';
@@ -142,29 +132,121 @@
       }, 150);
     });
 
-    function processActivityRecords(rawRecords, fileName) {
+    // Descodificador FIT nativo e autónomo para mensagens de registo (Global Message Number 20: record)
+    function parseFitNative(u8) {
+      const view = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+      let offset = 0;
+      
+      const headerSize = view.getUint8(0);
+      const dataSize = view.getUint32(4, true);
+      offset = headerSize;
+      const endOffset = headerSize + dataSize;
+
+      const localDefinitions = {};
+      const records = [];
+
+      while (offset < endOffset && offset < u8.length) {
+        const header = view.getUint8(offset++);
+        
+        // Cabeçalho de definição ou dados
+        if ((header & 0x80) === 0) {
+          const isDefinition = (header & 0x40) !== 0;
+          const hasDevData = (header & 0x20) !== 0;
+          const localMesgNum = header & 0x0F;
+
+          if (isDefinition) {
+            offset++; // reservado
+            const arch = view.getUint8(offset++);
+            const littleEndian = arch === 0;
+            const globalMsgNum = view.getUint16(offset, littleEndian);
+            offset += 2;
+            const numFields = view.getUint8(offset++);
+
+            const fields = [];
+            for (let i = 0; i < numFields; i++) {
+              const fieldDefNum = view.getUint8(offset++);
+              const size = view.getUint8(offset++);
+              const baseType = view.getUint8(offset++);
+              fields.push({ fieldDefNum, size, baseType });
+            }
+
+            if (hasDevData) {
+              const numDevFields = view.getUint8(offset++);
+              for (let i = 0; i < numDevFields; i++) {
+                offset += 3;
+              }
+            }
+
+            localDefinitions[localMesgNum] = {
+              globalMsgNum,
+              littleEndian,
+              fields
+            };
+          } else {
+            const def = localDefinitions[localMesgNum];
+            if (!def) break;
+
+            let rec = { timestamp: 0, power: 0, heart_rate: 0, cadence: 0, speed: 0 };
+            let isRecord = def.globalMsgNum === 20;
+
+            for (const f of def.fields) {
+              let val = 0;
+              if (f.size === 1) {
+                val = view.getUint8(offset);
+              } else if (f.size === 2) {
+                val = view.getUint16(offset, def.littleEndian);
+              } else if (f.size === 4) {
+                val = view.getUint32(offset, def.littleEndian);
+              }
+              offset += f.size;
+
+              if (isRecord) {
+                if (f.fieldDefNum === 253) rec.timestamp = val;
+                else if (f.fieldDefNum === 7) rec.power = (val !== 0xFFFF) ? val : 0;
+                else if (f.fieldDefNum === 3) rec.heart_rate = (val !== 0xFF) ? val : 0;
+                else if (f.fieldDefNum === 4) rec.cadence = (val !== 0xFF) ? val : 0;
+                else if (f.fieldDefNum === 6) rec.speed = (val !== 0xFFFF) ? (val / 1000) * 3.6 : 0;
+              }
+            }
+
+            if (isRecord && rec.timestamp > 0) {
+              records.push(rec);
+            }
+          }
+        } else {
+          // Compressed timestamp header
+          const localMesgNum = (header >> 5) & 0x03;
+          const def = localDefinitions[localMesgNum];
+          if (!def) break;
+          for (const f of def.fields) {
+            offset += f.size;
+          }
+        }
+      }
+
+      return records;
+    }
+
+    function processActivityRecords(records, fileName) {
+      if (!records || records.length === 0) {
+        throw new Error("Nenhum registo de treino localizado dentro do ficheiro FIT.");
+      }
+
       document.getElementById('results').style.display = 'block';
       document.getElementById('actTitle').innerText = `Atividade: ${fileName}`;
 
-      let records = rawRecords.map(r => ({
-        time: r.timestamp ? (r.timestamp instanceof Date ? r.timestamp.getTime() / 1000 : new Date(r.timestamp).getTime() / 1000) : 0,
-        power: r.power || 0,
-        hr: r.heart_rate || r.heartRate || 0,
-        cad: r.cadence || 0,
-        speed: r.enhanced_speed ? r.enhanced_speed * 3.6 : (r.speed ? r.speed * 3.6 : 0)
-      })).filter(r => r.time > 0);
+      records.sort((a, b) => a.timestamp - b.timestamp);
 
-      records.sort((a, b) => a.time - b.time);
-
-      const movingRecords = records.filter(r => r.power > 0 || r.cad > 0);
+      // FILTRAR PAUSAS: considerar em movimento rigoroso quando potência > 0 ou cadência > 0
+      const movingRecords = records.filter(r => r.power > 0 || r.cadence > 0);
 
       const avgPwr = movingRecords.length ? Math.round(movingRecords.reduce((acc, r) => acc + r.power, 0) / movingRecords.length) : 0;
       
-      const validHr = movingRecords.filter(r => r.hr > 0 && r.hr < 220);
-      const avgHr = validHr.length ? Math.round(validHr.reduce((acc, r) => acc + r.hr, 0) / validHr.length) : 0;
+      const validHr = movingRecords.filter(r => r.heart_rate > 0 && r.heart_rate < 220);
+      const avgHr = validHr.length ? Math.round(validHr.reduce((acc, r) => acc + r.heart_rate, 0) / validHr.length) : 0;
 
-      const validCad = movingRecords.filter(r => r.cad > 0 && r.cad < 180);
-      const avgCad = validCad.length ? Math.round(validCad.reduce((acc, r) => acc + r.cad, 0) / validCad.length) : 0;
+      const validCad = movingRecords.filter(r => r.cadence > 0 && r.cadence < 180);
+      const avgCad = validCad.length ? Math.round(validCad.reduce((acc, r) => acc + r.cadence, 0) / validCad.length) : 0;
 
       const validSpeed = movingRecords.filter(r => r.speed > 0 && r.speed < 120);
       const avgSpeed = validSpeed.length ? (validSpeed.reduce((acc, r) => acc + r.speed, 0) / validSpeed.length).toFixed(1) : 0;
@@ -174,11 +256,12 @@
       document.getElementById('avgCad').innerText = `${avgCad} rpm`;
       document.getElementById('avgSpeed').innerText = `${avgSpeed} km/h`;
 
+      // Linha temporal para janelas de 4 minutos (240s)
       let timeline = [];
       if (records.length > 1) {
-        let startT = records[0].time;
-        let endT = records[records.length - 1].time;
-        let recMap = new Map(records.map(r => [r.time, r.power]));
+        let startT = records[0].timestamp;
+        let endT = records[records.length - 1].timestamp;
+        let recMap = new Map(records.map(r => [r.timestamp, r.power]));
 
         for (let t = startT; t <= endT; t++) {
           timeline.push(recMap.get(t) || 0);

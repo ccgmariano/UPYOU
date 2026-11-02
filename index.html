@@ -26,7 +26,7 @@
 <body>
 
   <div class="card">
-    <h1>Treinador Virtual UPYOU <br><span style="font-size: 1rem; color: #94a3b8;">Análise Exclusiva: 27 de Outubro de 2026</span></h1>
+    <h1>Treinador Virtual UPYOU <br><span style="font-size: 1rem; color: #94a3b8;">Análise Exclusiva: 25 de Outubro de 2026</span></h1>
     
     <div class="upload-area" id="uploadArea" onclick="document.getElementById('zipInput').click()">
       <p>Selecione o ficheiro ZIP do Strava</p>
@@ -93,7 +93,7 @@
 
           for (let i = 1; i < lines.length; i++) {
             const line = lines[i];
-            if (line.includes('27 de out. de 2026')) {
+            if (line.includes('25 de out. de 2026')) {
               const matchFile = line.match(/(activities\/[^,"]+\.fit\.gz)/i);
               if (matchFile) {
                 targetFileName = matchFile[1];

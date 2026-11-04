@@ -1,25 +1,21 @@
-
+<!DOCTYPE html>
+<html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Treinador Virtual UPYOU - Análise 25/10/2026</title>
   <title>Treinador Virtual UPYOU - Histórico Completo</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
 
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; }
-    .card { background: #1e293b; padding: 30px; border-radius: 12px; width: 100%; max-width: 900px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
     .card { background: #1e293b; padding: 30px; border-radius: 12px; width: 100%; max-width: 950px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
     h1 { text-align: center; color: #f8fafc; margin-bottom: 20px; }
-    .upload-area { border: 2px dashed #475569; border-radius: 8px; padding: 30px; text-align: center; cursor: pointer; }
-    .upload-area:hover { border-color: #fc5200; }
     
     .upload-area { border: 2px dashed #475569; border-radius: 8px; padding: 40px; text-align: center; cursor: pointer; transition: all 0.3s; }
     .upload-area:hover { border-color: #fc5200; background: #334155; }
     input[type="file"] { display: none; }
-    .btn { display: inline-block; background: #fc5200; color: white; padding: 10px 20px; border-radius: 6px; font-weight: 600; cursor: pointer; border: none; margin-top: 10px; }
-    .results { margin-top: 25px; display: none; }
+    
     .btn { display: inline-block; background: #fc5200; color: white; padding: 10px 20px; border-radius: 6px; font-weight: 600; cursor: pointer; border: none; margin-top: 10px; text-decoration: none; }
     .btn:hover { background: #e04a00; }
     
@@ -28,6 +24,10 @@
     .progress-bar-fill { background: #fc5200; height: 100%; width: 0%; transition: width 0.1s linear; }
 
     #summaryArea { display: none; margin-top: 20px; }
+    .nav-tabs { display: flex; gap: 10px; border-bottom: 1px solid #334155; padding-bottom: 15px; margin-bottom: 20px; flex-wrap: wrap; }
+    .tab-btn { background: #0f172a; border: 1px solid #334155; color: #94a3b8; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+    .tab-btn.active { background: #fc5200; color: white; border-color: #fc5200; }
+    
     .summary-table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 0.9rem; }
     .summary-table th, .summary-table td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; }
     .summary-table th { color: #94a3b8; font-weight: 600; text-transform: uppercase; font-size: 0.8rem; }
@@ -35,30 +35,28 @@
     .btn-small { background: #38bdf8; color: #0f172a; padding: 6px 12px; border-radius: 4px; font-size: 0.8rem; cursor: pointer; font-weight: bold; border: none; }
 
     #detailArea { display: none; margin-top: 10px; }
-    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 15px; margin-bottom: 15px; }
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px; }
     .stat-box { background: #0f172a; padding: 15px; border-radius: 8px; border-left: 4px solid #fc5200; }
     .stat-title { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; margin-bottom: 5px; }
     .stat-val { font-size: 1.2rem; font-weight: bold; color: #fff; }
-    #statusMsg { color: #38bdf8; font-weight: bold; margin-top: 15px; text-align: center; }
     
-    #statusMsg { color: #38bdf8; font-weight: bold; margin-top: 10px; }
+    #statusMsg { color: #38bdf8; font-weight: bold; margin-top: 10px; text-align: center; }
+    canvas { background: #0f172a; border-radius: 8px; width: 100%; height: 350px; margin-top: 15px; }
   </style>
 </head>
 <body>
 
   <div class="card">
-    <h1>Treinador Virtual UPYOU <br><span style="font-size: 1rem; color: #94a3b8;">Análise Exclusiva: 25 de Outubro de 2026</span></h1>
     <h1>Treinador Virtual UPYOU <br><span style="font-size: 1rem; color: #94a3b8;">Histórico Completo de Pedaladas</span></h1>
 
     <div class="upload-area" id="uploadArea" onclick="document.getElementById('zipInput').click()">
-      <p>Selecione o ficheiro ZIP do Strava</p>
-      <span class="btn">Escolher Ficheiro .ZIP</span>
       <p>Selecione o seu ficheiro ZIP completo do Strava</p>
       <span class="btn">Processar ZIP</span>
       <input type="file" id="zipInput" accept=".zip">
     </div>
 
     <div id="statusMsg"></div>
+    
     <!-- Barra de Progresso -->
     <div id="progressArea">
       <h3 style="color: #38bdf8;">A processar o seu histórico...</h3>
@@ -66,26 +64,44 @@
       <p id="progressText" style="color: #94a3b8;">Lendo ficheiros...</p>
     </div>
 
-    <!-- Tabela de Resumo -->
+    <!-- Área Consolidada (Abas e Tabelas) -->
     <div id="summaryArea">
-      <h3 style="color: #f8fafc; border-bottom: 2px solid #fc5200; padding-bottom: 10px;">As Suas Pedaladas</h3>
-      <table class="summary-table">
-        <thead>
-          <tr>
-            <th>Data</th>
-            <th>Nome</th>
-            <th>Distância</th>
-            <th>Potência (Média)</th>
-            <th>Ação</th>
-          </tr>
-        </thead>
-        <tbody id="summaryBody"></tbody>
-      </table>
+      <div class="nav-tabs">
+        <button class="tab-btn active" onclick="switchDashboardTab('tableTab', this)">As Suas Pedaladas</button>
+        <button class="tab-btn" onclick="switchDashboardTab('ftpTab', this)">Evolução de FTP</button>
+        <button class="tab-btn" onclick="switchDashboardTab('zonesTab', this)">Assinatura Cardíaca</button>
+      </div>
+
+      <div id="tableTab" style="display: block;">
+        <table class="summary-table">
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Nome</th>
+              <th>Distância</th>
+              <th>Potência (Média)</th>
+              <th>Ação</th>
+            </tr>
+          </thead>
+          <tfoot style="display:none;"><tr><td colspan="5" style="text-align: center; color: #94a3b8;">Carregando histórico...</td></tr></tfoot>
+          <tbody id="summaryBody"></tbody>
+        </table>
+      </div>
+
+      <div id="ftpTab" style="display: none;">
+        <h3 style="color: #f8fafc; border-bottom: 2px solid #fc5200; padding-bottom: 10px;">Evolução do FTP (Janela Móvel 42 Dias)</h3>
+        <p style="font-size: 0.85rem; color: #94a3b8;">FTP estimado a partir dos melhores registos reais de 20 minutos nativos de cada atividade.</p>
+        <canvas id="ftpCanvas"></canvas>
+      </div>
+
+      <div id="zonesTab" style="display: none;">
+        <h3 style="color: #f8fafc; border-bottom: 2px solid #fc5200; padding-bottom: 10px;">FC Média por Zona Dinâmica</h3>
+        <p style="font-size: 0.85rem; color: #94a3b8;">Distribuição de batimentos baseada no percentual do seu FTP exato na data do treino (Z1 a Z6).</p>
+        <canvas id="zonesCanvas"></canvas>
+      </div>
     </div>
 
-    <div class="results" id="results">
-      <h3 id="actTitle" style="color: #38bdf8; margin-bottom: 20px; text-align: center;"></h3>
-    <!-- Painel de Detalhes -->
+    <!-- Painel de Detalhes de um Treino Individual -->
     <div id="detailArea">
       <button class="btn" onclick="showSummary()" style="margin-bottom: 20px; background: #475569;">&larr; Voltar ao Histórico</button>
       
@@ -93,35 +109,60 @@
 
       <div class="stat-grid">
         <div class="stat-box">
-@@ -49,19 +89,19 @@ <h3 id="actTitle" style="color: #38bdf8; margin-bottom: 20px; text-align: center
+          <div class="stat-title">Tempo Total</div>
+          <div class="stat-val" id="totalTime">--</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-title">Distância Total</div>
           <div class="stat-val" id="totalDist">--</div>
         </div>
         <div class="stat-box">
-          <div class="stat-title">Velocidade Média (Em Movimento)</div>
           <div class="stat-title">Velocidade Média (Movimento > 3km/h)</div>
           <div class="stat-val" id="avgSpeed">--</div>
         </div>
         <div class="stat-box">
-          <div class="stat-title">Potência Média (Em Movimento)</div>
           <div class="stat-title">Potência Média (Movimento)</div>
           <div class="stat-val" id="avgPwr">--</div>
         </div>
         <div class="stat-box">
-          <div class="stat-title">Frequência Cardíaca Média (Movimento)</div>
+          <div class="stat-title">FC Média (Movimento)</div>
           <div class="stat-val" id="avgHr">--</div>
         </div>
         <div class="stat-box">
-          <div class="stat-title">Cadência Média (Em Movimento)</div>
           <div class="stat-title">Cadência Média (Movimento)</div>
           <div class="stat-val" id="avgCad">--</div>
         </div>
+        <div class="stat-box" style="border-left-color: #22c55e;">
+          <div class="stat-title">Cardiac Drift (Desacoplamento)</div>
+          <div class="stat-val" id="driftVal">--</div>
+        </div>
       </div>
-@@ -74,14 +114,18 @@ <h3 id="actTitle" style="color: #38bdf8; margin-bottom: 20px; text-align: center
+
+      <div class="stat-box" style="border-left-color: #38bdf8; margin-bottom: 15px;">
+        <div class="stat-title">Maior Bloco de 20 Minutos (Usado p/ FTP)</div>
+        <div class="stat-val" id="mmp20Val" style="font-size: 1rem;">--</div>
+      </div>
+
+      <div class="stat-box" style="border-left-color: #38bdf8;">
+        <div class="stat-title">Top 4 Maiores Períodos de Potência (Média de 4 Minutos / 240s)</div>
+        <div class="stat-val" id="top4Mins" style="font-size: 0.95rem; line-height: 1.6; font-weight: normal;">--</div>
+      </div>
+    </div>
   </div>
 
   <script>
-    document.getElementById('zipInput').addEventListener('change', (event) => {
     let dbActivities = []; // Banco de dados em memória para as atividades
+
+    // Lógica para alternar as abas do dashboard
+    window.switchDashboardTab = function(tabId, el) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.getElementById('tableTab').style.display = 'none';
+      document.getElementById('ftpTab').style.display = 'none';
+      document.getElementById('zonesTab').style.display = 'none';
+      
+      el.classList.add('active');
+      document.getElementById(tabId).style.display = 'block';
+    }
 
     document.getElementById('zipInput').addEventListener('change', async (event) => {
       const file = event.target.files[0];
@@ -130,7 +171,7 @@
       document.getElementById('uploadArea').style.display = 'none';
       const msgEl = document.getElementById('statusMsg');
       msgEl.style.color = '#38bdf8';
-      msgEl.innerText = 'A abrir o ZIP e a consultar o activities.csv...';
+      
       document.getElementById('progressArea').style.display = 'block';
       const progressText = document.getElementById('progressText');
       const progressFill = document.getElementById('progressFill');
@@ -139,26 +180,22 @@
 
       setTimeout(async () => {
         try {
-@@ -93,71 +137,95 @@ <h3 id="actTitle" style="color: #38bdf8; margin-bottom: 20px; text-align: center
+          const jszip = new JSZip();
+          const zip = await jszip.loadAsync(file);
+          
+          let csvEntry = null;
+          zip.forEach((path, entry) => {
             if (path.toLowerCase().includes('activities.csv')) csvEntry = entry;
           });
 
-          if (!csvEntry) throw new Error("Ficheiro 'activities.csv' não encontrado no ZIP.");
           if (!csvEntry) throw new Error("O ficheiro 'activities.csv' não foi encontrado no ZIP.");
 
           const csvText = await csvEntry.async("string");
           const lines = csvText.split('\n');
-          let targetFileName = "";
-          
           let queue = [];
 
           // Parse rudimentar e seguro de CSV para isolar colunas
           for (let i = 1; i < lines.length; i++) {
-            const line = lines[i];
-            if (line.includes('25 de out. de 2026')) {
-              const matchFile = line.match(/(activities\/[^,"]+\.fit\.gz)/i);
-              if (matchFile) {
-                targetFileName = matchFile[1];
             const line = lines[i].trim();
             if (!line) continue;
             
@@ -172,19 +209,9 @@
                 else if (ch === ',') { cols.push(val); val = ''; }
                 else val += ch;
               }
-              break;
             }
-          }
-
-          if (!targetFileName) throw new Error("Atividade de 25 de out. de 2026 não encontrada no CSV.");
             cols.push(val);
 
-          msgEl.innerText = `Ficheiro mapeado: ${targetFileName}. A descompactar...`;
-
-          let targetEntry = null;
-          zip.forEach((path, entry) => {
-            if (path.toLowerCase().includes(targetFileName.toLowerCase())) {
-              targetEntry = entry;
             // No CSV do Strava: Col 1 = Data, Col 2 = Nome, Col 3 = Tipo
             if (cols.length > 10 && cols[3] === 'Pedalada') {
               const filePath = cols.find(c => c.toLowerCase().includes('activities/') && c.toLowerCase().endsWith('.fit.gz'));
@@ -192,15 +219,9 @@
                 queue.push({ date: cols[1], name: cols[2], file: filePath });
               }
             }
-          });
-
-          if (!targetEntry) throw new Error(`Ficheiro ${targetFileName} não encontrado dentro do ZIP.`);
-
-          const rawData = await targetEntry.async("uint8array");
-          const decompressed = pako.inflate(rawData);
           }
 
-          msgEl.innerText = 'A processar o binário FIT nativamente...';
+          msgEl.innerText = 'A processar os binários FIT nativamente em lote...';
           if (queue.length === 0) throw new Error("Nenhuma atividade do tipo 'Pedalada' em formato FIT foi encontrada.");
 
           dbActivities = [];
@@ -223,42 +244,45 @@
                 const records = parseFitNative(decompressed);
                 const metrics = calculateMetrics(records);
                 
-                dbActivities.push({ ...task, metrics });
+                if (metrics) {
+                  dbActivities.push({ ...task, metrics, dateObj: parseStravaDate(task.date) });
+                }
               } catch (e) {
                 console.warn(`Erro ao ler ${task.file}:`, e);
               }
             }
-
-          const records = parseFitNative(decompressed);
             // Pausa minúscula para permitir que o navegador atualize o ecrã
-            await new Promise(r => setTimeout(r, 10)); 
+            await new Promise(r => setTimeout(r, 5)); 
           }
 
           msgEl.innerText = '';
-          processActivityRecords(records, targetFileName.split('/').pop());
           document.getElementById('progressArea').style.display = 'none';
+          
+          // Gera métricas globais e desenha painel
+          processGlobalMetrics();
           renderSummaryTable();
 
         } catch (err) {
           msgEl.style.color = '#f87171';
-          msgEl.innerText = 'Erro: ' + err.message;
+          msgEl.innerText = 'Erro crítico: ' + err.message;
           progressText.style.color = '#f87171';
-          progressText.innerText = 'Erro crítico: ' + err.message;
+          progressText.innerText = 'Interrompido: ' + err.message;
         }
-      }, 150);
       }, 100);
     });
 
-    // Descodificador FIT Nativo
+    // Função de parsing para datas do formato do Strava CSV ("25 de out. de 2026")
+    function parseStravaDate(str) {
+      if (!str) return new Date();
+      const months = { 'jan': 0, 'fev': 1, 'mar': 2, 'abr': 3, 'mai': 4, 'jun': 5, 'jul': 6, 'ago': 7, 'set': 8, 'out': 9, 'nov': 10, 'dez': 11 };
+      const parts = str.match(/(\d{1,2})\s+de\s+([a-zç]{3})[^\s]*\s+de\s+(\d{4})/i);
+      if (parts) return new Date(parseInt(parts[3]), months[parts[2].toLowerCase()] || 0, parseInt(parts[1]));
+      return new Date(); 
+    }
+
+    // Descodificador FIT Nativo (Exato como você tinha criado)
     function parseFitNative(u8) {
       const view = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
-      let offset = 0;
-      
-      const headerSize = view.getUint8(0);
-      const dataSize = view.getUint32(4, true);
-      offset = headerSize;
-      const endOffset = headerSize + dataSize;
-
       let offset = view.getUint8(0);
       const endOffset = offset + view.getUint32(4, true);
       const localDefinitions = {};
@@ -270,28 +294,22 @@
         
         if ((header & 0x80) === 0) {
           const isDefinition = (header & 0x40) !== 0;
-          const hasDevData = (header & 0x20) !== 0;
           const localMesgNum = header & 0x0F;
 
           if (isDefinition) {
-@@ -167,27 +235,21 @@ <h3 id="actTitle" style="color: #38bdf8; margin-bottom: 20px; text-align: center
+            offset += 1; // reserved
+            const littleEndian = view.getUint8(offset++) === 0;
             const globalMsgNum = view.getUint16(offset, littleEndian);
             offset += 2;
             const numFields = view.getUint8(offset++);
 
             const fields = [];
             for (let i = 0; i < numFields; i++) {
-              const fieldDefNum = view.getUint8(offset++);
-              const size = view.getUint8(offset++);
-              const baseType = view.getUint8(offset++);
-              fields.push({ fieldDefNum, size, baseType });
               fields.push({ fieldDefNum: view.getUint8(offset++), size: view.getUint8(offset++), baseType: view.getUint8(offset++) });
             }
 
-            if (hasDevData) {
             if ((header & 0x20) !== 0) { // dev fields
               const numDevFields = view.getUint8(offset++);
-              for (let i = 0; i < numDevFields; i++) offset += 3;
               offset += numDevFields * 3;
             }
 
@@ -300,32 +318,29 @@
             const def = localDefinitions[localMesgNum];
             if (!def) break;
 
-            let rec = { timestamp: 0, power: 0, heart_rate: 0, cadence: 0, speed: 0, distance: 0 };
             let rec = { timestamp: 0, power: 0, hr: 0, cad: 0, speed: 0, distance: 0 };
             let isRecord = def.globalMsgNum === 20;
             let lat = 0, lon = 0;
 
             for (const f of def.fields) {
               let val = 0;
-@@ -199,86 +261,68 @@ <h3 id="actTitle" style="color: #38bdf8; margin-bottom: 20px; text-align: center
+              if (f.size === 1) val = view.getUint8(offset);
+              else if (f.size === 2) val = view.getUint16(offset, def.littleEndian);
+              else if (f.size === 4) val = view.getUint32(offset, def.littleEndian);
+              offset += f.size;
+
               if (isRecord) {
                 if (f.fieldDefNum === 253) rec.timestamp = val;
                 else if (f.fieldDefNum === 7) rec.power = (val !== 0xFFFF) ? val : 0;
-                else if (f.fieldDefNum === 3) rec.heart_rate = (val !== 0xFF) ? val : 0;
-                else if (f.fieldDefNum === 4) rec.cadence = (val !== 0xFF) ? val : 0;
-                else if (f.fieldDefNum === 6 || f.fieldDefNum === 73) rec.speed = (val !== 0xFFFF && val !== 0xFFFFFFFF) ? (val / 1000) * 3.6 : 0;
                 else if (f.fieldDefNum === 3) rec.hr = (val !== 0xFF) ? val : 0;
                 else if (f.fieldDefNum === 4) rec.cad = (val !== 0xFF) ? val : 0;
                 else if (f.fieldDefNum === 5) rec.distance = (val !== 0xFFFFFFFF) ? val / 100 : 0;
-                // Coordenadas para calcular velocidade com rigor
                 else if (f.fieldDefNum === 0) lat = (val !== 0x7FFFFFFF) ? val * (180 / Math.pow(2, 31)) : 0;
                 else if (f.fieldDefNum === 1) lon = (val !== 0x7FFFFFFF) ? val * (180 / Math.pow(2, 31)) : 0;
               }
             }
 
-            if (isRecord && rec.timestamp > 0) records.push(rec);
             if (isRecord && rec.timestamp > 0) {
-              // Calcula a velocidade com base na distância entre pontos de GPS, se disponível
               if (lat !== 0 && lon !== 0) {
                 if (prevLat !== null && prevTime !== null && rec.timestamp > prevTime) {
                   const distKm = getDistanceFromLatLonInKm(prevLat, prevLon, lat, lon);
@@ -338,173 +353,198 @@
             }
           }
         } else {
-          const localMesgNum = (header >> 5) & 0x03;
-          const def = localDefinitions[localMesgNum];
-          if (!def) break;
-          for (const f of def.fields) offset += f.size;
           const def = localDefinitions[(header >> 5) & 0x03];
           if (def) { for (const f of def.fields) offset += f.size; } else break;
         }
       }
-
       return records;
     }
 
-    function processActivityRecords(records, fileName) {
-      if (!records || records.length === 0) throw new Error("Nenhum registo de treino localizado.");
-
-      document.getElementById('results').style.display = 'block';
-      document.getElementById('actTitle').innerText = `Atividade: ${fileName}`;
-
-    // Motor de Cálculo Cirúrgico
+    // Motor de Cálculo Cirúrgico (Atualizado com Cardiac Drift e MMP20)
     function calculateMetrics(records) {
       if (!records || records.length === 0) return null;
       records.sort((a, b) => a.timestamp - b.timestamp);
 
-      // Distância máxima
       const maxDist = records.reduce((max, r) => r.distance > max ? r.distance : max, 0);
-      document.getElementById('totalDist').innerText = `${(maxDist / 1000).toFixed(2)} km`;
-
-      // Tempo Total
       const totalSecs = records[records.length - 1].timestamp - records[0].timestamp;
-      const h = Math.floor(totalSecs / 3600);
-      const m = Math.floor((totalSecs % 3600) / 60);
-      const s = totalSecs % 60;
-      document.getElementById('totalTime').innerText = `${h > 0 ? h + 'h ' : ''}${m}m ${s}s`;
 
-      // FILTRAR PAUSAS: velocidade >= 3 km/h
-      
       // CRITÉRIO DE PAUSA rigoroso: velocidade >= 3 km/h
       const movingRecords = records.filter(r => r.speed >= 3);
 
       const avgPwr = movingRecords.length ? Math.round(movingRecords.reduce((acc, r) => acc + r.power, 0) / movingRecords.length) : 0;
-      
-      const validHr = movingRecords.filter(r => r.heart_rate > 0 && r.heart_rate < 220);
-      const avgHr = validHr.length ? Math.round(validHr.reduce((acc, r) => acc + r.heart_rate, 0) / validHr.length) : 0;
-
-      const validCad = movingRecords.filter(r => r.cadence > 0 && r.cadence < 180);
-      const avgCad = validCad.length ? Math.round(validCad.reduce((acc, r) => acc + r.cadence, 0) / validCad.length) : 0;
-
-      const validSpeed = movingRecords.filter(r => r.speed >= 3 && r.speed < 120);
-      const avgSpeed = validSpeed.length ? (validSpeed.reduce((acc, r) => acc + r.speed, 0) / validSpeed.length).toFixed(1) : 0;
-
-      document.getElementById('avgPwr').innerText = `${avgPwr} W`;
-      document.getElementById('avgHr').innerText = `${avgHr} bpm`;
-      document.getElementById('avgCad').innerText = `${avgCad} rpm`;
-      document.getElementById('avgSpeed').innerText = `${avgSpeed} km/h`;
       const validHr = movingRecords.filter(r => r.hr > 0 && r.hr < 220);
       const avgHr = validHr.length ? Math.round(validHr.reduce((acc, r) => acc + r.hr, 0) / validHr.length) : 0;
       const validCad = movingRecords.filter(r => r.cad > 0 && r.cad < 180);
       const avgCad = validCad.length ? Math.round(validCad.reduce((acc, r) => acc + r.cad, 0) / validCad.length) : 0;
       const avgSpeed = movingRecords.length ? (movingRecords.reduce((acc, r) => acc + r.speed, 0) / movingRecords.length).toFixed(1) : 0;
 
-      // Top 4 de 4 Minutos (240s) usando a linha do tempo completa sem distorções
+      // 1. Cálculo de Desacoplamento Aeróbico (Cardiac Drift)
+      const halfIdx = Math.floor(movingRecords.length / 2);
+      const half1 = movingRecords.slice(0, halfIdx).filter(r => r.hr > 0 && r.power > 0);
+      const half2 = movingRecords.slice(halfIdx).filter(r => r.hr > 0 && r.power > 0);
+      
+      const calcEF = (recs) => {
+        if (!recs.length) return 0;
+        const p = recs.reduce((a, r) => a + r.power, 0) / recs.length;
+        const h = recs.reduce((a, r) => a + r.hr, 0) / recs.length;
+        return h > 0 ? p / h : 0;
+      };
+      
+      const ef1 = calcEF(half1);
+      const ef2 = calcEF(half2);
+      let drift = null;
+      if (ef1 > 0 && ef2 > 0) drift = ((ef1 - ef2) / ef1) * 100;
+
+      // Linha do tempo contínua para médias móveis
       let timeline = [];
       if (records.length > 1) {
         let startT = records[0].timestamp;
         let endT = records[records.length - 1].timestamp;
         let recMap = new Map(records.map(r => [r.timestamp, r.power]));
-
-        for (let t = startT; t <= endT; t++) {
-          timeline.push(recMap.get(t) || 0);
-        }
+        for (let t = startT; t <= endT; t++) timeline.push(recMap.get(t) || 0);
       }
-      let startT = records[0].timestamp;
-      let endT = records[records.length - 1].timestamp;
-      let recMap = new Map(records.map(r => [r.timestamp, r.power]));
-      for (let t = startT; t <= endT; t++) timeline.push(recMap.get(t) || 0);
 
+      // 2. Top 4 de 4 Minutos (240s)
       const windowSize = 240;
       let intervals = [];
-
       for (let i = 0; i <= timeline.length - windowSize; i++) {
         let sum = 0;
-        for (let j = 0; j < windowSize; j++) {
-          sum += timeline[i + j];
-        }
         for (let j = 0; j < windowSize; j++) sum += timeline[i + j];
         intervals.push({ avg: Math.round(sum / windowSize), index: i });
       }
-
       intervals.sort((a, b) => b.avg - a.avg);
 
       let top4 = [];
-@@ -289,12 +333,76 @@ <h3 id="actTitle" style="color: #38bdf8; margin-bottom: 20px; text-align: center
+      for (const item of intervals) {
+        if (!top4.some(existing => Math.abs(existing.index - item.index) < windowSize)) {
+          top4.push(item);
+          if (top4.length === 4) break;
         }
       }
 
-      let top4Html = top4.length > 0 
-        ? top4.map((item, idx) => `<b>${idx + 1}º esforço:</b> <span style="color: #fc5200; font-weight: bold;">${item.avg} W</span> (Média de 4 min)`).join('<br>') 
+      // 3. Pico Real de 20 Minutos (1200s) para o FTP Móvel exato
+      let max20m = 0;
+      const w20 = 1200;
+      if (timeline.length >= w20) {
+        let sum = 0;
+        for (let i = 0; i < w20; i++) sum += timeline[i];
+        max20m = sum / w20;
+        for (let i = w20; i < timeline.length; i++) {
+          sum = sum - timeline[i - w20] + timeline[i];
+          if (sum / w20 > max20m) max20m = sum / w20;
+        }
+      } else {
+        max20m = avgPwr; // Fallback se treino for inferior a 20 min
+      }
+
       return {
         totalSecs,
         distKm: (maxDist / 1000).toFixed(2),
-        avgPwr, avgHr, avgCad, avgSpeed, top4
+        avgPwr, avgHr, avgCad, avgSpeed, top4, drift, mmp20: Math.round(max20m)
       };
     }
 
-    // Exibe a tabela resumo
-    function renderSummaryTable() {
-      document.getElementById('summaryArea').style.display = 'block';
-      document.getElementById('detailArea').style.display = 'none';
-      const tbody = document.getElementById('summaryBody');
-      tbody.innerHTML = '';
+    // Processamento Global e Gráficos (FTP e Zonas)
+    function processGlobalMetrics() {
+      dbActivities.sort((a, b) => a.dateObj - b.dateObj); // Ordem Cronológica
 
-      // Ordenar por data (da mais recente para a mais antiga)
-      dbActivities.reverse().forEach((act, index) => {
-        if (!act.metrics) return;
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td><strong>${act.date}</strong></td>
-          <td>${act.name}</td>
-          <td>${act.metrics.distKm} km</td>
-          <td>${act.metrics.avgPwr} W</td>
-          <td><button class="btn-small" onclick="viewDetails(${index})">Ver Detalhes</button></td>
-        `;
-        tbody.appendChild(tr);
-      });
+      const daysWindow = 42;
+      let ftpHistory = [];
+      let maxFtpGlobal = 0;
+
+      // Construção da Janela Móvel do FTP
+      for (let i = 0; i < dbActivities.length; i++) {
+        const curr = dbActivities[i];
+        const minDate = new Date(curr.dateObj.getTime() - (daysWindow * 86400000));
+        
+        const windowActs = dbActivities.filter(a => a.dateObj >= minDate && a.dateObj <= curr.dateObj);
+        
+        // Utilizamos o MMP20 (max 20-min) * 0.95, ou a média do treino como fallback
+        const bestEffort = Math.max(...windowActs.map(a => a.metrics.mmp20 || a.metrics.avgPwr));
+        const estimatedFtp = Math.round(bestEffort * 0.95);
+        if (estimatedFtp > maxFtpGlobal) maxFtpGlobal = estimatedFtp;
+        
+        curr.currentFtp = estimatedFtp; // Guardamos o FTP específico daquele dia
+        ftpHistory.push({ date: curr.dateObj, ftp: estimatedFtp });
+      }
+
+      renderFtpChart(ftpHistory);
+      renderDynamicZones();
     }
 
-    // Transita para os detalhes de uma atividade
-    window.viewDetails = function(index) {
-      const act = dbActivities[index];
-      if (!act || !act.metrics) return;
-
-      document.getElementById('summaryArea').style.display = 'none';
-      document.getElementById('detailArea').style.display = 'block';
-
-      document.getElementById('actTitle').innerText = `${act.name} (${act.date})`;
-
-      const m = act.metrics;
-      const h = Math.floor(m.totalSecs / 3600);
-      const min = Math.floor((m.totalSecs % 3600) / 60);
-      const s = m.totalSecs % 60;
+    function renderFtpChart(data) {
+      const canvas = document.getElementById('ftpCanvas');
+      const ctx = canvas.getContext('2d');
+      const w = canvas.offsetWidth || 900;
+      const h = 350;
       
-      document.getElementById('totalTime').innerText = `${h > 0 ? h + 'h ' : ''}${min}m ${s}s`;
-      document.getElementById('totalDist').innerText = `${m.distKm} km`;
-      document.getElementById('avgSpeed').innerText = `${m.avgSpeed} km/h`;
-      document.getElementById('avgPwr').innerText = `${m.avgPwr} W`;
-      document.getElementById('avgHr').innerText = `${m.avgHr} bpm`;
-      document.getElementById('avgCad').innerText = `${m.avgCad} rpm`;
+      canvas.width = w;
+      canvas.height = h;
+      ctx.clearRect(0, 0, w, h);
+      if (data.length < 2) return;
 
-      let top4Html = m.top4.length > 0 
-        ? m.top4.map((item, idx) => `<b>${idx + 1}º esforço:</b> <span style="color: #fc5200; font-weight: bold;">${item.avg} W</span> (Média de 4 min)`).join('<br>') 
-        : 'Dados insuficientes para blocos de 4 min.';
+      const minT = data[0].date.getTime();
+      const maxT = data[data.length - 1].date.getTime();
+      const minF = Math.max(0, Math.min(...data.map(d => d.ftp)) * 0.85);
+      const maxF = Math.max(...data.map(d => d.ftp)) * 1.1;
+      const pad = 40;
 
-      document.getElementById('top4Mins').innerHTML = top4Html;
+      const getX = (t) => pad + ((t - minT) / (maxT - minT)) * (w - pad * 2);
+      const getY = (f) => h - pad - ((f - minF) / (maxF - minF)) * (h - pad * 2);
+
+      // Grid
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 1;
+      for (let f = Math.ceil(minF / 50) * 50; f <= maxF; f += 50) {
+        const y = getY(f);
+        ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(w - pad, y); ctx.stroke();
+        ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right'; ctx.fillText(`${f}W`, pad - 5, y + 3);
+      }
+
+      // Curva
+      ctx.beginPath();
+      ctx.strokeStyle = '#fc5200';
+      ctx.lineWidth = 2;
+      data.forEach((pt, idx) => {
+        const x = getX(pt.date.getTime()), y = getY(pt.ftp);
+        if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
     }
 
-    window.showSummary = function() {
-      document.getElementById('detailArea').style.display = 'none';
-      document.getElementById('summaryArea').style.display = 'block';
-    }
+    function renderDynamicZones() {
+      const zonesData = {
+        Z1: { name: 'Z1 (Recup)', minP: 0, maxP: 0.55, sumHr: 0, count: 0, color: '#94a3b8' },
+        Z2: { name: 'Z2 (Base)', minP: 0.56, maxP: 0.75, sumHr: 0, count: 0, color: '#38bdf8' },
+        Z3: { name: 'Z3 (Tempo)', minP: 0.76, maxP: 0.90, sumHr: 0, count: 0, color: '#22c55e' },
+        Z4: { name: 'Z4 (Limiar)', minP: 0.91, maxP: 1.05, sumHr: 0, count: 0, color: '#eab308' },
+        Z5: { name: 'Z5 (VO2 Máx)', minP: 1.06, maxP: 1.20, sumHr: 0, count: 0, color: '#f97316' },
+        Z6: { name: 'Z6 (Anaeróbio)', minP: 1.21, maxP: 1.50, sumHr: 0, count: 0, color: '#ef4444' }
+      };
 
-    function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
-      const R = 6371;
-      const dLat = (lat2 - lat1) * (Math.PI/180);
-      const dLon = (lon2 - lon1) * (Math.PI/180);
-      const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * (Math.PI/180)) * Math.cos(lat2 * (Math.PI/180)) * Math.sin(dLon/2) * Math.sin(dLon/2); 
-      return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
-    }
-  </script>
-</body>
-</html>
+      dbActivities.forEach(act => {
+        if (!act.metrics || act.metrics.avgHr < 60 || !act.currentFtp) return;
+        const ratio = act.metrics.avgPwr / act.currentFtp; // Usa o FTP da ÉPOCA EXATA
+        for (const key in zonesData) {
+          const z = zonesData[key];
+          if (ratio >= z.minP && ratio <= z.maxP) {
+            z.sumHr += act.metrics.avgHr;
+            z.count++;
+            break;
+          }
+        }
+      });
+
+      const canvas = document.getElementById('zonesCanvas');
+      const ctx = canvas.getContext('2d');
+      const w = canvas.offsetWidth || 900, h = 350, pad = 40;
+      canvas.width = w; canvas.height = h;
+      ctx.clearRect(0, 0, w, h);
+
+      const zoneKeys = Object.keys(zonesData);
+      const barWidth = (w - pad * 2) / zoneKeys.length - 15;
+
+      zoneKeys.forEach((key, idx) => {
+        const z = zonesData[key];
+        const avgHr = z.count > 0 ? Math.round(z.sumHr / z.count) : 0;
+        const x = pad + idx * (barWidth + 15) + 10;

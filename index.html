@@ -18,6 +18,8 @@
     
     .btn { display: inline-block; background: #fc5200; color: white; padding: 10px 20px; border-radius: 6px; font-weight: 600; cursor: pointer; border: none; margin-top: 10px; text-decoration: none; }
     .btn:hover { background: #e04a00; }
+    .btn-danger { background: #ef4444; }
+    .btn-danger:hover { background: #dc2626; }
     
     #progressArea { display: none; text-align: center; padding: 30px 0; }
     .progress-bar-bg { background: #334155; height: 10px; border-radius: 5px; width: 100%; max-width: 400px; margin: 15px auto; overflow: hidden; }
@@ -43,7 +45,6 @@
     #statusMsg { color: #38bdf8; font-weight: bold; margin-top: 10px; text-align: center; }
     canvas { background: #0f172a; border-radius: 8px; width: 100%; height: 350px; margin-top: 15px; }
 
-    /* Filtros e Legendas */
     .filter-bar { display: flex; align-items: center; justify-content: space-between; background: #0f172a; padding: 12px 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #334155; }
     .custom-select { background: #1e293b; color: #fff; border: 1px solid #475569; padding: 8px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; outline: none; }
     .legend-container { display: flex; gap: 15px; flex-wrap: wrap; margin-top: 10px; }
@@ -73,7 +74,7 @@
     <div id="summaryArea">
       <div class="filter-bar" id="globalFilters" style="display: none;">
         <span style="color: #94a3b8; font-size: 0.9rem;">Opções de Agrupamento Temporal:</span>
-        <select id="timeGrouping" class="custom-select" onchange="updateZoneCharts()">
+        <select id="timeGrouping" class="custom-select" onchange="updateDynamicCharts()">
           <option value="dia">Dia</option>
           <option value="semana">Semana</option>
           <option value="quinzena">Quinzena</option>
@@ -90,14 +91,13 @@
         <button class="tab-btn" onclick="switchDashboardTab('zonesTab', this)">Assinatura Cardíaca</button>
         <button class="tab-btn" onclick="switchDashboardTab('pwrTimeTab', this)">Tempo/Zona (Potência)</button>
         <button class="tab-btn" onclick="switchDashboardTab('hrTimeTab', this)">Tempo/Zona (FC)</button>
+        <button class="tab-btn" onclick="switchDashboardTab('driftChartTab', this)">Evolução do Drift</button>
       </div>
 
-      <!-- Abas Existentes -->
+      <!-- Abas Estáticas -->
       <div id="tableTab" style="display: block;">
         <table class="summary-table">
-          <thead>
-            <tr><th>Data</th><th>Nome</th><th>Distância</th><th>Potência (Média)</th><th>Ação</th></tr>
-          </thead>
+          <thead><tr><th>Data</th><th>Nome</th><th>Distância</th><th>Potência (Média)</th><th>Ação</th></tr></thead>
           <tbody id="summaryBody"></tbody>
         </table>
       </div>
@@ -112,7 +112,7 @@
         <canvas id="zonesCanvas"></canvas>
       </div>
 
-      <!-- Novas Abas Empilhadas -->
+      <!-- Abas Dinâmicas (Controladas pelo Filtro) -->
       <div id="pwrTimeTab" style="display: none;">
         <h3 style="color: #f8fafc; border-bottom: 2px solid #fc5200; padding-bottom: 10px;">Tempo por Zona de Potência (Dinâmica)</h3>
         <p style="font-size: 0.85rem; color: #94a3b8;">Zonas recalculadas baseadas no seu FTP vigente (Janela 42d). Eixo vertical = Horas Absolutas.</p>
@@ -139,9 +139,19 @@
         </div>
         <canvas id="hrTimeCanvas" style="height: 400px; margin-top: 10px;"></canvas>
       </div>
+
+      <div id="driftChartTab" style="display: none;">
+        <h3 style="color: #f8fafc; border-bottom: 2px solid #fc5200; padding-bottom: 10px;">Evolução do Cardiac Drift (Desacoplamento)</h3>
+        <p style="font-size: 0.85rem; color: #94a3b8;">Média do Drift % no período selecionado. Ideal: verde (<= 5%). Perda de eficiência: vermelho (> 5%).</p>
+        <canvas id="driftCanvas" style="height: 400px; margin-top: 10px;"></canvas>
+      </div>
+
+      <div style="text-align: right; margin-top: 30px; border-top: 1px solid #334155; padding-top: 15px;">
+        <button class="btn btn-danger" onclick="clearLocalDatabase()">Limpar Dados / Carregar Novo ZIP</button>
+      </div>
     </div>
 
-    <!-- Detalhes do Treino Individual -->
+    <!-- Detalhes do Treino -->
     <div id="detailArea">
       <button class="btn" onclick="showSummary()" style="margin-bottom: 20px; background: #475569;">&larr; Voltar ao Histórico</button>
       <h2 id="actTitle" style="color: #38bdf8; margin-bottom: 20px; text-align: center;"></h2>
@@ -161,49 +171,106 @@
 
   <script>
     let dbActivities = [];
+    const DB_NAME = "UpYouDB";
+    const STORE_NAME = "activitiesStore";
 
+    // --- BANCO DE DADOS LOCAL (IndexedDB) ---
+    function initDB() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, 1);
+        request.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME, { keyPath: "id" });
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    async function saveToDB(activities) {
+      const db = await initDB();
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
+      store.put({ id: "main_data", data: activities });
+      return new Promise(resolve => tx.oncomplete = resolve);
+    }
+
+    async function loadFromDB() {
+      const db = await initDB();
+      const tx = db.transaction(STORE_NAME, "readonly");
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.get("main_data");
+      return new Promise(resolve => {
+        request.onsuccess = () => resolve(request.result ? request.result.data : null);
+        request.onerror = () => resolve(null);
+      });
+    }
+
+    async function clearLocalDatabase() {
+      if(confirm("Tem certeza que deseja apagar o histórico salvo? Terá de processar o ZIP novamente.")) {
+        const db = await initDB();
+        const tx = db.transaction(STORE_NAME, "readwrite");
+        tx.objectStore(STORE_NAME).delete("main_data");
+        location.reload();
+      }
+    }
+
+    // Inicialização da Página
+    window.onload = async () => {
+      const savedData = await loadFromDB();
+      if (savedData && savedData.length > 0) {
+        dbActivities = savedData;
+        // Restaurar datas que viram string no IndexedDB
+        dbActivities.forEach(a => a.dateObj = new Date(a.dateObj));
+        document.getElementById('uploadArea').style.display = 'none';
+        document.getElementById('statusMsg').style.color = '#22c55e';
+        document.getElementById('statusMsg').innerText = `Carregamento super-rápido: ${dbActivities.length} atividades restauradas da memória.`;
+        
+        processGlobalMetrics();
+        renderSummaryTable();
+        updateDynamicCharts();
+        
+        setTimeout(() => document.getElementById('statusMsg').innerText = '', 3000);
+      }
+    };
+
+    // --- NAVEGAÇÃO DE ABAS ---
     window.switchDashboardTab = function(tabId, el) {
       document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-      ['tableTab', 'ftpTab', 'zonesTab', 'pwrTimeTab', 'hrTimeTab'].forEach(id => {
+      ['tableTab', 'ftpTab', 'zonesTab', 'pwrTimeTab', 'hrTimeTab', 'driftChartTab'].forEach(id => {
         document.getElementById(id).style.display = 'none';
       });
       el.classList.add('active');
       document.getElementById(tabId).style.display = 'block';
 
-      // Mostra o filtro temporal apenas nas abas de gráficos empilhados
-      document.getElementById('globalFilters').style.display = 
-        (tabId === 'pwrTimeTab' || tabId === 'hrTimeTab') ? 'flex' : 'none';
-        
-      if (tabId === 'pwrTimeTab' || tabId === 'hrTimeTab') updateZoneCharts();
+      const isDynamicTab = ['pwrTimeTab', 'hrTimeTab', 'driftChartTab'].includes(tabId);
+      document.getElementById('globalFilters').style.display = isDynamicTab ? 'flex' : 'none';
+      if (isDynamicTab) updateDynamicCharts();
     }
 
+    // --- LEITURA DO ZIP ---
     document.getElementById('zipInput').addEventListener('change', async (event) => {
       const file = event.target.files[0];
       if (!file) return;
 
       document.getElementById('uploadArea').style.display = 'none';
       document.getElementById('progressArea').style.display = 'block';
-      
       const msgEl = document.getElementById('statusMsg');
       const progressText = document.getElementById('progressText');
       const progressFill = document.getElementById('progressFill');
 
-      msgEl.style.color = '#38bdf8';
       msgEl.innerText = '';
-      document.body.offsetHeight; // Forçar repaint
+      document.body.offsetHeight; 
 
       setTimeout(async () => {
         try {
-          progressText.innerText = "A carregar o ZIP principal para a memória...";
+          progressText.innerText = "A carregar o ZIP para a memória (pode demorar alguns segundos)...";
           const jszip = new JSZip();
           const zip = await jszip.loadAsync(file);
           
           let csvEntry = null;
-          zip.forEach((path, entry) => {
-            if (path.toLowerCase().includes('activities.csv')) csvEntry = entry;
-          });
-
-          if (!csvEntry) throw new Error("O ficheiro 'activities.csv' não foi encontrado no ZIP.");
+          zip.forEach((path, entry) => { if (path.toLowerCase().includes('activities.csv')) csvEntry = entry; });
+          if (!csvEntry) throw new Error("O ficheiro 'activities.csv' não foi encontrado.");
 
           progressText.innerText = "A interpretar atividades...";
           const csvText = await csvEntry.async("string");
@@ -213,35 +280,26 @@
           for (let i = 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
-            
             let cols = [];
             let inQuote = false, val = '';
             for (let ch of line) {
-              if (inQuote) {
-                if (ch === '"') inQuote = false; else val += ch;
-              } else {
-                if (ch === '"') inQuote = true;
-                else if (ch === ',') { cols.push(val); val = ''; }
-                else val += ch;
-              }
+              if (inQuote) { if (ch === '"') inQuote = false; else val += ch; } 
+              else { if (ch === '"') inQuote = true; else if (ch === ',') { cols.push(val); val = ''; } else val += ch; }
             }
             cols.push(val);
 
             const filePath = cols.find(c => c && c.toLowerCase().includes('activities/') && (c.toLowerCase().endsWith('.fit.gz') || c.toLowerCase().endsWith('.fit')));
-            if (filePath) queue.push({ date: cols[1] || 'Data Desconhecida', name: cols[2] || 'Pedalada', file: filePath });
+            if (filePath) queue.push({ date: cols[1] || 'Data', name: cols[2] || 'Pedalada', file: filePath });
           }
 
           dbActivities = [];
-
           for (let i = 0; i < queue.length; i++) {
             const task = queue[i];
-            progressText.innerText = `A extrair métricas e histogramas: atividade ${i + 1} de ${queue.length}...`;
+            progressText.innerText = `A processar atividade ${i + 1} de ${queue.length}...`;
             progressFill.style.width = `${((i + 1) / queue.length) * 100}%`;
 
             let zipEntry = null;
-            zip.forEach((path, entry) => {
-              if (path.toLowerCase().includes(task.file.toLowerCase())) zipEntry = entry;
-            });
+            zip.forEach((path, entry) => { if (path.toLowerCase().includes(task.file.toLowerCase())) zipEntry = entry; });
 
             if (zipEntry) {
               try {
@@ -251,25 +309,25 @@
                 
                 const records = parseFitNative(decompressed);
                 const metrics = calculateMetrics(records);
-                
                 if (metrics) dbActivities.push({ ...task, metrics, dateObj: parseStravaDate(task.date) });
-              } catch (e) {
-                console.warn(`Aviso ao ler ${task.file}:`, e);
-              }
+              } catch (e) { console.warn(`Aviso: ${task.file}`); }
             }
-            await new Promise(r => setTimeout(r, 2)); 
+            if(i % 5 === 0) await new Promise(r => setTimeout(r, 1)); 
           }
 
           document.getElementById('progressArea').style.display = 'none';
           processGlobalMetrics();
+          
+          progressText.innerText = "A gravar histórico na memória do navegador...";
+          await saveToDB(dbActivities);
+          
           renderSummaryTable();
-          updateZoneCharts(); // Pre-renderiza gráficos empilhados
+          updateDynamicCharts();
 
         } catch (err) {
           msgEl.style.color = '#f87171';
           msgEl.innerText = 'Erro Crítico: ' + err.message;
-          progressText.style.color = '#f87171';
-          progressText.innerText = 'Processo interrompido.';
+          progressText.innerText = 'Interrompido.';
         }
       }, 500); 
     });
@@ -293,50 +351,46 @@
       while (offset < endOffset && offset < u8.length) {
         const header = view.getUint8(offset++);
         if ((header & 0x80) === 0) {
-          const isDefinition = (header & 0x40) !== 0;
-          const localMesgNum = header & 0x0F;
+          const isDef = (header & 0x40) !== 0;
+          const localNum = header & 0x0F;
 
-          if (isDefinition) {
+          if (isDef) {
             offset += 1;
-            const littleEndian = view.getUint8(offset++) === 0;
-            const globalMsgNum = view.getUint16(offset, littleEndian);
+            const le = view.getUint8(offset++) === 0;
+            const globalNum = view.getUint16(offset, le);
             offset += 2;
             const numFields = view.getUint8(offset++);
-
             const fields = [];
             for (let i = 0; i < numFields; i++) {
-              fields.push({ fieldDefNum: view.getUint8(offset++), size: view.getUint8(offset++), baseType: view.getUint8(offset++) });
+              fields.push({ num: view.getUint8(offset++), size: view.getUint8(offset++), type: view.getUint8(offset++) });
             }
-            if ((header & 0x20) !== 0) {
-              const numDevFields = view.getUint8(offset++);
-              offset += numDevFields * 3;
-            }
-            localDefinitions[localMesgNum] = { globalMsgNum, littleEndian, fields };
+            if ((header & 0x20) !== 0) offset += view.getUint8(offset++) * 3;
+            localDefinitions[localNum] = { globalNum, le, fields };
           } else {
-            const def = localDefinitions[localMesgNum];
+            const def = localDefinitions[localNum];
             if (!def) break;
             let rec = { timestamp: 0, power: 0, hr: 0, cad: 0, speed: 0, distance: 0 };
-            let isRecord = def.globalMsgNum === 20;
+            let isRec = def.globalNum === 20;
             let lat = 0, lon = 0;
 
             for (const f of def.fields) {
               let val = 0;
               if (f.size === 1) val = view.getUint8(offset);
-              else if (f.size === 2) val = view.getUint16(offset, def.littleEndian);
-              else if (f.size === 4) val = view.getUint32(offset, def.littleEndian);
+              else if (f.size === 2) val = view.getUint16(offset, def.le);
+              else if (f.size === 4) val = view.getUint32(offset, def.le);
               offset += f.size;
 
-              if (isRecord) {
-                if (f.fieldDefNum === 253) rec.timestamp = val;
-                else if (f.fieldDefNum === 7) rec.power = (val !== 0xFFFF) ? val : 0;
-                else if (f.fieldDefNum === 3) rec.hr = (val !== 0xFF) ? val : 0;
-                else if (f.fieldDefNum === 4) rec.cad = (val !== 0xFF) ? val : 0;
-                else if (f.fieldDefNum === 5) rec.distance = (val !== 0xFFFFFFFF) ? val / 100 : 0;
-                else if (f.fieldDefNum === 0) lat = (val !== 0x7FFFFFFF) ? val * (180 / Math.pow(2, 31)) : 0;
-                else if (f.fieldDefNum === 1) lon = (val !== 0x7FFFFFFF) ? val * (180 / Math.pow(2, 31)) : 0;
+              if (isRec) {
+                if (f.num === 253) rec.timestamp = val;
+                else if (f.num === 7) rec.power = (val !== 0xFFFF) ? val : 0;
+                else if (f.num === 3) rec.hr = (val !== 0xFF) ? val : 0;
+                else if (f.num === 4) rec.cad = (val !== 0xFF) ? val : 0;
+                else if (f.num === 5) rec.distance = (val !== 0xFFFFFFFF) ? val / 100 : 0;
+                else if (f.num === 0) lat = (val !== 0x7FFFFFFF) ? val * (180 / Math.pow(2, 31)) : 0;
+                else if (f.num === 1) lon = (val !== 0x7FFFFFFF) ? val * (180 / Math.pow(2, 31)) : 0;
               }
             }
-            if (isRecord && rec.timestamp > 0) {
+            if (isRec && rec.timestamp > 0) {
               if (lat !== 0 && lon !== 0) {
                 if (prevLat !== null && prevTime !== null && rec.timestamp > prevTime) {
                   const distKm = getDistanceFromLatLonInKm(prevLat, prevLon, lat, lon);
@@ -372,9 +426,7 @@
       const avgCad = validCad.length ? Math.round(validCad.reduce((acc, r) => acc + r.cad, 0) / validCad.length) : 0;
       const avgSpeed = (movingRecords.reduce((acc, r) => acc + r.speed, 0) / movingRecords.length).toFixed(1);
 
-      // Histogramas compactos de tempo (1 registo ≈ 1 segundo)
-      const pwrHist = {};
-      const hrHist = {};
+      const pwrHist = {}; const hrHist = {};
       movingRecords.forEach(r => {
         if (r.power > 0) pwrHist[r.power] = (pwrHist[r.power] || 0) + 1;
         if (r.hr > 0) hrHist[r.hr] = (hrHist[r.hr] || 0) + 1;
@@ -434,10 +486,9 @@
       }
 
       return {
-        totalSecs,
-        distKm: (maxDist / 1000).toFixed(2),
+        totalSecs, distKm: (maxDist / 1000).toFixed(2),
         avgPwr, avgHr, avgCad, avgSpeed, top4, drift, mmp20: Math.round(max20m),
-        pwrHist, hrHist // Preserva histogramas libertando dados segundo-a-segundo da RAM
+        pwrHist, hrHist
       };
     }
 
@@ -463,12 +514,10 @@
       renderDynamicZones();
     }
 
-    // --- GRÁFICOS EMPILHADOS E FILTROS DE TEMPO ---
+    // --- GRÁFICOS DINÂMICOS (ZONAS E DRIFT) ---
 
     function getPeriodKey(date, period) {
-      const y = date.getFullYear();
-      const m = date.getMonth();
-      const d = date.getDate();
+      const y = date.getFullYear(), m = date.getMonth(), d = date.getDate();
       if (period === 'ano') return `${y}`;
       if (period === 'semestre') return `${y}-S${Math.floor(m/6)+1}`;
       if (period === 'trimestre') return `${y}-T${Math.floor(m/3)+1}`;
@@ -478,35 +527,32 @@
         const w = Math.ceil((((date - new Date(y,0,1))/86400000) + new Date(y,0,1).getDay()+1)/7);
         return `${y}-W${String(w).padStart(2,'0')}`;
       }
-      return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`; // dia
+      return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     }
 
-    function updateZoneCharts() {
+    function updateDynamicCharts() {
       renderStackedZonesChart('pwr');
       renderStackedZonesChart('hr');
+      renderDriftChart();
     }
 
     function renderStackedZonesChart(type) {
       const period = document.getElementById('timeGrouping').value;
       const canvas = document.getElementById(type === 'pwr' ? 'pwrTimeCanvas' : 'hrTimeCanvas');
       const ctx = canvas.getContext('2d');
-      const w = canvas.offsetWidth || 900;
-      const h = 400;
+      const w = canvas.offsetWidth || 900, h = 400;
       canvas.width = w; canvas.height = h;
       ctx.clearRect(0, 0, w, h);
 
       const groups = {}; 
-      
       dbActivities.forEach(act => {
         if (!act.metrics || !act.currentFtp) return;
         const key = getPeriodKey(act.dateObj, period);
         if (!groups[key]) groups[key] = { Z1:0, Z2:0, Z3:0, Z4:0, Z5:0, Z6:0, total:0 };
         
         if (type === 'pwr') {
-          const hist = act.metrics.pwrHist;
-          for (let p in hist) {
-            const sec = hist[p];
-            const ratio = parseInt(p) / act.currentFtp;
+          for (let p in act.metrics.pwrHist) {
+            const sec = act.metrics.pwrHist[p], ratio = parseInt(p) / act.currentFtp;
             if (ratio < 0.55) groups[key].Z1 += sec;
             else if (ratio <= 0.75) groups[key].Z2 += sec;
             else if (ratio <= 0.90) groups[key].Z3 += sec;
@@ -516,15 +562,13 @@
             groups[key].total += sec;
           }
         } else {
-          const hist = act.metrics.hrHist;
-          for (let hrStr in hist) {
-            const sec = hist[hrStr];
-            const hr = parseInt(hrStr); // Max HR = 187 fixo
-            if (hr < 112) groups[key].Z1 += sec;
-            else if (hr <= 130) groups[key].Z2 += sec;
-            else if (hr <= 149) groups[key].Z3 += sec;
-            else if (hr <= 168) groups[key].Z4 += sec;
-            else groups[key].Z5 += sec;
+          for (let hrStr in act.metrics.hrHist) {
+            const sec = act.metrics.hrHist[hrStr], hr = parseInt(hrStr); 
+            if (hr < 112) groups[key].Z1 += sec;      // < 60% de 187
+            else if (hr <= 130) groups[key].Z2 += sec; // 60-70%
+            else if (hr <= 149) groups[key].Z3 += sec; // 70-80%
+            else if (hr <= 168) groups[key].Z4 += sec; // 80-90%
+            else groups[key].Z5 += sec;                // > 90%
             groups[key].total += sec;
           }
         }
@@ -537,19 +581,13 @@
       sortedKeys.forEach(k => { if (groups[k].total > maxTotalSec) maxTotalSec = groups[k].total; });
 
       const padL = 50, padR = 20, padT = 20, padB = 40;
-      const drawW = w - padL - padR;
-      const drawH = h - padT - padB;
+      const drawW = w - padL - padR, drawH = h - padT - padB;
       const barW = Math.max(8, (drawW / sortedKeys.length) - 4);
-
       const maxHours = maxTotalSec / 3600;
       let step = maxHours > 100 ? 20 : (maxHours > 50 ? 10 : (maxHours > 20 ? 5 : (maxHours > 5 ? 2 : 1)));
       if (step === 0) step = 1;
 
-      ctx.strokeStyle = '#334155';
-      ctx.fillStyle = '#64748b';
-      ctx.font = '10px sans-serif';
-      ctx.textAlign = 'right';
-
+      ctx.strokeStyle = '#334155'; ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
       for (let i = 0; i <= maxHours; i += step) {
         const y = padT + drawH - (i / maxHours) * drawH;
         ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
@@ -561,7 +599,6 @@
         : { Z1: '#94a3b8', Z2: '#38bdf8', Z3: '#22c55e', Z4: '#eab308', Z5: '#ef4444' };
 
       canvas.chartHitboxes = [];
-      
       sortedKeys.forEach((k, idx) => {
         const g = groups[k];
         const x = padL + idx * (drawW / sortedKeys.length) + (drawW / sortedKeys.length - barW) / 2;
@@ -577,15 +614,74 @@
         zones.forEach(z => {
           if (g[z] > 0) {
             const zoneH = (g[z] / 3600) / maxHours * drawH;
-            ctx.fillStyle = colors[z];
-            ctx.fillRect(x, currentY - zoneH, barW, zoneH);
+            ctx.fillStyle = colors[z]; ctx.fillRect(x, currentY - zoneH, barW, zoneH);
             currentY -= zoneH;
             barData.zones[z] = { hours: (g[z]/3600).toFixed(1), pct: ((g[z]/g.total)*100).toFixed(1) + '%' };
           }
         });
-        canvas.chartHitboxes.push({ x, y: padT, w: barW, h: drawH, data: barData });
+        canvas.chartHitboxes.push({ x, y: padT, w: barW, h: drawH, data: barData, isDrift: false });
       });
+      setupTooltip(canvas);
+    }
+
+    function renderDriftChart() {
+      const period = document.getElementById('timeGrouping').value;
+      const canvas = document.getElementById('driftCanvas');
+      const ctx = canvas.getContext('2d');
+      const w = canvas.offsetWidth || 900, h = 400;
+      canvas.width = w; canvas.height = h;
+      ctx.clearRect(0, 0, w, h);
+
+      const groups = {}; 
+      dbActivities.forEach(act => {
+        if (!act.metrics || act.metrics.drift === null) return;
+        const key = getPeriodKey(act.dateObj, period);
+        if (!groups[key]) groups[key] = { sumDrift: 0, count: 0 };
+        groups[key].sumDrift += act.metrics.drift;
+        groups[key].count++;
+      });
+
+      const sortedKeys = Object.keys(groups).sort();
+      if (sortedKeys.length === 0) return;
+
+      let maxDrift = 10; // Escala mínima de 10%
+      sortedKeys.forEach(k => { 
+        const avg = groups[k].sumDrift / groups[k].count;
+        if (avg > maxDrift) maxDrift = Math.ceil(avg);
+      });
+
+      const padL = 50, padR = 20, padT = 20, padB = 40;
+      const drawW = w - padL - padR, drawH = h - padT - padB;
+      const barW = Math.max(8, (drawW / sortedKeys.length) - 4);
+
+      ctx.strokeStyle = '#334155'; ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
+      for (let i = 0; i <= maxDrift; i += 5) {
+        const y = padT + drawH - (i / maxDrift) * drawH;
+        ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+        ctx.fillText(`${i}%`, padL - 5, y + 3);
+      }
       
+      // Linha meta (5%)
+      const y5 = padT + drawH - (5 / maxDrift) * drawH;
+      ctx.beginPath(); ctx.setLineDash([5, 5]); ctx.moveTo(padL, y5); ctx.lineTo(w - padR, y5);
+      ctx.strokeStyle = '#22c55e'; ctx.stroke(); ctx.setLineDash([]);
+
+      canvas.chartHitboxes = [];
+      sortedKeys.forEach((k, idx) => {
+        const avg = groups[k].sumDrift / groups[k].count;
+        const x = padL + idx * (drawW / sortedKeys.length) + (drawW / sortedKeys.length - barW) / 2;
+        const barH = Math.max(0, (avg / maxDrift) * drawH);
+        const y = padT + drawH - barH;
+
+        if (sortedKeys.length < 35 || idx % Math.ceil(sortedKeys.length/20) === 0) {
+          ctx.fillStyle = '#94a3b8'; ctx.textAlign = 'center'; ctx.fillText(k, x + barW/2, h - 15);
+        }
+
+        ctx.fillStyle = avg <= 5 ? '#22c55e' : '#ef4444';
+        ctx.fillRect(x, y, barW, barH);
+        
+        canvas.chartHitboxes.push({ x, y, w: barW, h: barH, data: { key: k, drift: avg.toFixed(1), count: groups[k].count }, isDrift: true });
+      });
       setupTooltip(canvas);
     }
 
@@ -594,8 +690,7 @@
         canvas.tooltipDiv = document.createElement('div');
         Object.assign(canvas.tooltipDiv.style, {
           position: 'absolute', background: 'rgba(15, 23, 42, 0.95)', border: '1px solid #475569',
-          padding: '10px', borderRadius: '6px', color: '#fff', pointerEvents: 'none',
-          display: 'none', zIndex: '100', fontSize: '12px'
+          padding: '10px', borderRadius: '6px', color: '#fff', pointerEvents: 'none', display: 'none', zIndex: '100', fontSize: '12px'
         });
         document.body.appendChild(canvas.tooltipDiv);
 
@@ -607,16 +702,17 @@
             for (let box of canvas.chartHitboxes) {
               if (mx >= box.x - 2 && mx <= box.x + box.w + 2 && my >= box.y && my <= box.y + box.h) {
                 const d = box.data;
-                let html = `<strong style="color:#38bdf8">${d.key}</strong><br/>Total: ${(d.total/3600).toFixed(1)}h<hr style="border-color:#334155; margin:5px 0;" />`;
-                Object.keys(d.zones).reverse().forEach(z => {
-                  html += `<b>${z}:</b> ${d.zones[z].hours}h (${d.zones[z].pct})<br/>`;
-                });
+                let html = '';
+                if (box.isDrift) {
+                  const color = d.drift <= 5 ? '#22c55e' : '#ef4444';
+                  html = `<strong style="color:#38bdf8">${d.key}</strong><hr style="border-color:#334155; margin:5px 0;"/>Média: <span style="color:${color}; font-weight:bold">${d.drift}%</span><br/>Treinos medidos: ${d.count}`;
+                } else {
+                  html = `<strong style="color:#38bdf8">${d.key}</strong><br/>Total: ${(d.total/3600).toFixed(1)}h<hr style="border-color:#334155; margin:5px 0;" />`;
+                  Object.keys(d.zones).reverse().forEach(z => { html += `<b>${z}:</b> ${d.zones[z].hours}h (${d.zones[z].pct})<br/>`; });
+                }
                 canvas.tooltipDiv.innerHTML = html;
-                canvas.tooltipDiv.style.left = (e.pageX + 15) + 'px';
-                canvas.tooltipDiv.style.top = (e.pageY + 15) + 'px';
-                canvas.tooltipDiv.style.display = 'block';
-                found = true;
-                break;
+                canvas.tooltipDiv.style.left = (e.pageX + 15) + 'px'; canvas.tooltipDiv.style.top = (e.pageY + 15) + 'px';
+                canvas.tooltipDiv.style.display = 'block'; found = true; break;
               }
             }
           }
@@ -627,135 +723,77 @@
     }
 
     // --- GRÁFICOS ANTIGOS ---
-    
     function renderFtpChart(data) {
       const canvas = document.getElementById('ftpCanvas');
       const ctx = canvas.getContext('2d');
-      const w = canvas.offsetWidth || 900;
-      const h = 350;
+      const w = canvas.offsetWidth || 900, h = 350;
       canvas.width = w; canvas.height = h;
       ctx.clearRect(0, 0, w, h);
       if (data.length < 2) return;
       const minT = data[0].date.getTime(), maxT = data[data.length - 1].date.getTime();
-      const minF = Math.max(0, Math.min(...data.map(d => d.ftp)) * 0.85);
-      const maxF = Math.max(...data.map(d => d.ftp)) * 1.1;
+      const minF = Math.max(0, Math.min(...data.map(d => d.ftp)) * 0.85), maxF = Math.max(...data.map(d => d.ftp)) * 1.1;
       const pad = 40;
-      const getX = (t) => pad + ((t - minT) / (maxT - minT)) * (w - pad * 2);
-      const getY = (f) => h - pad - ((f - minF) / (maxF - minF)) * (h - pad * 2);
+      const getX = (t) => pad + ((t - minT) / (maxT - minT)) * (w - pad * 2), getY = (f) => h - pad - ((f - minF) / (maxF - minF)) * (h - pad * 2);
 
       ctx.strokeStyle = '#334155'; ctx.lineWidth = 1;
       for (let f = Math.ceil(minF / 50) * 50; f <= maxF; f += 50) {
-        const y = getY(f);
-        ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(w - pad, y); ctx.stroke();
+        const y = getY(f); ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(w - pad, y); ctx.stroke();
         ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right'; ctx.fillText(`${f}W`, pad - 5, y + 3);
       }
       ctx.beginPath(); ctx.strokeStyle = '#fc5200'; ctx.lineWidth = 2;
-      data.forEach((pt, idx) => {
-        const x = getX(pt.date.getTime()), y = getY(pt.ftp);
-        if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      });
+      data.forEach((pt, idx) => { const x = getX(pt.date.getTime()), y = getY(pt.ftp); if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
       ctx.stroke();
     }
 
     function renderDynamicZones() {
-      const zonesData = {
-        Z1: { name: 'Z1 (Recup)', minP: 0, maxP: 0.55, sumHr: 0, count: 0, color: '#94a3b8' },
-        Z2: { name: 'Z2 (Base)', minP: 0.56, maxP: 0.75, sumHr: 0, count: 0, color: '#38bdf8' },
-        Z3: { name: 'Z3 (Tempo)', minP: 0.76, maxP: 0.90, sumHr: 0, count: 0, color: '#22c55e' },
-        Z4: { name: 'Z4 (Limiar)', minP: 0.91, maxP: 1.05, sumHr: 0, count: 0, color: '#eab308' },
-        Z5: { name: 'Z5 (VO2 Máx)', minP: 1.06, maxP: 1.20, sumHr: 0, count: 0, color: '#f97316' },
-        Z6: { name: 'Z6 (Anaeróbio)', minP: 1.21, maxP: 1.50, sumHr: 0, count: 0, color: '#ef4444' }
-      };
-
+      const zonesData = { Z1:{minP:0,maxP:0.55,sumHr:0,count:0,color:'#94a3b8',n:'Z1'}, Z2:{minP:0.56,maxP:0.75,sumHr:0,count:0,color:'#38bdf8',n:'Z2'}, Z3:{minP:0.76,maxP:0.90,sumHr:0,count:0,color:'#22c55e',n:'Z3'}, Z4:{minP:0.91,maxP:1.05,sumHr:0,count:0,color:'#eab308',n:'Z4'}, Z5:{minP:1.06,maxP:1.20,sumHr:0,count:0,color:'#f97316',n:'Z5'}, Z6:{minP:1.21,maxP:1.50,sumHr:0,count:0,color:'#ef4444',n:'Z6'} };
       dbActivities.forEach(act => {
         if (!act.metrics || act.metrics.avgHr < 60 || !act.currentFtp) return;
         const ratio = act.metrics.avgPwr / act.currentFtp;
         for (const key in zonesData) {
-          const z = zonesData[key];
-          if (ratio >= z.minP && ratio <= z.maxP) { z.sumHr += act.metrics.avgHr; z.count++; break; }
+          const z = zonesData[key]; if (ratio >= z.minP && ratio <= z.maxP) { z.sumHr += act.metrics.avgHr; z.count++; break; }
         }
       });
-
-      const canvas = document.getElementById('zonesCanvas');
-      const ctx = canvas.getContext('2d');
-      const w = canvas.offsetWidth || 900, h = 350, pad = 40;
-      canvas.width = w; canvas.height = h;
-      ctx.clearRect(0, 0, w, h);
-      const zoneKeys = Object.keys(zonesData);
-      const barWidth = (w - pad * 2) / zoneKeys.length - 15;
+      const canvas = document.getElementById('zonesCanvas'); const ctx = canvas.getContext('2d');
+      const w = canvas.offsetWidth || 900, h = 350, pad = 40; canvas.width = w; canvas.height = h; ctx.clearRect(0, 0, w, h);
+      const zoneKeys = Object.keys(zonesData); const barWidth = (w - pad * 2) / zoneKeys.length - 15;
 
       zoneKeys.forEach((key, idx) => {
-        const z = zonesData[key];
-        const avgHr = z.count > 0 ? Math.round(z.sumHr / z.count) : 0;
-        const x = pad + idx * (barWidth + 15) + 10;
-        const minScale = 90, maxScale = 190;
-        const barH = avgHr > 0 ? ((avgHr - minScale) / (maxScale - minScale)) * (h - pad * 2) : 5;
-        const y = h - pad - barH;
+        const z = zonesData[key], avgHr = z.count > 0 ? Math.round(z.sumHr / z.count) : 0;
+        const x = pad + idx * (barWidth + 15) + 10, barH = avgHr > 0 ? ((avgHr - 90) / 100) * (h - pad * 2) : 5, y = h - pad - barH;
         ctx.fillStyle = z.color; ctx.fillRect(x, y, barWidth, barH);
         ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
         if (avgHr > 0) ctx.fillText(`${avgHr} bpm`, x + barWidth / 2, y - 8);
-        ctx.fillStyle = '#94a3b8'; ctx.font = '11px sans-serif'; ctx.fillText(z.name, x + barWidth / 2, h - pad + 15);
+        ctx.fillStyle = '#94a3b8'; ctx.font = '11px sans-serif'; ctx.fillText(z.n, x + barWidth / 2, h - pad + 15);
       });
     }
 
     function renderSummaryTable() {
-      document.getElementById('summaryArea').style.display = 'block';
-      document.getElementById('detailArea').style.display = 'none';
-      const tbody = document.getElementById('summaryBody');
-      tbody.innerHTML = '';
-
+      document.getElementById('summaryArea').style.display = 'block'; document.getElementById('detailArea').style.display = 'none';
+      const tbody = document.getElementById('summaryBody'); tbody.innerHTML = '';
       [...dbActivities].reverse().forEach((act) => {
         if (!act.metrics) return;
-        const originalIndex = dbActivities.indexOf(act);
         const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td><strong>${act.date}</strong></td><td>${act.name}</td><td>${act.metrics.distKm} km</td>
-          <td>${act.metrics.avgPwr} W</td><td><button class="btn-small" onclick="viewDetails(${originalIndex})">Ver Detalhes</button></td>
-        `;
+        tr.innerHTML = `<td><strong>${act.date}</strong></td><td>${act.name}</td><td>${act.metrics.distKm} km</td><td>${act.metrics.avgPwr} W</td><td><button class="btn-small" onclick="viewDetails(${dbActivities.indexOf(act)})">Detalhes</button></td>`;
         tbody.appendChild(tr);
       });
     }
 
     window.viewDetails = function(index) {
-      const act = dbActivities[index];
-      if (!act || !act.metrics) return;
-      document.getElementById('summaryArea').style.display = 'none';
-      document.getElementById('detailArea').style.display = 'block';
+      const act = dbActivities[index]; if (!act || !act.metrics) return;
+      document.getElementById('summaryArea').style.display = 'none'; document.getElementById('detailArea').style.display = 'block';
       document.getElementById('actTitle').innerText = `${act.name} (${act.date})`;
-
       const m = act.metrics;
-      const h = Math.floor(m.totalSecs / 3600), min = Math.floor((m.totalSecs % 3600) / 60), s = m.totalSecs % 60;
-      
-      document.getElementById('totalTime').innerText = `${h > 0 ? h + 'h ' : ''}${min}m ${s}s`;
-      document.getElementById('totalDist').innerText = `${m.distKm} km`;
-      document.getElementById('avgSpeed').innerText = `${m.avgSpeed} km/h`;
-      document.getElementById('avgPwr').innerText = `${m.avgPwr} W`;
-      document.getElementById('avgHr').innerText = `${m.avgHr} bpm`;
-      document.getElementById('avgCad').innerText = `${m.avgCad} rpm`;
-      document.getElementById('mmp20Val').innerText = `${m.mmp20} W`;
-
-      let driftHtml = "--";
-      if (m.drift !== null) {
-        const color = m.drift <= 5 ? '#22c55e' : '#f87171';
-        driftHtml = `<span style="color: ${color}">${m.drift.toFixed(2)}%</span>`;
-      }
-      document.getElementById('driftVal').innerHTML = driftHtml;
-      document.getElementById('top4Mins').innerHTML = m.top4.length > 0 
-        ? m.top4.map((item, idx) => `<b>${idx + 1}º esforço:</b> <span style="color: #fc5200; font-weight: bold;">${item.avg} W</span> (Média de 4 min)`).join('<br>') 
-        : 'Dados insuficientes.';
+      document.getElementById('totalTime').innerText = `${Math.floor(m.totalSecs/3600)>0?Math.floor(m.totalSecs/3600)+'h ':''}${Math.floor((m.totalSecs%3600)/60)}m ${m.totalSecs%60}s`;
+      document.getElementById('totalDist').innerText = `${m.distKm} km`; document.getElementById('avgSpeed').innerText = `${m.avgSpeed} km/h`;
+      document.getElementById('avgPwr').innerText = `${m.avgPwr} W`; document.getElementById('avgHr').innerText = `${m.avgHr} bpm`;
+      document.getElementById('avgCad').innerText = `${m.avgCad} rpm`; document.getElementById('mmp20Val').innerText = `${m.mmp20} W`;
+      document.getElementById('driftVal').innerHTML = m.drift !== null ? `<span style="color: ${m.drift<=5?'#22c55e':'#f87171'}">${m.drift.toFixed(2)}%</span>` : "--";
+      document.getElementById('top4Mins').innerHTML = m.top4.length > 0 ? m.top4.map((item, idx) => `<b>${idx + 1}º esforço:</b> <span style="color: #fc5200; font-weight: bold;">${item.avg} W</span> (Média 4m)`).join('<br>') : 'Dados insuficientes.';
     }
 
-    window.showSummary = function() {
-      document.getElementById('detailArea').style.display = 'none';
-      document.getElementById('summaryArea').style.display = 'block';
-    }
-
-    function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
-      const R = 6371;
-      const dLat = (lat2 - lat1) * (Math.PI/180), dLon = (lon2 - lon1) * (Math.PI/180);
-      const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * (Math.PI/180)) * Math.cos(lat2 * (Math.PI/180)) * Math.sin(dLon/2) * Math.sin(dLon/2); 
-      return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
-    }
+    window.showSummary = function() { document.getElementById('detailArea').style.display = 'none'; document.getElementById('summaryArea').style.display = 'block'; }
+    function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) { const R = 6371; const dLat = (lat2 - lat1) * (Math.PI/180), dLon = (lon2 - lon1) * (Math.PI/180); const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * (Math.PI/180)) * Math.cos(lat2 * (Math.PI/180)) * Math.sin(dLon/2) * Math.sin(dLon/2); return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))); }
   </script>
 </body>
 </html>

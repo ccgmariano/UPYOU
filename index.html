@@ -1,134 +1,78 @@
 <!DOCTYPE html>
-<html lang="pt">
+<html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Treinador Virtual UPYOU - Dashboard Analítico</title>
+  <title>Treinador Virtual UPYOU - Dashboard & Diagnóstico</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 0; display: flex; flex-direction: column; align-items: center; }
-    
-    /* Painel Fixo Superior */
-    #topDashboard { display: none; position: sticky; top: 0; z-index: 1000; background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(10px); width: 100%; border-bottom: 2px solid #fc5200; box-shadow: 0 4px 15px rgba(0,0,0,0.5); padding: 15px 20px; box-sizing: border-box; }
-    .top-stats-container { max-width: 1100px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; }
-    .top-metric { text-align: center; }
-    .top-metric span { display: block; font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; }
-    .top-metric strong { font-size: 1.3rem; color: #fff; }
-    .nav-buttons { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
-    .nav-btn { background: #334155; color: white; border: 1px solid #475569; padding: 8px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; font-size: 0.85rem;}
-    .nav-btn.active, .nav-btn:hover { background: #fc5200; border-color: #fc5200; }
-
-    /* Área de Conteúdo */
-    .content-wrapper { width: 100%; max-width: 1000px; padding: 30px 20px; box-sizing: border-box; }
-    .card { background: #1e293b; padding: 30px; border-radius: 12px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.3); box-sizing: border-box; }
-    
-    h1 { text-align: center; color: #f8fafc; margin-bottom: 20px; margin-top: 40px; }
-    .upload-area { border: 2px dashed #475569; border-radius: 8px; padding: 40px; text-align: center; cursor: pointer; transition: all 0.3s; margin: 0 auto; max-width: 600px; }
-    .upload-area:hover { border-color: #fc5200; background: #334155; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; }
+    .card { background: #1e293b; padding: 30px; border-radius: 12px; width: 100%; max-width: 900px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
+    h1 { text-align: center; color: #f8fafc; margin-bottom: 20px; }
+    .upload-area { border: 2px dashed #475569; border-radius: 8px; padding: 30px; text-align: center; cursor: pointer; }
+    .upload-area:hover { border-color: #fc5200; }
     input[type="file"] { display: none; }
-    .btn { display: inline-block; background: #fc5200; color: white; padding: 10px 20px; border-radius: 6px; font-weight: 600; cursor: pointer; border: none; margin-top: 10px; text-decoration: none; }
-    .btn:hover { background: #e04a00; }
-    
-    #progressArea { display: none; text-align: center; padding: 30px 0; }
-    .progress-bar-bg { background: #334155; height: 10px; border-radius: 5px; width: 100%; max-width: 400px; margin: 15px auto; overflow: hidden; }
-    .progress-bar-fill { background: #fc5200; height: 100%; width: 0%; transition: width 0.1s linear; }
-
-    /* Vistas */
-    .view-section { display: none; }
-    .view-section.active { display: block; }
-
-    /* Tabela */
-    .summary-table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 0.9rem; }
-    .summary-table th, .summary-table td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; }
-    .summary-table th { color: #94a3b8; font-weight: 600; text-transform: uppercase; font-size: 0.8rem; }
-    .summary-table tr:hover { background: #334155; }
-    .btn-small { background: #38bdf8; color: #0f172a; padding: 6px 12px; border-radius: 4px; font-size: 0.8rem; cursor: pointer; font-weight: bold; border: none; }
-
-    /* Grid Estatísticas */
-    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px; }
+    .btn { display: inline-block; background: #fc5200; color: white; padding: 10px 20px; border-radius: 6px; font-weight: 600; cursor: pointer; border: none; margin-top: 10px; }
+    .nav-tabs { display: flex; gap: 10px; border-bottom: 1px solid #334155; padding-bottom: 15px; margin-bottom: 20px; flex-wrap: wrap; }
+    .tab-btn { background: #0f172a; border: 1px solid #334155; color: #94a3b8; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+    .tab-btn.active { background: #fc5200; color: white; border-color: #fc5200; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-bottom: 15px; }
     .stat-box { background: #0f172a; padding: 15px; border-radius: 8px; border-left: 4px solid #fc5200; }
     .stat-title { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; margin-bottom: 5px; }
     .stat-val { font-size: 1.2rem; font-weight: bold; color: #fff; }
-
-    /* Gráficos */
-    .chart-container { position: relative; height: 350px; width: 100%; background: #0f172a; padding: 20px; border-radius: 8px; box-sizing: border-box; border-left: 4px solid #38bdf8; margin-top: 15px; margin-bottom: 30px;}
-    
-    .filter-controls { display: flex; gap: 15px; justify-content: center; margin-bottom: 20px; flex-wrap: wrap;}
-    .select-style { background: #334155; color: #fff; border: 1px solid #475569; padding: 8px 12px; border-radius: 6px; font-weight: bold; outline: none; cursor: pointer;}
+    #statusMsg { color: #38bdf8; font-weight: bold; margin-top: 15px; text-align: center; }
+    canvas { background: #0f172a; border-radius: 8px; width: 100%; height: 320px; margin-top: 15px; }
+    .desc-note { font-size: 0.85rem; color: #94a3b8; margin-top: 10px; }
   </style>
 </head>
 <body>
 
-  <!-- Input Area Inicial -->
-  <div id="initScreen" style="width: 100%; max-width: 800px; padding: 20px;">
-    <h1>Treinador Virtual UPYOU <br><span style="font-size: 1rem; color: #94a3b8;">Motor Analítico de Performance</span></h1>
-    <div class="card">
-      <div class="upload-area" id="uploadArea" onclick="document.getElementById('zipInput').click()">
-        <p>Selecione o seu ficheiro ZIP completo do Strava</p>
-        <span class="btn">Processar Histórico (ZIP)</span>
-        <input type="file" id="zipInput" accept=".zip">
-      </div>
-      <div id="progressArea">
-        <h3 style="color: #38bdf8;">A processar o seu histórico...</h3>
-        <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
-        <p id="progressText" style="color: #94a3b8;">A extrair ficheiros...</p>
-      </div>
+  <div class="card">
+    <h1>Treinador Virtual UPYOU</h1>
+    
+    <div class="upload-area" id="uploadArea" onclick="document.getElementById('zipInput').click()">
+      <p>Selecione o seu ficheiro ZIP de exportação do Strava</p>
+      <span class="btn">Carregar Ficheiro .ZIP</span>
+      <input type="file" id="zipInput" accept=".zip">
     </div>
-  </div>
 
-  <!-- Painel Fixo Superior (Dashboard) -->
-  <div id="topDashboard">
-    <div class="top-stats-container">
-      <div style="display: flex; gap: 20px;">
-        <div class="top-metric"><span>Atividades</span><strong id="topCount">0</strong></div>
-        <div class="top-metric"><span>Distância Total</span><strong id="topDist">0 km</strong></div>
-        <div class="top-metric"><span>Tempo Total</span><strong id="topTime">0h</strong></div>
-      </div>
-      <div class="nav-buttons">
-        <button class="nav-btn active" id="btnHistory" onclick="switchView('summaryArea', this)">Histórico</button>
-        <button class="nav-btn" id="btnPowerBars" onclick="switchView('powerBarsArea', this); renderPowerBars();">Recordes de Potência</button>
-        <button class="nav-btn" id="btnZones" onclick="switchView('zonesArea', this); renderZones();">Zonas Potência</button>
-        <button class="nav-btn" id="btnHrAnalysis" onclick="switchView('hrAnalysisArea', this); renderHrAnalysis();" style="border-color: #ef4444; color: #fca5a5;">Cardio & Eficiência</button>
-      </div>
-    </div>
-  </div>
+    <div id="statusMsg"></div>
 
-  <!-- Área de Conteúdo Dinâmica -->
-  <div class="content-wrapper" id="mainContent" style="display: none;">
-    <div class="card">
-      
-      <!-- 1. Histórico (Tabela) -->
-      <div id="summaryArea" class="view-section active">
-        <h3 style="color: #f8fafc; border-bottom: 2px solid #fc5200; padding-bottom: 10px; margin-top: 0;">As Suas Pedaladas</h3>
-        <table class="summary-table">
-          <thead>
-            <tr>
-              <th>Data</th>
-              <th>Nome</th>
-              <th>Distância</th>
-              <th>Potência (Média)</th>
-              <th>Ação</th>
-            </tr>
-          </thead>
-          <tbody id="summaryBody"></tbody>
-        </table>
+    <div class="results" id="results" style="display: none; margin-top: 20px;">
+      <div class="nav-tabs">
+        <button class="tab-btn active" onclick="switchTab('individualTab', this)">Treino 27/10/2026</button>
+        <button class="tab-btn" onclick="switchTab('ftpTab', this)">Histórico de FTP (42 Dias)</button>
+        <button class="tab-btn" onclick="switchTab('signatureTab', this)">Assinatura Cardíaca Dinâmica</button>
       </div>
 
-      <!-- 2. Detalhes da Atividade -->
-      <div id="detailArea" class="view-section">
-        <button class="btn" onclick="goBackToHistory()" style="margin-bottom: 20px; background: #475569;">&larr; Voltar ao Histórico</button>
-        <h2 id="actTitle" style="color: #38bdf8; margin-bottom: 20px; text-align: center; margin-top: 0;"></h2>
-        
+      <!-- Aba 1: Treino Individual -->
+      <div id="individualTab" class="tab-content active">
+        <h3 id="actTitle" style="color: #38bdf8; margin-bottom: 20px; text-align: center;"></h3>
         <div class="stat-grid">
-          <div class="stat-box"><div class="stat-title">Tempo Movimento</div><div class="stat-val" id="detTime">--</div></div>
-          <div class="stat-box"><div class="stat-title">Distância</div><div class="stat-val" id="detDist">--</div></div>
-          <div class="stat-box"><div class="stat-title">Fator de Eficiência (EF)</div><div class="stat-val" id="detEf" style="color: #38bdf8;">--</div></div>
-          <div class="stat-box"><div class="stat-title">Potência Média</div><div class="stat-val" id="detPwr">--</div></div>
-          <div class="stat-box"><div class="stat-title">FC Média</div><div class="stat-val" id="detHr">--</div></div>
-          <div class="stat-box"><div class="stat-title">FC Máxima</div><div class="stat-val" id="detMaxHr" style="color: #ef4444;">--</div></div>
+          <div class="stat-box">
+            <div class="stat-title">Potência Média</div>
+            <div class="stat-val" id="avgPwr">--</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-title">FC Média</div>
+            <div class="stat-val" id="avgHr">--</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-title">Cadência Média</div>
+            <div class="stat-val" id="avgCad">--</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-title">Velocidade Média</div>
+            <div class="stat-val" id="avgSpeed">--</div>
+          </div>
+          <div class="stat-box" style="border-left-color: #22c55e;">
+            <div class="stat-title">Cardiac Drift (Treino)</div>
+            <div class="stat-val" id="driftVal">--</div>
+          </div>
         </div>
 
         <div class="stat-box" style="border-left-color: #38bdf8;">
@@ -137,81 +81,54 @@
         </div>
       </div>
 
-      <!-- 3. Gráfico de Barras de Potência -->
-      <div id="powerBarsArea" class="view-section">
-        <h2 style="color: #f8fafc; margin-top: 0; text-align: center;">Recordes de Potência no Tempo</h2>
-        <div class="filter-controls">
-          <select id="barPeriodSelector" class="select-style" onchange="renderPowerBars()">
-            <option value="year">Por Ano</option>
-            <option value="month" selected>Por Mês</option>
-            <option value="week">Por Semana</option>
-          </select>
-          <select id="barIntervalSelector" class="select-style" onchange="renderPowerBars()">
-            <option value="15">Pico de 15s</option>
-            <option value="60">1 Minuto</option>
-            <option value="240">4 Minutos</option>
-            <option value="1200">20 Minutos</option>
-            <option value="3600">60 Minutos</option>
-          </select>
+      <!-- Aba 2: Histórico de FTP -->
+      <div id="ftpTab" class="tab-content">
+        <div class="stat-grid">
+          <div class="stat-box">
+            <div class="stat-title">FTP Pico Histórico</div>
+            <div class="stat-val" id="peakFtp">-- W</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-title">FTP Final Recente</div>
+            <div class="stat-val" id="latestFtp">-- W</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-title">Atividades Mapeadas</div>
+            <div class="stat-val" id="totalPwrActs">--</div>
+          </div>
         </div>
-        <div class="chart-container"><canvas id="powerBarsChart"></canvas></div>
+        <p class="desc-note">
+          Modelado com <b>janela móvel rolante de 42 dias</b> (Coggan / Morton).
+        </p>
+        <canvas id="ftpCanvas"></canvas>
       </div>
 
-      <!-- 4. Tempo em Zonas -->
-      <div id="zonesArea" class="view-section">
-        <h2 style="color: #f8fafc; margin-top: 0;">Tempo Total em Zonas de Potência</h2>
-        <p style="color: #94a3b8; font-size: 0.9rem;">Acumulado de todo o histórico baseado num FTP estimado de <strong style="color:#fc5200" id="displayFtp">250W</strong>.</p>
-        <div class="chart-container" style="height: 400px;"><canvas id="zonesChart"></canvas></div>
+      <!-- Aba 3: Assinatura Cardíaca Dinâmica -->
+      <div id="signatureTab" class="tab-content">
+        <p class="desc-note">
+          <b>FC Média por Zona de Potência (FTP Dinâmico):</b> Zonas calculadas em percentuais relativos ao FTP real de cada época em vez de Watts fixos.
+        </p>
+        <canvas id="zonesCanvas"></canvas>
       </div>
-
-      <!-- 5. NOVO: Cardio e Eficiência (EF, Drift e HR por Zona) -->
-      <div id="hrAnalysisArea" class="view-section">
-        <h2 style="color: #fca5a5; margin-top: 0;">Análise de Eficiência Fisiológica e Cardíaca</h2>
-        <p style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 25px;">Cruza o trabalho mecânico (Watts) com o custo interno (BPM).</p>
-        
-        <h3 style="color: #f8fafc; font-size: 1rem;">Evolução do Fator de Eficiência (EF) Médio por Mês</h3>
-        <p style="color: #94a3b8; font-size: 0.8rem; margin-top: -10px;">(Watts gerados por cada 1 Batimento Cardíaco. Quanto MAIOR a barra, melhor a sua base aeróbica).</p>
-        <div class="chart-container"><canvas id="efChart"></canvas></div>
-
-        <h3 style="color: #f8fafc; font-size: 1rem; margin-top: 40px;">Desacoplamento Aeróbico (Cardiac Drift) Médio por Mês</h3>
-        <p style="color: #94a3b8; font-size: 0.8rem; margin-top: -10px;">(Perda de eficiência na 2ª metade de treinos longos >1h. O ideal é manter < 5%).</p>
-        <div class="chart-container" style="border-left-color: #ef4444;"><canvas id="driftChart"></canvas></div>
-
-        <h3 style="color: #f8fafc; font-size: 1rem; margin-top: 40px;">Assinatura Cardíaca: FC Média por Zona de Potência</h3>
-        <p style="color: #94a3b8; font-size: 0.8rem; margin-top: -10px;">(Mapeamento de todo o histórico: A quantos BPM o seu coração bate em cada Zona).</p>
-        <div class="chart-container" style="border-left-color: #22c55e;"><canvas id="hrZonesChart"></canvas></div>
-      </div>
-
     </div>
   </div>
 
   <script>
-    const USER_FTP = 250; 
-    document.getElementById('displayFtp').innerText = USER_FTP + 'W';
+    function switchTab(tabId, el) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      el.classList.add('active');
+      document.getElementById(tabId).classList.add('active');
+    }
 
-    let dbActivities = []; 
-    let globalStats = { 
-      totalDist: 0, totalTime: 0, zones: [0,0,0,0,0,0], yearlyPower: {},
-      zoneHrSum: [0,0,0,0,0,0], zoneHrCount: [0,0,0,0,0,0],
-      monthlyEf: {}, monthlyDrift: {}
-    };
-    let lastScrollY = 0;
-    
-    // Gráficos instâncias
-    let zonesChartInstance = null;
-    let powerBarsChartInstance = null;
-    let efChartInstance = null;
-    let driftChartInstance = null;
-    let hrZonesChartInstance = null;
-
-    document.getElementById('zipInput').addEventListener('change', async (event) => {
+    document.getElementById('zipInput').addEventListener('change', (event) => {
       const file = event.target.files[0];
       if (!file) return;
 
       document.getElementById('uploadArea').style.display = 'none';
-      document.getElementById('progressArea').style.display = 'block';
-      const progressText = document.getElementById('progressText');
-      const progressFill = document.getElementById('progressFill');
+      const msgEl = document.getElementById('statusMsg');
+      msgEl.style.color = '#38bdf8';
+      msgEl.innerText = 'Lendo activities.csv e mapeando evolução temporal...';
 
       setTimeout(async () => {
         try {
@@ -219,394 +136,394 @@
           const zip = await jszip.loadAsync(file);
           
           let csvEntry = null;
-          zip.forEach((path, entry) => { if (path.toLowerCase().includes('activities.csv')) csvEntry = entry; });
+          zip.forEach((path, entry) => {
+            if (path.toLowerCase().includes('activities.csv')) csvEntry = entry;
+          });
 
           if (!csvEntry) throw new Error("Ficheiro 'activities.csv' não encontrado no ZIP.");
 
           const csvText = await csvEntry.async("string");
           const lines = csvText.split('\n');
-          let queue = [];
+
+          let targetFileName = "";
+          let parsedActs = [];
 
           for (let i = 1; i < lines.length; i++) {
-            const line = lines[i].trim();
-            if (!line) continue;
-            let cols = [];
-            let inQuote = false, val = '';
-            for (let ch of line) {
-              if (inQuote) {
-                if (ch === '"') inQuote = false; else val += ch;
-              } else {
-                if (ch === '"') inQuote = true;
-                else if (ch === ',') { cols.push(val); val = ''; }
-                else val += ch;
-              }
-            }
-            cols.push(val);
+            const line = lines[i];
+            if (!line.trim()) continue;
 
-            if (cols.length > 10 && cols[3] === 'Pedalada') {
-              const filePath = cols.find(c => c.toLowerCase().includes('activities/') && c.toLowerCase().endsWith('.fit.gz'));
-              if (filePath) {
-                const dateMatch = cols[1].match(/\d{4}/);
-                queue.push({ date: cols[1], name: cols[2], file: filePath, year: dateMatch ? dateMatch[0] : 'Histórico' });
+            if (line.includes('27 de out. de 2026')) {
+              const matchFile = line.match(/(activities\/[^,"]+\.(fit|gpx|tcx)\.gz)/i);
+              if (matchFile) targetFileName = matchFile[1];
+            }
+
+            const dateMatch = line.match(/"?(\d{1,2}\s+de\s+[a-zç\.]+\s+de\s+\d{4})/i) || line.match(/(\d{4}-\d{2}-\d{2})/);
+            if (dateMatch) {
+              const parsedDate = parseStravaDate(dateMatch[1]);
+              const nums = line.split(',').map(n => parseFloat(n.replace(/"/g, ''))).filter(n => !isNaN(n));
+              
+              // Extração aproximada de potência média e FC média das colunas
+              const pwrVals = nums.filter(n => n > 60 && n < 500);
+              const hrVals = nums.filter(n => n > 70 && n < 210);
+
+              let pwr = pwrVals.length ? pwrVals[0] : 0;
+              let hr = hrVals.length ? hrVals[0] : 0;
+
+              if (parsedDate && pwr > 90) {
+                parsedActs.push({ date: parsedDate, pwr, hr });
               }
             }
           }
 
-          if (queue.length === 0) throw new Error("Nenhuma pedalada FIT localizada.");
+          if (!targetFileName) throw new Error("Atividade de 27 de out. de 2026 não encontrada no CSV.");
 
-          dbActivities = [];
-          globalStats = { totalDist: 0, totalTime: 0, zones: [0,0,0,0,0,0], yearlyPower: {}, zoneHrSum: [0,0,0,0,0,0], zoneHrCount: [0,0,0,0,0,0], monthlyEf: {}, monthlyDrift: {} };
+          msgEl.innerText = `Processando atividade e ajustando zonas dinâmicas...`;
 
-          for (let i = 0; i < queue.length; i++) {
-            const task = queue[i];
-            progressText.innerText = `A processar atividade ${i + 1} de ${queue.length}...`;
-            progressFill.style.width = `${((i + 1) / queue.length) * 100}%`;
-
-            let zipEntry = null;
-            zip.forEach((path, entry) => { if (path.toLowerCase().includes(task.file.toLowerCase())) zipEntry = entry; });
-
-            if (zipEntry) {
-              try {
-                const rawData = await zipEntry.async("uint8array");
-                const decompressed = pako.inflate(rawData);
-                const records = parseFitNative(decompressed);
-                const metrics = calculateMetrics(records, task.year);
-                
-                if (metrics) {
-                  dbActivities.push({ ...task, metrics });
-                  globalStats.totalDist += parseFloat(metrics.distKm);
-                  globalStats.totalTime += metrics.totalSecs;
-                }
-              } catch (e) {}
+          let targetEntry = null;
+          zip.forEach((path, entry) => {
+            if (path.toLowerCase().includes(targetFileName.toLowerCase())) {
+              targetEntry = entry;
             }
-            await new Promise(r => setTimeout(r, 5)); 
-          }
+          });
 
-          document.getElementById('initScreen').style.display = 'none';
-          document.getElementById('topDashboard').style.display = 'block';
-          document.getElementById('mainContent').style.display = 'block';
-          
-          updateTopPanel();
-          renderSummaryTable();
+          if (!targetEntry) throw new Error(`O ficheiro ${targetFileName} não foi encontrado.`);
+
+          const raw = await targetEntry.async("uint8array");
+          let text = targetFileName.endsWith('.gz') 
+            ? new TextDecoder().decode(pako.inflate(raw))
+            : new TextDecoder().decode(raw);
+
+          msgEl.innerText = '';
+          document.getElementById('results').style.display = 'block';
+
+          // 1. Processa treino de 27/10/2026
+          processActivityData(text, targetFileName.split('/').pop());
+
+          // 2. Histórico de FTP e Zonas Dinâmicas
+          const ftpHistory = calculateRollingFTP(parsedActs);
+          renderFtpChart(ftpHistory);
+          renderDynamicZones(parsedActs, ftpHistory);
 
         } catch (err) {
-          progressText.style.color = '#f87171';
-          progressText.innerText = 'Erro crítico: ' + err.message;
+          msgEl.style.color = '#f87171';
+          msgEl.innerText = 'Erro: ' + err.message;
         }
-      }, 100);
+      }, 150);
     });
 
-    function parseFitNative(u8) {
-      const view = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
-      let offset = view.getUint8(0);
-      const endOffset = offset + view.getUint32(4, true);
-      const localDefs = {};
-      const records = [];
-      let pLat = null, pLon = null, pTime = null;
-
-      while (offset < endOffset && offset < u8.length) {
-        const header = view.getUint8(offset++);
-        if ((header & 0x80) === 0) {
-          const lNum = header & 0x0F;
-          if ((header & 0x40) !== 0) { 
-            offset++;
-            const lEnd = view.getUint8(offset++) === 0;
-            const gNum = view.getUint16(offset, lEnd);
-            offset += 2;
-            const nFields = view.getUint8(offset++);
-            const fields = [];
-            for (let i = 0; i < nFields; i++) fields.push({ num: view.getUint8(offset++), size: view.getUint8(offset++), type: view.getUint8(offset++) });
-            if ((header & 0x20) !== 0) offset += view.getUint8(offset++) * 3;
-            localDefs[lNum] = { gNum, lEnd, fields };
-          } else { 
-            const def = localDefs[lNum];
-            if (!def) break;
-            let r = { t: 0, p: 0, h: 0, c: 0, s: 0, d: 0 };
-            let lat = 0, lon = 0;
-            let isRec = def.gNum === 20;
-
-            for (const f of def.fields) {
-              let v = 0;
-              if (f.size === 1) v = view.getUint8(offset);
-              else if (f.size === 2) v = view.getUint16(offset, def.lEnd);
-              else if (f.size === 4) v = view.getUint32(offset, def.lEnd);
-              offset += f.size;
-
-              if (isRec) {
-                if (f.num === 253) r.t = v;
-                else if (f.num === 7) r.p = (v !== 0xFFFF) ? v : 0;
-                else if (f.num === 3) r.h = (v !== 0xFF) ? v : 0;
-                else if (f.num === 4) r.c = (v !== 0xFF) ? v : 0;
-                else if (f.num === 5) r.d = (v !== 0xFFFFFFFF) ? v / 100 : 0;
-                else if (f.num === 0) lat = (v !== 0x7FFFFFFF) ? v * (180 / Math.pow(2, 31)) : 0;
-                else if (f.num === 1) lon = (v !== 0x7FFFFFFF) ? v * (180 / Math.pow(2, 31)) : 0;
-              }
-            }
-            if (isRec && r.t > 0) {
-              if (lat !== 0 && lon !== 0 && pLat !== null && pTime !== null && r.t > pTime) {
-                const h = (r.t - pTime) / 3600;
-                if (h > 0) r.s = getDistanceFromLatLonInKm(pLat, pLon, lat, lon) / h;
-              }
-              pLat = lat; pLon = lon; pTime = r.t;
-              records.push(r);
-            }
-          }
-        } else {
-          const def = localDefs[(header >> 5) & 0x03];
-          if (def) for (const f of def.fields) offset += f.size; else break;
-        }
+    function parseStravaDate(str) {
+      if (!str) return null;
+      if (str.includes('-')) return new Date(str);
+      const months = { 'jan': 0, 'fev': 1, 'mar': 2, 'abr': 3, 'mai': 4, 'jun': 5, 'jul': 6, 'ago': 7, 'set': 8, 'out': 9, 'nov': 10, 'dez': 11 };
+      const parts = str.match(/(\d{1,2})\s+de\s+([a-zç]{3})[^\s]*\s+de\s+(\d{4})/i);
+      if (parts) {
+        return new Date(parseInt(parts[3]), months[parts[2].toLowerCase()] || 0, parseInt(parts[1]));
       }
-      return records;
+      return null;
     }
 
-    function calculateMetrics(records, year) {
-      if (!records || records.length === 0) return null;
-      records.sort((a, b) => a.t - b.t);
+    function calculateRollingFTP(activities) {
+      activities.sort((a, b) => a.date - b.date);
+      const daysWindow = 42;
+      const ftpHistory = [];
+      let maxFtp = 0;
 
-      const maxDist = records.reduce((max, r) => r.d > max ? r.d : max, 0);
-      const startTimestamp = records[0].t * 1000; 
-      
-      const moving = records.filter(r => r.s >= 3);
-      if (moving.length === 0) return null;
-      
-      const totalSecs = moving.length; 
-      let maxHr = 0;
-
-      const avgPwr = Math.round(moving.reduce((acc, r) => acc + r.p, 0) / moving.length);
-      const validHr = moving.filter(r => r.h > 0 && r.h < 220);
-      const avgHr = validHr.length ? Math.round(validHr.reduce((acc, r) => acc + r.h, 0) / validHr.length) : 0;
-      const avgCad = moving.filter(r => r.c > 0 && r.c < 180).reduce((acc, r, i, arr) => acc + r.c / arr.length, 0);
-      const avgSpeed = (moving.reduce((acc, r) => acc + r.s, 0) / moving.length).toFixed(1);
-
-      // Agregação de HR por Zona e Zonas Totais
-      moving.forEach(r => {
-        if(r.h > maxHr) maxHr = r.h;
-        if(r.p > 0) {
-          const pct = r.p / USER_FTP;
-          let z = 0;
-          if (pct < 0.55) z=0; else if (pct < 0.75) z=1; else if (pct < 0.90) z=2; else if (pct < 1.05) z=3; else if (pct < 1.20) z=4; else z=5;
-          globalStats.zones[z]++;
-          if(r.h > 0) {
-            globalStats.zoneHrSum[z] += r.h;
-            globalStats.zoneHrCount[z]++;
-          }
-        }
-      });
-
-      // Fator de Eficiência da Atividade (EF)
-      const activityEf = avgHr > 0 ? (avgPwr / avgHr) : 0;
-
-      // Desacoplamento Aeróbico (Cardiac Drift) p/ treinos longos
-      let drift = 0;
-      if (moving.length > 3600) { // mais de 1h em movimento
-        const half = Math.floor(moving.length / 2);
-        const p1 = moving.slice(0, half).reduce((acc, r) => acc + r.p, 0) / half;
-        const h1 = moving.slice(0, half).filter(r=>r.h>0);
-        const avgH1 = h1.length ? h1.reduce((acc, r) => acc + r.h, 0) / h1.length : 0;
+      for (let i = 0; i < activities.length; i++) {
+        const curr = activities[i];
+        const minDate = new Date(curr.date.getTime() - (daysWindow * 86400000));
         
-        const p2 = moving.slice(half).reduce((acc, r) => acc + r.p, 0) / (moving.length - half);
-        const h2 = moving.slice(half).filter(r=>r.h>0);
-        const avgH2 = h2.length ? h2.reduce((acc, r) => acc + r.h, 0) / h2.length : 0;
+        const windowActs = activities.filter(a => a.date >= minDate && a.date <= curr.date);
+        const bestEffort = Math.max(...windowActs.map(a => a.pwr));
+        const estimatedFtp = Math.round(bestEffort * 0.95);
 
-        const ef1 = avgH1 > 0 ? p1 / avgH1 : 0;
-        const ef2 = avgH2 > 0 ? p2 / avgH2 : 0;
-        if (ef1 > 0 && ef2 > 0) drift = ((ef1 - ef2) / ef1) * 100;
+        if (estimatedFtp > maxFtp) maxFtp = estimatedFtp;
+        ftpHistory.push({ date: curr.date, ftp: estimatedFtp });
       }
 
-      // Agrega EF e Drift no Mês para o Gráfico
-      const dDate = new Date(startTimestamp);
-      const mKey = `${dDate.getFullYear()}-${String(dDate.getMonth()+1).padStart(2,'0')}`;
-      if (activityEf > 0) {
-        if (!globalStats.monthlyEf[mKey]) globalStats.monthlyEf[mKey] = { sum:0, count:0 };
-        globalStats.monthlyEf[mKey].sum += activityEf;
-        globalStats.monthlyEf[mKey].count++;
-      }
-      if (moving.length > 3600 && drift !== 0) {
-        if (!globalStats.monthlyDrift[mKey]) globalStats.monthlyDrift[mKey] = { sum:0, count:0 };
-        globalStats.monthlyDrift[mKey].sum += drift;
-        globalStats.monthlyDrift[mKey].count++;
-      }
+      document.getElementById('peakFtp').innerText = `${maxFtp} W`;
+      document.getElementById('latestFtp').innerText = `${ftpHistory[ftpHistory.length - 1].ftp} W`;
+      document.getElementById('totalPwrActs').innerText = activities.length;
 
-      // Power Curve (Top 4 mins para detalhes + Records Gerais)
-      let timeline = [];
-      let recMap = new Map(records.map(r => [r.t, r.p]));
-      for (let t = records[0].t; t <= records[records.length - 1].t; t++) timeline.push(recMap.get(t) || 0);
+      return ftpHistory;
+    }
 
-      const getWindowMax = (w) => {
-        if (timeline.length < w) return 0;
-        let sum = 0, max = 0;
-        for (let i = 0; i < w; i++) sum += timeline[i];
-        max = sum;
-        for (let i = w; i < timeline.length; i++) {
-          sum = sum - timeline[i - w] + timeline[i];
-          if (sum > max) max = sum;
-        }
-        return Math.round(max / w);
+    function renderDynamicZones(activities, ftpHistory) {
+      // Mapeamento dinâmico: FC média em cada zona com corte proporcional ao FTP da data
+      const zonesData = {
+        Z1: { name: 'Z1 (Recup)', minP: 0, maxP: 0.55, sumHr: 0, count: 0, color: '#94a3b8' },
+        Z2: { name: 'Z2 (Base)', minP: 0.56, maxP: 0.75, sumHr: 0, count: 0, color: '#38bdf8' },
+        Z3: { name: 'Z3 (Tempo)', minP: 0.76, maxP: 0.90, sumHr: 0, count: 0, color: '#22c55e' },
+        Z4: { name: 'Z4 (Limiar)', minP: 0.91, maxP: 1.05, sumHr: 0, count: 0, color: '#eab308' },
+        Z5: { name: 'Z5 (VO2 Máx)', minP: 1.06, maxP: 1.20, sumHr: 0, count: 0, color: '#f97316' },
+        Z6: { name: 'Z6 (Anaeróbio)', minP: 1.21, maxP: 1.50, sumHr: 0, count: 0, color: '#ef4444' }
       };
 
-      const requiredIntervals = [15, 60, 240, 1200, 3600];
-      const activityPowerRecords = {};
-      requiredIntervals.forEach(w => activityPowerRecords[w] = getWindowMax(w));
+      activities.forEach(act => {
+        if (!act.hr || act.hr < 60) return;
+        
+        // Encontra o FTP vigente na data da atividade
+        const matched = ftpHistory.filter(f => f.date <= act.date);
+        const currentFtp = matched.length ? matched[matched.length - 1].ftp : 200;
+        
+        const ratio = act.pwr / currentFtp;
 
-      const wSize = 240;
-      let intervals = [];
-      for (let i = 0; i <= timeline.length - wSize; i++) {
-        let sum = 0;
-        for (let j = 0; j < wSize; j++) sum += timeline[i + j];
-        intervals.push({ avg: Math.round(sum / wSize), index: i });
+        for (const key in zonesData) {
+          const z = zonesData[key];
+          if (ratio >= z.minP && ratio <= z.maxP) {
+            z.sumHr += act.hr;
+            z.count++;
+            break;
+          }
+        }
+      });
+
+      const canvas = document.getElementById('zonesCanvas');
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      
+      canvas.width = canvas.offsetWidth * dpr;
+      canvas.height = 320 * dpr;
+      ctx.scale(dpr, dpr);
+
+      const w = canvas.offsetWidth;
+      const h = 320;
+      const pad = 40;
+
+      ctx.clearRect(0, 0, w, h);
+
+      const zoneKeys = Object.keys(zonesData);
+      const barWidth = (w - pad * 2) / zoneKeys.length - 15;
+
+      zoneKeys.forEach((key, idx) => {
+        const z = zonesData[key];
+        const avgHr = z.count > 0 ? Math.round(z.sumHr / z.count) : 0;
+        const x = pad + idx * (barWidth + 15) + 10;
+        
+        // Escala normalizada entre 90 bpm e 190 bpm
+        const minScale = 90, maxScale = 190;
+        const barH = avgHr > 0 ? ((avgHr - minScale) / (maxScale - minScale)) * (h - pad * 2) : 5;
+        const y = h - pad - barH;
+
+        ctx.fillStyle = z.color;
+        ctx.fillRect(x, y, barWidth, barH);
+
+        // Valor de FC acima da barra
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 12px sans-serif';
+        ctx.textAlign = 'center';
+        if (avgHr > 0) ctx.fillText(`${avgHr}`, x + barWidth / 2, y - 6);
+
+        // Rótulo da Zona
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '10px sans-serif';
+        ctx.fillText(z.name, x + barWidth / 2, h - pad + 15);
+      });
+    }
+
+    function renderFtpChart(data) {
+      const canvas = document.getElementById('ftpCanvas');
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      
+      canvas.width = canvas.offsetWidth * dpr;
+      canvas.height = 320 * dpr;
+      ctx.scale(dpr, dpr);
+
+      const w = canvas.offsetWidth;
+      const h = 320;
+      const pad = 50;
+
+      ctx.clearRect(0, 0, w, h);
+      if (data.length < 2) return;
+
+      const minT = data[0].date.getTime();
+      const maxT = data[data.length - 1].date.getTime();
+      const minF = Math.min(...data.map(d => d.ftp)) * 0.85;
+      const maxF = Math.max(...data.map(d => d.ftp)) * 1.1;
+
+      const getX = (t) => pad + ((t - minT) / (maxT - minT)) * (w - pad * 2);
+      const getY = (f) => h - pad - ((f - minF) / (maxF - minF)) * (h - pad * 2);
+
+      // Linhas Horizontais
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 1;
+      for (let f = Math.ceil(minF / 50) * 50; f <= maxF; f += 50) {
+        const y = getY(f);
+        ctx.beginPath();
+        ctx.moveTo(pad, y);
+        ctx.lineTo(w - pad, y);
+        ctx.stroke();
+
+        ctx.fillStyle = '#64748b';
+        ctx.font = '10px sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText(`${f}W`, pad - 5, y + 3);
       }
+
+      // Linha do FTP
+      ctx.beginPath();
+      ctx.strokeStyle = '#fc5200';
+      ctx.lineWidth = 2.5;
+
+      data.forEach((pt, idx) => {
+        const x = getX(pt.date.getTime());
+        const y = getY(pt.ftp);
+        if (idx === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+
+      // Gradiente
+      const grad = ctx.createLinearGradient(0, pad, 0, h - pad);
+      grad.addColorStop(0, 'rgba(252, 82, 0, 0.35)');
+      grad.addColorStop(1, 'rgba(252, 82, 0, 0)');
+      ctx.lineTo(getX(maxT), h - pad);
+      ctx.lineTo(getX(minT), h - pad);
+      ctx.closePath();
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Rótulos de Anos
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(data[0].date.getFullYear(), pad, h - 15);
+      ctx.textAlign = 'right';
+      ctx.fillText(data[data.length - 1].date.getFullYear(), w - pad, h - 15);
+    }
+
+    function processActivityData(xmlText, fileName) {
+      document.getElementById('actTitle').innerText = `Atividade: ${fileName}`;
+
+      let records = [];
+      const trkpts = [...xmlText.matchAll(/<trkpt[\s\S]*?<\/trkpt>|<Trackpoint>[\s\S]*?<\/Trackpoint>/gi)];
+
+      let prevLat = null, prevLon = null, prevTime = null;
+
+      trkpts.forEach((pt, idx) => {
+        const block = pt[0];
+
+        const tMatch = block.match(/<time>([^<]+)<\/time>/i);
+        const pMatch = block.match(/<power>([\d.-]+)<\/power>|<Watts>([\d.-]+)<\/Watts>|<[^:]+:power>([\d.-]+)<\/[^:]+:power>/i);
+        const hMatch = block.match(/<[^:]+:hr>([\d.-]+)<\/[^:]+:hr>|<HeartRateBpm>[\s\S]*?<Value>([\d.-]+)<\/Value>[\s\S]*?<\/HeartRateBpm>|<hr>([\d.-]+)<\/hr>/i);
+        const cMatch = block.match(/<[^:]+:cad>([\d.-]+)<\/[^:]+:cad>|<Cadence>([\d.-]+)<\/Cadence>|<cad>([\d.-]+)<\/cad>/i);
+        
+        const lat = parseFloat(block.match(/lat="([-\d.]+)"/i)?.[1] || 0);
+        const lon = parseFloat(block.match(/lon="([-\d.]+)"/i)?.[1] || 0);
+
+        const time = tMatch ? new Date(tMatch[1]).getTime() / 1000 : idx;
+        const power = pMatch ? parseInt(pMatch[1] || pMatch[2] || pMatch[3]) : 0;
+        const hr = hMatch ? parseInt(hMatch[1] || hMatch[2] || hMatch[3]) : 0;
+        const cad = cMatch ? parseInt(cMatch[1] || cMatch[2] || cMatch[3]) : 0;
+
+        let speed = 0;
+        if (prevLat !== null && prevTime !== null && time > prevTime) {
+          const distKm = getDistanceFromLatLonInKm(prevLat, prevLon, lat, lon);
+          const hours = (time - prevTime) / 3600;
+          if (hours > 0) speed = distKm / hours;
+        }
+
+        prevLat = lat;
+        prevLon = lon;
+        prevTime = time;
+
+        records.push({ time, power, hr, cad, speed });
+      });
+
+      records.sort((a, b) => a.time - b.time);
+
+      const movingRecords = records.filter(r => r.power > 0 || r.cad > 0);
+
+      const avgPwr = movingRecords.length ? Math.round(movingRecords.reduce((acc, r) => acc + r.power, 0) / movingRecords.length) : 0;
+      const validHr = movingRecords.filter(r => r.hr > 0 && r.hr < 220);
+      const avgHr = validHr.length ? Math.round(validHr.reduce((acc, r) => acc + r.hr, 0) / validHr.length) : 0;
+      const validCad = movingRecords.filter(r => r.cad > 0 && r.cad < 180);
+      const avgCad = validCad.length ? Math.round(validCad.reduce((acc, r) => acc + r.cad, 0) / validCad.length) : 0;
+      const validSpeed = movingRecords.filter(r => r.speed > 0 && r.speed < 120);
+      const avgSpeed = validSpeed.length ? (validSpeed.reduce((acc, r) => acc + r.speed, 0) / validSpeed.length).toFixed(1) : 0;
+
+      document.getElementById('avgPwr').innerText = `${avgPwr} W`;
+      document.getElementById('avgHr').innerText = `${avgHr} bpm`;
+      document.getElementById('avgCad').innerText = `${avgCad} rpm`;
+      document.getElementById('avgSpeed').innerText = `${avgSpeed} km/h`;
+
+      // Cardiac Drift
+      const halfIdx = Math.floor(movingRecords.length / 2);
+      const half1 = movingRecords.slice(0, halfIdx).filter(r => r.hr > 0 && r.power > 0);
+      const half2 = movingRecords.slice(halfIdx).filter(r => r.hr > 0 && r.power > 0);
+
+      const calcEF = (recs) => {
+        if (!recs.length) return 0;
+        const pwr = recs.reduce((a, r) => a + r.power, 0) / recs.length;
+        const hr = recs.reduce((a, r) => a + r.hr, 0) / recs.length;
+        return hr > 0 ? pwr / hr : 0;
+      };
+
+      const ef1 = calcEF(half1);
+      const ef2 = calcEF(half2);
+      let driftHtml = "--";
+
+      if (ef1 > 0 && ef2 > 0) {
+        const drift = ((ef1 - ef2) / ef1) * 100;
+        const color = drift <= 5 ? '#22c55e' : '#f87171';
+        driftHtml = `<span style="color: ${color}">${drift.toFixed(2)}%</span>`;
+      }
+      document.getElementById('driftVal').innerHTML = driftHtml;
+
+      // Top 4 de 4 minutos
+      let timeline = [];
+      if (records.length > 1) {
+        let startT = records[0].time;
+        let endT = records[records.length - 1].time;
+        let recMap = new Map(records.map(r => [r.time, r.power]));
+
+        for (let t = startT; t <= endT; t++) {
+          timeline.push(recMap.get(t) || 0);
+        }
+      }
+
+      const windowSize = 240;
+      let intervals = [];
+
+      for (let i = 0; i <= timeline.length - windowSize; i++) {
+        let sum = 0;
+        for (let j = 0; j < windowSize; j++) {
+          sum += timeline[i + j];
+        }
+        intervals.push({ avg: Math.round(sum / windowSize), index: i });
+      }
+
       intervals.sort((a, b) => b.avg - a.avg);
+
       let top4 = [];
       for (const item of intervals) {
-        if (!top4.some(existing => Math.abs(existing.index - item.index) < wSize)) { top4.push(item); if (top4.length === 4) break; }
+        if (!top4.some(existing => Math.abs(existing.index - item.index) < windowSize)) {
+          top4.push(item);
+          if (top4.length === 4) break;
+        }
       }
 
-      return { totalSecs, distKm: (maxDist / 1000).toFixed(2), avgPwr, avgHr, maxHr, avgCad: Math.round(avgCad), avgSpeed, top4, activityPowerRecords, startTimestamp, activityEf, drift };
-    }
-
-    function updateTopPanel() {
-      document.getElementById('topCount').innerText = dbActivities.length;
-      document.getElementById('topDist').innerText = `${Math.round(globalStats.totalDist)} km`;
-      document.getElementById('topTime').innerText = `${Math.floor(globalStats.totalTime / 3600)}h ${Math.floor((globalStats.totalTime%3600)/60)}m`;
-    }
-
-    function renderSummaryTable() {
-      const tbody = document.getElementById('summaryBody');
-      tbody.innerHTML = '';
-      dbActivities.reverse().forEach((act, index) => {
-        if (!act.metrics) return;
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td><strong>${act.date}</strong></td>
-          <td>${act.name}</td>
-          <td>${act.metrics.distKm} km</td>
-          <td>${act.metrics.avgPwr} W</td>
-          <td><button class="btn-small" onclick="viewDetails(${index})">Detalhes</button></td>
-        `;
-        tbody.appendChild(tr);
-      });
-    }
-
-    window.switchView = function(viewId, btnElement) {
-      if(viewId !== 'detailArea' && viewId !== 'summaryArea') lastScrollY = window.scrollY; 
-      document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
-      document.getElementById(viewId).classList.add('active');
-      document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
-      if(btnElement) btnElement.classList.add('active');
-
-      if(viewId === 'summaryArea' && lastScrollY > 0) setTimeout(() => window.scrollTo({ top: lastScrollY, behavior: 'instant' }), 10);
-      else window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-
-    window.viewDetails = function(index) {
-      lastScrollY = window.scrollY; 
-      const act = dbActivities[index];
-      if (!act || !act.metrics) return;
-
-      document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
-      document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
-      document.getElementById('detailArea').classList.add('active');
-
-      document.getElementById('actTitle').innerText = `${act.name} (${act.date})`;
-      const m = act.metrics;
-      document.getElementById('detTime').innerText = `${Math.floor(m.totalSecs / 3600)}h ${Math.floor((m.totalSecs % 3600) / 60)}m`;
-      document.getElementById('detDist').innerText = `${m.distKm} km`;
-      document.getElementById('detSpeed').innerText = `${m.avgSpeed} km/h`;
-      document.getElementById('detPwr').innerText = `${m.avgPwr} W`;
-      document.getElementById('detHr').innerText = `${m.avgHr} bpm`;
-      document.getElementById('detMaxHr').innerText = `${m.maxHr} bpm`;
-      document.getElementById('detEf').innerText = m.activityEf > 0 ? m.activityEf.toFixed(2) : '--';
-
-      let top4Html = m.top4.length > 0 ? m.top4.map((item, idx) => `<b>${idx + 1}º esforço:</b> <span style="color: #fc5200; font-weight: bold;">${item.avg} W</span> (4 min)`).join('<br>') : 'Dados insuficientes.';
+      let top4Html = top4.length > 0 
+        ? top4.map((item, idx) => `<b>${idx + 1}º esforço:</b> <span style="color: #fc5200; font-weight: bold;">${item.avg} W</span> (Média de 4 min)`).join('<br>') 
+        : 'Dados insuficientes para blocos de 4 min.';
+      
       document.getElementById('top4Mins').innerHTML = top4Html;
-      window.scrollTo(0, 0);
-    }
-    window.goBackToHistory = function() { switchView('summaryArea', document.getElementById('btnHistory')); }
-
-    function getIsoWeek(d) {
-        const date = new Date(d.getTime()); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
-        const week1 = new Date(date.getFullYear(), 0, 4); return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
-    }
-
-    // Gráfico de Barras Potência
-    window.renderPowerBars = function() {
-      const period = document.getElementById('barPeriodSelector').value;
-      const interval = parseInt(document.getElementById('barIntervalSelector').value);
-      const intervalLabel = document.getElementById('barIntervalSelector').options[document.getElementById('barIntervalSelector').selectedIndex].text;
-      let grouped = {};
-
-      dbActivities.forEach(act => {
-        if(!act.metrics || !act.metrics.startTimestamp) return;
-        const d = new Date(act.metrics.startTimestamp);
-        let key = "";
-        const y = d.getFullYear(), m = d.getMonth() + 1;
-        if (period === 'year') key = `${y}`;
-        else if (period === 'month') key = `${y}-${String(m).padStart(2,'0')}`;
-        else if (period === 'week') key = `${y}-W${String(getIsoWeek(d)).padStart(2,'0')}`;
-
-        const pwr = act.metrics.activityPowerRecords[interval] || 0;
-        if (!grouped[key]) grouped[key] = [];
-        grouped[key].push(pwr);
-      });
-
-      const labels = Object.keys(grouped).sort();
-      const data = labels.map(l => Math.max(...grouped[l]));
-
-      if (powerBarsChartInstance) powerBarsChartInstance.destroy();
-      const ctx = document.getElementById('powerBarsChart').getContext('2d');
-      powerBarsChartInstance = new Chart(ctx, {
-          type: 'bar', data: { labels: labels, datasets: [{ label: `Melhor Potência - ${intervalLabel}`, data: data, backgroundColor: '#fc5200', borderRadius: 4 }] },
-          options: { responsive: true, maintainAspectRatio: false, color: '#f8fafc', plugins: { legend: { labels: { color: '#f8fafc' } } }, scales: { y: { beginAtZero: true, grid: {color: '#334155'}, ticks: { color: '#94a3b8'} }, x: { grid: {display: false}, ticks: { color: '#94a3b8'} } } }
-      });
-    }
-
-    // Gráfico de Zonas Totais
-    window.renderZones = function() {
-      if (zonesChartInstance) zonesChartInstance.destroy();
-      const ctx = document.getElementById('zonesChart').getContext('2d');
-      const dataHours = globalStats.zones.map(s => (s / 3600).toFixed(1));
-      zonesChartInstance = new Chart(ctx, {
-        type: 'doughnut', data: { labels: ['Z1 (Recuperação)', 'Z2 (Resistência)', 'Z3 (Tempo)', 'Z4 (Limiar)', 'Z5 (VO2 Máx)', 'Z6 (Anaeróbica)'], datasets: [{ data: dataHours, backgroundColor: ['#94a3b8', '#38bdf8', '#22c55e', '#facc15', '#fc5200', '#ef4444'], borderWidth: 0 }] },
-        options: { responsive: true, maintainAspectRatio: false, color: '#f8fafc', plugins: { legend: { position: 'right', labels: { color: '#f8fafc' } } } }
-      });
-    }
-
-    // NOVO: Renderizar Análise Cardio & Eficiência
-    window.renderHrAnalysis = function() {
-      // 1. EF Chart
-      const efLabels = Object.keys(globalStats.monthlyEf).sort();
-      const efData = efLabels.map(l => (globalStats.monthlyEf[l].sum / globalStats.monthlyEf[l].count).toFixed(2));
-      if (efChartInstance) efChartInstance.destroy();
-      efChartInstance = new Chart(document.getElementById('efChart').getContext('2d'), {
-        type: 'bar', data: { labels: efLabels, datasets: [{ label: 'Fator de Eficiência (Média)', data: efData, backgroundColor: '#38bdf8', borderRadius: 4 }] },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#f8fafc' } } }, scales: { y: { beginAtZero: false, grid: {color: '#334155'}, ticks: { color: '#94a3b8'} }, x: { grid: {display: false}, ticks: { color: '#94a3b8'} } } }
-      });
-
-      // 2. Drift Chart
-      const driftLabels = Object.keys(globalStats.monthlyDrift).sort();
-      const driftData = driftLabels.map(l => (globalStats.monthlyDrift[l].sum / globalStats.monthlyDrift[l].count).toFixed(1));
-      if (driftChartInstance) driftChartInstance.destroy();
-      driftChartInstance = new Chart(document.getElementById('driftChart').getContext('2d'), {
-        type: 'line', data: { labels: driftLabels, datasets: [{ label: 'Desacoplamento Aeróbico % (Drift)', data: driftData, borderColor: '#ef4444', backgroundColor: '#ef444440', tension: 0.3, fill: true }] },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#f8fafc' } } }, scales: { y: { beginAtZero: true, grid: {color: '#334155'}, ticks: { color: '#94a3b8'} }, x: { grid: {display: false}, ticks: { color: '#94a3b8'} } } }
-      });
-
-      // 3. HR by Power Zone Chart
-      const hrZoneData = globalStats.zoneHrSum.map((sum, i) => {
-        const count = globalStats.zoneHrCount[i];
-        return count > 0 ? Math.round(sum / count) : 0;
-      });
-      if (hrZonesChartInstance) hrZonesChartInstance.destroy();
-      hrZonesChartInstance = new Chart(document.getElementById('hrZonesChart').getContext('2d'), {
-        type: 'bar', data: { labels: ['Z1 (Recup.)', 'Z2 (Base)', 'Z3 (Tempo)', 'Z4 (Limiar)', 'Z5 (VO2 Máx)', 'Z6 (Anaerób.)'], datasets: [{ label: 'FC Média Estimada (BPM)', data: hrZoneData, backgroundColor: ['#94a3b8', '#38bdf8', '#22c55e', '#facc15', '#fc5200', '#ef4444'], borderRadius: 4 }] },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: false, min: 100, grid: {color: '#334155'}, ticks: { color: '#94a3b8'} }, x: { grid: {display: false}, ticks: { color: '#94a3b8'} } } }
-      });
     }
 
     function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
-      const R = 6371; const dLat = (lat2 - lat1) * (Math.PI/180); const dLon = (lon2 - lon1) * (Math.PI/180);
-      const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * (Math.PI/180)) * Math.cos(lat2 * (Math.PI/180)) * Math.sin(dLon/2) * Math.sin(dLon/2); 
-      return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+      const R = 6371;
+      const dLat = deg2rad(lat2 - lat1);
+      const dLon = deg2rad(lon2 - lon1);
+      const a = 
+        Math.sin(dLat/2) * Math.sin(dLat/2) +
+        Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * 
+        Math.sin(dLon/2) * Math.sin(dLon/2); 
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+      return R * c;
+    }
+
+    function deg2rad(deg) {
+      return deg * (Math.PI/180);
     }
   </script>
 </body>

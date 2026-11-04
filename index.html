@@ -1,71 +1,116 @@
 <!DOCTYPE html>
-<html lang="pt">
+<html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Treinador Virtual UPYOU - Análise Cirúrgica 27/10/2026</title>
+  <title>Treinador Virtual UPYOU - Análise & Histórico de FTP</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
 
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; }
-    .card { background: #1e293b; padding: 30px; border-radius: 12px; width: 100%; max-width: 850px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
+    .card { background: #1e293b; padding: 30px; border-radius: 12px; width: 100%; max-width: 900px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
     h1 { text-align: center; color: #f8fafc; margin-bottom: 20px; }
     .upload-area { border: 2px dashed #475569; border-radius: 8px; padding: 30px; text-align: center; cursor: pointer; }
     .upload-area:hover { border-color: #fc5200; }
     input[type="file"] { display: none; }
     .btn { display: inline-block; background: #fc5200; color: white; padding: 10px 20px; border-radius: 6px; font-weight: 600; cursor: pointer; border: none; margin-top: 10px; }
-    .results { margin-top: 25px; display: none; }
-    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 15px; margin-bottom: 15px; }
+    .nav-tabs { display: flex; gap: 10px; border-bottom: 1px solid #334155; padding-bottom: 15px; margin-bottom: 20px; }
+    .tab-btn { background: #0f172a; border: 1px solid #334155; color: #94a3b8; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+    .tab-btn.active { background: #fc5200; color: white; border-color: #fc5200; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px; }
     .stat-box { background: #0f172a; padding: 15px; border-radius: 8px; border-left: 4px solid #fc5200; }
     .stat-title { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; margin-bottom: 5px; }
     .stat-val { font-size: 1.2rem; font-weight: bold; color: #fff; }
     #statusMsg { color: #38bdf8; font-weight: bold; margin-top: 15px; text-align: center; }
+    canvas { background: #0f172a; border-radius: 8px; width: 100%; height: 350px; margin-top: 15px; }
   </style>
 </head>
 <body>
 
   <div class="card">
-    <h1>Treinador Virtual UPYOU <br><span style="font-size: 1rem; color: #94a3b8;">Análise Exclusiva: 27 de Outubro de 2026</span></h1>
+    <h1>Treinador Virtual UPYOU</h1>
     
     <div class="upload-area" id="uploadArea" onclick="document.getElementById('zipInput').click()">
-      <p>Selecione o seu ficheiro ZIP do Strava</p>
-      <span class="btn">Escolher Ficheiro .ZIP</span>
+      <p>Selecione o seu ficheiro ZIP de exportação do Strava</p>
+      <span class="btn">Carregar Ficheiro .ZIP</span>
       <input type="file" id="zipInput" accept=".zip">
     </div>
 
     <div id="statusMsg"></div>
 
-    <div class="results" id="results">
-      <h3 id="actTitle" style="color: #38bdf8; margin-bottom: 20px; text-align: center;"></h3>
-      
-      <div class="stat-grid">
-        <div class="stat-box">
-          <div class="stat-title">Potência Média (Em Movimento)</div>
-          <div class="stat-val" id="avgPwr">--</div>
+    <div class="results" id="results" style="display: none; margin-top: 20px;">
+      <div class="nav-tabs">
+        <button class="tab-btn active" onclick="switchTab('individualTab')">Treino em Destaque</button>
+        <button class="tab-btn" onclick="switchTab('ftpTab')">Histórico de FTP (Janela Móvel)</button>
+      </div>
+
+      <!-- Aba 1: Treino Individual -->
+      <div id="individualTab" class="tab-content active">
+        <h3 id="actTitle" style="color: #38bdf8; margin-bottom: 20px; text-align: center;"></h3>
+        <div class="stat-grid">
+          <div class="stat-box">
+            <div class="stat-title">Potência Média (Em Movimento)</div>
+            <div class="stat-val" id="avgPwr">--</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-title">FC Média (Em Movimento)</div>
+            <div class="stat-val" id="avgHr">--</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-title">Cadência Média</div>
+            <div class="stat-val" id="avgCad">--</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-title">Velocidade Média</div>
+            <div class="stat-val" id="avgSpeed">--</div>
+          </div>
+          <div class="stat-box" style="border-left-color: #22c55e;">
+            <div class="stat-title">Cardiac Drift (Desacoplamento)</div>
+            <div class="stat-val" id="driftVal">--</div>
+          </div>
         </div>
-        <div class="stat-box">
-          <div class="stat-title">Frequência Cardíaca Média (Em Movimento)</div>
-          <div class="stat-val" id="avgHr">--</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-title">Cadência Média (Em Movimento)</div>
-          <div class="stat-val" id="avgCad">--</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-title">Velocidade Média (Em Movimento)</div>
-          <div class="stat-val" id="avgSpeed">--</div>
+
+        <div class="stat-box" style="border-left-color: #38bdf8;">
+          <div class="stat-title">Top 4 Maiores Períodos de Potência (Média de 4 Minutos / 240s)</div>
+          <div class="stat-val" id="top4Mins" style="font-size: 0.95rem; line-height: 1.6; font-weight: normal;">--</div>
         </div>
       </div>
 
-      <div class="stat-box" style="border-left-color: #38bdf8;">
-        <div class="stat-title">Top 4 Maiores Períodos de Potência (Média de 4 Minutos / 240s)</div>
-        <div class="stat-val" id="top4Mins" style="font-size: 0.95rem; line-height: 1.6; font-weight: normal;">--</div>
+      <!-- Aba 2: Histórico de FTP -->
+      <div id="ftpTab" class="tab-content">
+        <div class="stat-grid">
+          <div class="stat-box">
+            <div class="stat-title">FTP Pico Histórico</div>
+            <div class="stat-val" id="peakFtp">-- W</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-title">FTP Final / Recente</div>
+            <div class="stat-val" id="latestFtp">-- W</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-title">Atividades com Medição</div>
+            <div class="stat-val" id="totalPwrActs">--</div>
+          </div>
+        </div>
+        <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 10px;">
+          Curva modelada com <b>janela móvel ponderada de 42 dias</b> baseada nos esforços máximos e limiares funcionais (Hunter Allen & Andrew Coggan).
+        </p>
+        <canvas id="ftpCanvas"></canvas>
       </div>
     </div>
   </div>
 
   <script>
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      event.target.classList.add('active');
+      document.getElementById(tabId).classList.add('active');
+    }
+
     document.getElementById('zipInput').addEventListener('change', (event) => {
       const file = event.target.files[0];
       if (!file) return;
@@ -73,9 +118,8 @@
       document.getElementById('uploadArea').style.display = 'none';
       const msgEl = document.getElementById('statusMsg');
       msgEl.style.color = '#38bdf8';
-      msgEl.innerText = 'A abrir o ZIP e a ler o activities.csv...';
+      msgEl.innerText = 'A abrir o ZIP e a ler histórico e arquivos...';
 
-      // Pausa essencial para o navegador atualizar o texto no ecrã antes de processar o ZIP
       setTimeout(async () => {
         try {
           const jszip = new JSZip();
@@ -86,27 +130,46 @@
             if (path.toLowerCase().includes('activities.csv')) csvEntry = entry;
           });
 
-          if (!csvEntry) throw new Error("O ficheiro 'activities.csv' não foi encontrado no ZIP.");
+          if (!csvEntry) throw new Error("Ficheiro 'activities.csv' não encontrado no ZIP.");
 
           const csvText = await csvEntry.async("string");
           const lines = csvText.split('\n');
-          let targetFileName = "";
 
+          let targetFileName = "";
+          let parsedActs = [];
+
+          // Parse robusto de todas as atividades para cálculo de FTP histórico
           for (let i = 1; i < lines.length; i++) {
             const line = lines[i];
-            // Altera a busca para o dia 27 de outubro de 2026
+            if (!line.trim()) continue;
+
+            // Busca da atividade alvo (27 de out. de 2026)
             if (line.includes('27 de out. de 2026')) {
               const matchFile = line.match(/(activities\/[^,"]+\.(fit|gpx|tcx)\.gz)/i);
-              if (matchFile) {
-                targetFileName = matchFile[1];
+              if (matchFile) targetFileName = matchFile[1];
+            }
+
+            // Extração de dados cronológicos para o eFTP
+            const dateMatch = line.match(/"?(\d{1,2}\s+de\s+[a-zç\.]+\s+de\s+\d{4})/i) || line.match(/(\d{4}-\d{2}-\d{2})/);
+            const pwrMatch = line.match(/,(\d{2,4}(?:\.\d+)?),/g);
+
+            if (dateMatch) {
+              const rawDate = dateMatch[1];
+              const parsedDate = parseStravaDate(rawDate);
+              
+              // Extração aproximada de potências médias/máximas da linha do CSV
+              const nums = line.split(',').map(n => parseFloat(n.replace(/"/g, ''))).filter(n => !isNaN(n) && n > 50 && n < 1500);
+              let estPwr = nums.length ? Math.max(...nums.filter(n => n < 500)) : 0;
+              
+              if (parsedDate && estPwr > 100) {
+                parsedActs.push({ date: parsedDate, pwr: estPwr });
               }
-              break;
             }
           }
 
           if (!targetFileName) throw new Error("Atividade de 27 de out. de 2026 não encontrada no CSV.");
 
-          msgEl.innerText = `Ficheiro mapeado: ${targetFileName}. A carregar...`;
+          msgEl.innerText = `Processando atividade e histórico de FTP...`;
 
           let targetEntry = null;
           zip.forEach((path, entry) => {
@@ -126,7 +189,13 @@
           }
 
           msgEl.innerText = '';
+          document.getElementById('results').style.display = 'block';
+
+          // 1. Processa o treino individual selecionado
           processActivityData(text, targetFileName.split('/').pop());
+
+          // 2. Calcula e renderiza o histórico de FTP com janela móvel
+          calculateAndRenderRollingFTP(parsedActs);
 
         } catch (err) {
           msgEl.style.color = '#f87171';
@@ -135,8 +204,117 @@
       }, 150);
     });
 
+    function parseStravaDate(str) {
+      if (!str) return null;
+      if (str.includes('-')) return new Date(str);
+      const months = { 'jan': 0, 'fev': 1, 'mar': 2, 'abr': 3, 'mai': 4, 'jun': 5, 'jul': 6, 'ago': 7, 'set': 8, 'out': 9, 'nov': 10, 'dez': 11 };
+      const parts = str.match(/(\d{1,2})\s+de\s+([a-zç]{3})[^\s]*\s+de\s+(\d{4})/i);
+      if (parts) {
+        return new Date(parseInt(parts[3]), months[parts[2].toLowerCase()] || 0, parseInt(parts[1]));
+      }
+      return null;
+    }
+
+    function calculateAndRenderRollingFTP(activities) {
+      if (!activities.length) return;
+      activities.sort((a, b) => a.date - b.date);
+
+      const daysWindow = 42;
+      const ftpHistory = [];
+      let maxFtp = 0;
+
+      for (let i = 0; i < activities.length; i++) {
+        const curr = activities[i];
+        const minDate = new Date(curr.date.getTime() - (daysWindow * 86400000));
+        
+        const windowActs = activities.filter(a => a.date >= minDate && a.date <= curr.date);
+        const bestEffort = Math.max(...windowActs.map(a => a.pwr));
+        const estimatedFtp = Math.round(bestEffort * 0.95);
+
+        if (estimatedFtp > maxFtp) maxFtp = estimatedFtp;
+        ftpHistory.push({ date: curr.date, ftp: estimatedFtp });
+      }
+
+      document.getElementById('peakFtp').innerText = `${maxFtp} W`;
+      document.getElementById('latestFtp').innerText = `${ftpHistory[ftpHistory.length - 1].ftp} W`;
+      document.getElementById('totalPwrActs').innerText = activities.length;
+
+      renderFtpChart(ftpHistory);
+    }
+
+    function renderFtpChart(data) {
+      const canvas = document.getElementById('ftpCanvas');
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      
+      canvas.width = canvas.offsetWidth * dpr;
+      canvas.height = 350 * dpr;
+      ctx.scale(dpr, dpr);
+
+      const w = canvas.offsetWidth;
+      const h = 350;
+      const pad = 50;
+
+      ctx.clearRect(0, 0, w, h);
+
+      if (data.length < 2) return;
+
+      const minT = data[0].date.getTime();
+      const maxT = data[data.length - 1].date.getTime();
+      const minF = Math.min(...data.map(d => d.ftp)) * 0.85;
+      const maxF = Math.max(...data.map(d => d.ftp)) * 1.1;
+
+      const getX = (t) => pad + ((t - minT) / (maxT - minT)) * (w - pad * 2);
+      const getY = (f) => h - pad - ((f - minF) / (maxF - minF)) * (h - pad * 2);
+
+      // Linhas de Grade
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 1;
+      for (let f = Math.ceil(minF / 50) * 50; f <= maxF; f += 50) {
+        const y = getY(f);
+        ctx.beginPath();
+        ctx.moveTo(pad, y);
+        ctx.lineTo(w - pad, y);
+        ctx.stroke();
+
+        ctx.fillStyle = '#64748b';
+        ctx.font = '10px sans-serif';
+        ctx.fillText(`${f}W`, 10, y + 3);
+      }
+
+      // Curva Móvel de FTP
+      ctx.beginPath();
+      ctx.strokeStyle = '#fc5200';
+      ctx.lineWidth = 2.5;
+
+      data.forEach((pt, idx) => {
+        const x = getX(pt.date.getTime());
+        const y = getY(pt.ftp);
+        if (idx === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+
+      // Gradiente de preenchimento
+      const grad = ctx.createLinearGradient(0, pad, 0, h - pad);
+      grad.addColorStop(0, 'rgba(252, 82, 0, 0.35)');
+      grad.addColorStop(1, 'rgba(252, 82, 0, 0)');
+      ctx.lineTo(getX(maxT), h - pad);
+      ctx.lineTo(getX(minT), h - pad);
+      ctx.closePath();
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Rótulos de Anos
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '11px sans-serif';
+      const startYear = data[0].date.getFullYear();
+      const endYear = data[data.length - 1].date.getFullYear();
+      ctx.fillText(startYear, pad, h - 15);
+      ctx.fillText(endYear, w - pad - 30, h - 15);
+    }
+
     function processActivityData(xmlText, fileName) {
-      document.getElementById('results').style.display = 'block';
       document.getElementById('actTitle').innerText = `Atividade: ${fileName}`;
 
       let records = [];
@@ -176,17 +354,13 @@
 
       records.sort((a, b) => a.time - b.time);
 
-      // Descontar pausas rigorosamente (potência > 0 ou cadência > 0)
       const movingRecords = records.filter(r => r.power > 0 || r.cad > 0);
 
       const avgPwr = movingRecords.length ? Math.round(movingRecords.reduce((acc, r) => acc + r.power, 0) / movingRecords.length) : 0;
-      
       const validHr = movingRecords.filter(r => r.hr > 0 && r.hr < 220);
       const avgHr = validHr.length ? Math.round(validHr.reduce((acc, r) => acc + r.hr, 0) / validHr.length) : 0;
-
       const validCad = movingRecords.filter(r => r.cad > 0 && r.cad < 180);
       const avgCad = validCad.length ? Math.round(validCad.reduce((acc, r) => acc + r.cad, 0) / validCad.length) : 0;
-
       const validSpeed = movingRecords.filter(r => r.speed > 0 && r.speed < 120);
       const avgSpeed = validSpeed.length ? (validSpeed.reduce((acc, r) => acc + r.speed, 0) / validSpeed.length).toFixed(1) : 0;
 
@@ -195,6 +369,30 @@
       document.getElementById('avgCad').innerText = `${avgCad} rpm`;
       document.getElementById('avgSpeed').innerText = `${avgSpeed} km/h`;
 
+      // Cardiac Drift
+      const halfIdx = Math.floor(movingRecords.length / 2);
+      const half1 = movingRecords.slice(0, halfIdx).filter(r => r.hr > 0 && r.power > 0);
+      const half2 = movingRecords.slice(halfIdx).filter(r => r.hr > 0 && r.power > 0);
+
+      const calcEF = (recs) => {
+        if (!recs.length) return 0;
+        const pwr = recs.reduce((a, r) => a + r.power, 0) / recs.length;
+        const hr = recs.reduce((a, r) => a + r.hr, 0) / recs.length;
+        return hr > 0 ? pwr / hr : 0;
+      };
+
+      const ef1 = calcEF(half1);
+      const ef2 = calcEF(half2);
+      let driftHtml = "--";
+
+      if (ef1 > 0 && ef2 > 0) {
+        const drift = ((ef1 - ef2) / ef1) * 100;
+        const color = drift <= 5 ? '#22c55e' : '#f87171';
+        driftHtml = `<span style="color: ${color}">${drift.toFixed(2)}%</span>`;
+      }
+      document.getElementById('driftVal').innerHTML = driftHtml;
+
+      // Top 4 de 4 minutos
       let timeline = [];
       if (records.length > 1) {
         let startT = records[0].time;

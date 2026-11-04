@@ -57,14 +57,12 @@
 
     <div id="statusMsg"></div>
     
-    <!-- Barra de Progresso -->
     <div id="progressArea">
       <h3 style="color: #38bdf8;">A processar o seu histórico...</h3>
       <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
-      <p id="progressText" style="color: #94a3b8;">Lendo ficheiros...</p>
+      <p id="progressText" style="color: #94a3b8;">A preparar ambiente (aguarde, ficheiros grandes demoram a arrancar)...</p>
     </div>
 
-    <!-- Área Consolidada (Abas e Tabelas) -->
     <div id="summaryArea">
       <div class="nav-tabs">
         <button class="tab-btn active" onclick="switchDashboardTab('tableTab', this)">As Suas Pedaladas</button>
@@ -83,14 +81,13 @@
               <th>Ação</th>
             </tr>
           </thead>
-          <tfoot style="display:none;"><tr><td colspan="5" style="text-align: center; color: #94a3b8;">Carregando histórico...</td></tr></tfoot>
           <tbody id="summaryBody"></tbody>
         </table>
       </div>
 
       <div id="ftpTab" style="display: none;">
         <h3 style="color: #f8fafc; border-bottom: 2px solid #fc5200; padding-bottom: 10px;">Evolução do FTP (Janela Móvel 42 Dias)</h3>
-        <p style="font-size: 0.85rem; color: #94a3b8;">FTP estimado a partir dos melhores registos reais de 20 minutos nativos de cada atividade.</p>
+        <p style="font-size: 0.85rem; color: #94a3b8;">FTP estimado a partir dos melhores registos reais de 20 minutos de cada atividade.</p>
         <canvas id="ftpCanvas"></canvas>
       </div>
 
@@ -101,7 +98,6 @@
       </div>
     </div>
 
-    <!-- Painel de Detalhes de um Treino Individual -->
     <div id="detailArea">
       <button class="btn" onclick="showSummary()" style="margin-bottom: 20px; background: #475569;">&larr; Voltar ao Histórico</button>
       
@@ -144,22 +140,20 @@
       </div>
 
       <div class="stat-box" style="border-left-color: #38bdf8;">
-        <div class="stat-title">Top 4 Maiores Períodos de Potência (Média de 4 Minutos / 240s)</div>
+        <div class="stat-title">Top 4 Maiores Períodos de Potência (Média de 4 Minutos)</div>
         <div class="stat-val" id="top4Mins" style="font-size: 0.95rem; line-height: 1.6; font-weight: normal;">--</div>
       </div>
     </div>
   </div>
 
   <script>
-    let dbActivities = []; // Banco de dados em memória para as atividades
+    let dbActivities = [];
 
-    // Lógica para alternar as abas do dashboard
     window.switchDashboardTab = function(tabId, el) {
       document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
       document.getElementById('tableTab').style.display = 'none';
       document.getElementById('ftpTab').style.display = 'none';
       document.getElementById('zonesTab').style.display = 'none';
-      
       el.classList.add('active');
       document.getElementById(tabId).style.display = 'block';
     }
@@ -169,17 +163,23 @@
       if (!file) return;
 
       document.getElementById('uploadArea').style.display = 'none';
-      const msgEl = document.getElementById('statusMsg');
-      msgEl.style.color = '#38bdf8';
-      
       document.getElementById('progressArea').style.display = 'block';
+      
+      const msgEl = document.getElementById('statusMsg');
       const progressText = document.getElementById('progressText');
       const progressFill = document.getElementById('progressFill');
 
-      progressText.innerText = "A descompactar ZIP base e ler o activities.csv...";
+      msgEl.style.color = '#38bdf8';
+      msgEl.innerText = '';
+      
+      // FORÇAR REPAINT: Garante que o navegador mostre a barra de progresso antes de travar
+      document.body.offsetHeight; 
 
+      // Timeout generoso (500ms) para contornar o bloqueio inicial do JSZip
       setTimeout(async () => {
         try {
+          progressText.innerText = "A carregar o ZIP principal para a memória...";
+          
           const jszip = new JSZip();
           const zip = await jszip.loadAsync(file);
           
@@ -190,11 +190,11 @@
 
           if (!csvEntry) throw new Error("O ficheiro 'activities.csv' não foi encontrado no ZIP.");
 
+          progressText.innerText = "A interpretar atividades...";
           const csvText = await csvEntry.async("string");
           const lines = csvText.split('\n');
           let queue = [];
 
-          // Parse rudimentar e seguro de CSV para isolar colunas
           for (let i = 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
@@ -212,24 +212,22 @@
             }
             cols.push(val);
 
-            // No CSV do Strava: Col 1 = Data, Col 2 = Nome, Col 3 = Tipo
-            if (cols.length > 10 && cols[3] === 'Pedalada') {
-              const filePath = cols.find(c => c.toLowerCase().includes('activities/') && c.toLowerCase().endsWith('.fit.gz'));
-              if (filePath) {
-                queue.push({ date: cols[1], name: cols[2], file: filePath });
-              }
+            // Triagem Robusta: Ignora nomes de colunas e procura diretamente ficheiros FIT
+            const filePath = cols.find(c => c && c.toLowerCase().includes('activities/') && (c.toLowerCase().endsWith('.fit.gz') || c.toLowerCase().endsWith('.fit')));
+            
+            if (filePath) {
+              queue.push({ date: cols[1] || 'Data Desconhecida', name: cols[2] || 'Pedalada', file: filePath });
             }
           }
 
-          msgEl.innerText = 'A processar os binários FIT nativamente em lote...';
-          if (queue.length === 0) throw new Error("Nenhuma atividade do tipo 'Pedalada' em formato FIT foi encontrada.");
+          if (queue.length === 0) throw new Error("Não foram encontrados ficheiros FIT associados às atividades.");
 
           dbActivities = [];
 
-          // Processamento em lote (Batch) para não travar o navegador
+          // Processamento Lote
           for (let i = 0; i < queue.length; i++) {
             const task = queue[i];
-            progressText.innerText = `A processar atividade ${i + 1} de ${queue.length} (${task.date})...`;
+            progressText.innerText = `A processar atividade ${i + 1} de ${queue.length}...`;
             progressFill.style.width = `${((i + 1) / queue.length) * 100}%`;
 
             let zipEntry = null;
@@ -240,7 +238,13 @@
             if (zipEntry) {
               try {
                 const rawData = await zipEntry.async("uint8array");
-                const decompressed = pako.inflate(rawData);
+                
+                // Descompressão flexível (GZ ou FIT direto)
+                let decompressed = rawData;
+                if (task.file.toLowerCase().endsWith('.gz')) {
+                    decompressed = pako.inflate(rawData);
+                }
+                
                 const records = parseFitNative(decompressed);
                 const metrics = calculateMetrics(records);
                 
@@ -248,30 +252,27 @@
                   dbActivities.push({ ...task, metrics, dateObj: parseStravaDate(task.date) });
                 }
               } catch (e) {
-                console.warn(`Erro ao ler ${task.file}:`, e);
+                console.warn(`Aviso ao ler ${task.file}:`, e);
               }
             }
-            // Pausa minúscula para permitir que o navegador atualize o ecrã
-            await new Promise(r => setTimeout(r, 5)); 
+            // Yield para a interface não congelar no meio
+            await new Promise(r => setTimeout(r, 2)); 
           }
 
-          msgEl.innerText = '';
           document.getElementById('progressArea').style.display = 'none';
           
-          // Gera métricas globais e desenha painel
           processGlobalMetrics();
           renderSummaryTable();
 
         } catch (err) {
           msgEl.style.color = '#f87171';
-          msgEl.innerText = 'Erro crítico: ' + err.message;
+          msgEl.innerText = 'Erro Crítico: ' + err.message;
           progressText.style.color = '#f87171';
-          progressText.innerText = 'Interrompido: ' + err.message;
+          progressText.innerText = 'Processo interrompido.';
         }
-      }, 100);
+      }, 500); 
     });
 
-    // Função de parsing para datas do formato do Strava CSV ("25 de out. de 2026")
     function parseStravaDate(str) {
       if (!str) return new Date();
       const months = { 'jan': 0, 'fev': 1, 'mar': 2, 'abr': 3, 'mai': 4, 'jun': 5, 'jul': 6, 'ago': 7, 'set': 8, 'out': 9, 'nov': 10, 'dez': 11 };
@@ -280,7 +281,6 @@
       return new Date(); 
     }
 
-    // Descodificador FIT Nativo (Exato como você tinha criado)
     function parseFitNative(u8) {
       const view = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
       let offset = view.getUint8(0);
@@ -297,7 +297,7 @@
           const localMesgNum = header & 0x0F;
 
           if (isDefinition) {
-            offset += 1; // reserved
+            offset += 1;
             const littleEndian = view.getUint8(offset++) === 0;
             const globalMsgNum = view.getUint16(offset, littleEndian);
             offset += 2;
@@ -308,7 +308,7 @@
               fields.push({ fieldDefNum: view.getUint8(offset++), size: view.getUint8(offset++), baseType: view.getUint8(offset++) });
             }
 
-            if ((header & 0x20) !== 0) { // dev fields
+            if ((header & 0x20) !== 0) {
               const numDevFields = view.getUint8(offset++);
               offset += numDevFields * 3;
             }
@@ -345,7 +345,7 @@
                 if (prevLat !== null && prevTime !== null && rec.timestamp > prevTime) {
                   const distKm = getDistanceFromLatLonInKm(prevLat, prevLon, lat, lon);
                   const hours = (rec.timestamp - prevTime) / 3600;
-                  if (hours > 0) rec.speed = distKm / hours; // km/h
+                  if (hours > 0) rec.speed = distKm / hours; 
                 }
                 prevLat = lat; prevLon = lon; prevTime = rec.timestamp;
               }
@@ -360,7 +360,6 @@
       return records;
     }
 
-    // Motor de Cálculo Cirúrgico (Atualizado com Cardiac Drift e MMP20)
     function calculateMetrics(records) {
       if (!records || records.length === 0) return null;
       records.sort((a, b) => a.timestamp - b.timestamp);
@@ -368,17 +367,16 @@
       const maxDist = records.reduce((max, r) => r.distance > max ? r.distance : max, 0);
       const totalSecs = records[records.length - 1].timestamp - records[0].timestamp;
 
-      // CRITÉRIO DE PAUSA rigoroso: velocidade >= 3 km/h
       const movingRecords = records.filter(r => r.speed >= 3);
+      if (movingRecords.length === 0) return null;
 
-      const avgPwr = movingRecords.length ? Math.round(movingRecords.reduce((acc, r) => acc + r.power, 0) / movingRecords.length) : 0;
+      const avgPwr = Math.round(movingRecords.reduce((acc, r) => acc + r.power, 0) / movingRecords.length);
       const validHr = movingRecords.filter(r => r.hr > 0 && r.hr < 220);
       const avgHr = validHr.length ? Math.round(validHr.reduce((acc, r) => acc + r.hr, 0) / validHr.length) : 0;
       const validCad = movingRecords.filter(r => r.cad > 0 && r.cad < 180);
       const avgCad = validCad.length ? Math.round(validCad.reduce((acc, r) => acc + r.cad, 0) / validCad.length) : 0;
-      const avgSpeed = movingRecords.length ? (movingRecords.reduce((acc, r) => acc + r.speed, 0) / movingRecords.length).toFixed(1) : 0;
+      const avgSpeed = (movingRecords.reduce((acc, r) => acc + r.speed, 0) / movingRecords.length).toFixed(1);
 
-      // 1. Cálculo de Desacoplamento Aeróbico (Cardiac Drift)
       const halfIdx = Math.floor(movingRecords.length / 2);
       const half1 = movingRecords.slice(0, halfIdx).filter(r => r.hr > 0 && r.power > 0);
       const half2 = movingRecords.slice(halfIdx).filter(r => r.hr > 0 && r.power > 0);
@@ -395,7 +393,6 @@
       let drift = null;
       if (ef1 > 0 && ef2 > 0) drift = ((ef1 - ef2) / ef1) * 100;
 
-      // Linha do tempo contínua para médias móveis
       let timeline = [];
       if (records.length > 1) {
         let startT = records[0].timestamp;
@@ -404,7 +401,6 @@
         for (let t = startT; t <= endT; t++) timeline.push(recMap.get(t) || 0);
       }
 
-      // 2. Top 4 de 4 Minutos (240s)
       const windowSize = 240;
       let intervals = [];
       for (let i = 0; i <= timeline.length - windowSize; i++) {
@@ -422,7 +418,6 @@
         }
       }
 
-      // 3. Pico Real de 20 Minutos (1200s) para o FTP Móvel exato
       let max20m = 0;
       const w20 = 1200;
       if (timeline.length >= w20) {
@@ -434,7 +429,7 @@
           if (sum / w20 > max20m) max20m = sum / w20;
         }
       } else {
-        max20m = avgPwr; // Fallback se treino for inferior a 20 min
+        max20m = avgPwr; 
       }
 
       return {
@@ -444,27 +439,24 @@
       };
     }
 
-    // Processamento Global e Gráficos (FTP e Zonas)
     function processGlobalMetrics() {
-      dbActivities.sort((a, b) => a.dateObj - b.dateObj); // Ordem Cronológica
+      dbActivities.sort((a, b) => a.dateObj - b.dateObj); 
 
       const daysWindow = 42;
       let ftpHistory = [];
       let maxFtpGlobal = 0;
 
-      // Construção da Janela Móvel do FTP
       for (let i = 0; i < dbActivities.length; i++) {
         const curr = dbActivities[i];
         const minDate = new Date(curr.dateObj.getTime() - (daysWindow * 86400000));
         
         const windowActs = dbActivities.filter(a => a.dateObj >= minDate && a.dateObj <= curr.dateObj);
         
-        // Utilizamos o MMP20 (max 20-min) * 0.95, ou a média do treino como fallback
         const bestEffort = Math.max(...windowActs.map(a => a.metrics.mmp20 || a.metrics.avgPwr));
         const estimatedFtp = Math.round(bestEffort * 0.95);
         if (estimatedFtp > maxFtpGlobal) maxFtpGlobal = estimatedFtp;
         
-        curr.currentFtp = estimatedFtp; // Guardamos o FTP específico daquele dia
+        curr.currentFtp = estimatedFtp;
         ftpHistory.push({ date: curr.dateObj, ftp: estimatedFtp });
       }
 
@@ -492,7 +484,6 @@
       const getX = (t) => pad + ((t - minT) / (maxT - minT)) * (w - pad * 2);
       const getY = (f) => h - pad - ((f - minF) / (maxF - minF)) * (h - pad * 2);
 
-      // Grid
       ctx.strokeStyle = '#334155';
       ctx.lineWidth = 1;
       for (let f = Math.ceil(minF / 50) * 50; f <= maxF; f += 50) {
@@ -501,7 +492,6 @@
         ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right'; ctx.fillText(`${f}W`, pad - 5, y + 3);
       }
 
-      // Curva
       ctx.beginPath();
       ctx.strokeStyle = '#fc5200';
       ctx.lineWidth = 2;
@@ -524,7 +514,7 @@
 
       dbActivities.forEach(act => {
         if (!act.metrics || act.metrics.avgHr < 60 || !act.currentFtp) return;
-        const ratio = act.metrics.avgPwr / act.currentFtp; // Usa o FTP da ÉPOCA EXATA
+        const ratio = act.metrics.avgPwr / act.currentFtp;
         for (const key in zonesData) {
           const z = zonesData[key];
           if (ratio >= z.minP && ratio <= z.maxP) {
@@ -548,3 +538,89 @@
         const z = zonesData[key];
         const avgHr = z.count > 0 ? Math.round(z.sumHr / z.count) : 0;
         const x = pad + idx * (barWidth + 15) + 10;
+        
+        const minScale = 90, maxScale = 190;
+        const barH = avgHr > 0 ? ((avgHr - minScale) / (maxScale - minScale)) * (h - pad * 2) : 5;
+        const y = h - pad - barH;
+
+        ctx.fillStyle = z.color; ctx.fillRect(x, y, barWidth, barH);
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+        if (avgHr > 0) ctx.fillText(`${avgHr} bpm`, x + barWidth / 2, y - 8);
+        ctx.fillStyle = '#94a3b8'; ctx.font = '11px sans-serif';
+        ctx.fillText(z.name, x + barWidth / 2, h - pad + 15);
+      });
+    }
+
+    function renderSummaryTable() {
+      document.getElementById('summaryArea').style.display = 'block';
+      document.getElementById('detailArea').style.display = 'none';
+      const tbody = document.getElementById('summaryBody');
+      tbody.innerHTML = '';
+
+      [...dbActivities].reverse().forEach((act) => {
+        if (!act.metrics) return;
+        const originalIndex = dbActivities.indexOf(act);
+        
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><strong>${act.date}</strong></td>
+          <td>${act.name}</td>
+          <td>${act.metrics.distKm} km</td>
+          <td>${act.metrics.avgPwr} W</td>
+          <td><button class="btn-small" onclick="viewDetails(${originalIndex})">Ver Detalhes</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    window.viewDetails = function(index) {
+      const act = dbActivities[index];
+      if (!act || !act.metrics) return;
+
+      document.getElementById('summaryArea').style.display = 'none';
+      document.getElementById('detailArea').style.display = 'block';
+
+      document.getElementById('actTitle').innerText = `${act.name} (${act.date})`;
+
+      const m = act.metrics;
+      const h = Math.floor(m.totalSecs / 3600);
+      const min = Math.floor((m.totalSecs % 3600) / 60);
+      const s = m.totalSecs % 60;
+      
+      document.getElementById('totalTime').innerText = `${h > 0 ? h + 'h ' : ''}${min}m ${s}s`;
+      document.getElementById('totalDist').innerText = `${m.distKm} km`;
+      document.getElementById('avgSpeed').innerText = `${m.avgSpeed} km/h`;
+      document.getElementById('avgPwr').innerText = `${m.avgPwr} W`;
+      document.getElementById('avgHr').innerText = `${m.avgHr} bpm`;
+      document.getElementById('avgCad').innerText = `${m.avgCad} rpm`;
+      document.getElementById('mmp20Val').innerText = `${m.mmp20} W`;
+
+      let driftHtml = "--";
+      if (m.drift !== null) {
+        const color = m.drift <= 5 ? '#22c55e' : '#f87171';
+        driftHtml = `<span style="color: ${color}">${m.drift.toFixed(2)}%</span>`;
+      }
+      document.getElementById('driftVal').innerHTML = driftHtml;
+
+      let top4Html = m.top4.length > 0 
+        ? m.top4.map((item, idx) => `<b>${idx + 1}º esforço:</b> <span style="color: #fc5200; font-weight: bold;">${item.avg} W</span> (Média de 4 min)`).join('<br>') 
+        : 'Dados insuficientes para blocos de 4 min.';
+
+      document.getElementById('top4Mins').innerHTML = top4Html;
+    }
+
+    window.showSummary = function() {
+      document.getElementById('detailArea').style.display = 'none';
+      document.getElementById('summaryArea').style.display = 'block';
+    }
+
+    function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
+      const R = 6371;
+      const dLat = (lat2 - lat1) * (Math.PI/180);
+      const dLon = (lon2 - lon1) * (Math.PI/180);
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * (Math.PI/180)) * Math.cos(lat2 * (Math.PI/180)) * Math.sin(dLon/2) * Math.sin(dLon/2); 
+      return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+    }
+  </script>
+</body>
+</html>

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -16,7 +16,7 @@
     input[type="file"] { display: none; }
     .btn { display: inline-block; background: #fc5200; color: white; padding: 10px 20px; border-radius: 6px; font-weight: 600; cursor: pointer; border: none; margin-top: 10px; }
     .results { margin-top: 25px; display: none; }
-    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px; }
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 15px; margin-bottom: 15px; }
     .stat-box { background: #0f172a; padding: 15px; border-radius: 8px; border-left: 4px solid #fc5200; }
     .stat-title { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; margin-bottom: 5px; }
     .stat-val { font-size: 1.2rem; font-weight: bold; color: #fff; }
@@ -45,20 +45,16 @@
           <div class="stat-val" id="avgPwr">--</div>
         </div>
         <div class="stat-box">
-          <div class="stat-title">FC Média (Em Movimento)</div>
+          <div class="stat-title">Frequência Cardíaca Média (Em Movimento)</div>
           <div class="stat-val" id="avgHr">--</div>
         </div>
         <div class="stat-box">
-          <div class="stat-title">Cadência Média (Movimento)</div>
+          <div class="stat-title">Cadência Média (Em Movimento)</div>
           <div class="stat-val" id="avgCad">--</div>
         </div>
         <div class="stat-box">
-          <div class="stat-title">Velocidade Média</div>
+          <div class="stat-title">Velocidade Média (Em Movimento)</div>
           <div class="stat-val" id="avgSpeed">--</div>
-        </div>
-        <div class="stat-box" style="border-left-color: #22c55e;">
-          <div class="stat-title">Cardiac Drift (Desacoplamento)</div>
-          <div class="stat-val" id="driftVal">--</div>
         </div>
       </div>
 
@@ -79,6 +75,7 @@
       msgEl.style.color = '#38bdf8';
       msgEl.innerText = 'A abrir o ZIP e a ler o activities.csv...';
 
+      // Pausa essencial para o navegador atualizar o texto no ecrã antes de processar o ZIP
       setTimeout(async () => {
         try {
           const jszip = new JSZip();
@@ -97,7 +94,7 @@
 
           for (let i = 1; i < lines.length; i++) {
             const line = lines[i];
-            // Busca o dia 27 de out. de 2026
+            // Altera a busca para o dia 27 de outubro de 2026
             if (line.includes('27 de out. de 2026')) {
               const matchFile = line.match(/(activities\/[^,"]+\.(fit|gpx|tcx)\.gz)/i);
               if (matchFile) {
@@ -109,7 +106,7 @@
 
           if (!targetFileName) throw new Error("Atividade de 27 de out. de 2026 não encontrada no CSV.");
 
-          msgEl.innerText = `Ficheiro mapeado: ${targetFileName}. A extrair dados...`;
+          msgEl.innerText = `Ficheiro mapeado: ${targetFileName}. A carregar...`;
 
           let targetEntry = null;
           zip.forEach((path, entry) => {
@@ -179,13 +176,17 @@
 
       records.sort((a, b) => a.time - b.time);
 
+      // Descontar pausas rigorosamente (potência > 0 ou cadência > 0)
       const movingRecords = records.filter(r => r.power > 0 || r.cad > 0);
 
       const avgPwr = movingRecords.length ? Math.round(movingRecords.reduce((acc, r) => acc + r.power, 0) / movingRecords.length) : 0;
+      
       const validHr = movingRecords.filter(r => r.hr > 0 && r.hr < 220);
       const avgHr = validHr.length ? Math.round(validHr.reduce((acc, r) => acc + r.hr, 0) / validHr.length) : 0;
+
       const validCad = movingRecords.filter(r => r.cad > 0 && r.cad < 180);
       const avgCad = validCad.length ? Math.round(validCad.reduce((acc, r) => acc + r.cad, 0) / validCad.length) : 0;
+
       const validSpeed = movingRecords.filter(r => r.speed > 0 && r.speed < 120);
       const avgSpeed = validSpeed.length ? (validSpeed.reduce((acc, r) => acc + r.speed, 0) / validSpeed.length).toFixed(1) : 0;
 
@@ -194,30 +195,6 @@
       document.getElementById('avgCad').innerText = `${avgCad} rpm`;
       document.getElementById('avgSpeed').innerText = `${avgSpeed} km/h`;
 
-      // Cálculo do Cardiac Drift
-      const halfIdx = Math.floor(movingRecords.length / 2);
-      const half1 = movingRecords.slice(0, halfIdx).filter(r => r.hr > 0 && r.power > 0);
-      const half2 = movingRecords.slice(halfIdx).filter(r => r.hr > 0 && r.power > 0);
-
-      const calcEF = (recs) => {
-        if (!recs.length) return 0;
-        const pwr = recs.reduce((a, r) => a + r.power, 0) / recs.length;
-        const hr = recs.reduce((a, r) => a + r.hr, 0) / recs.length;
-        return hr > 0 ? pwr / hr : 0;
-      };
-
-      const ef1 = calcEF(half1);
-      const ef2 = calcEF(half2);
-      let driftHtml = "--";
-
-      if (ef1 > 0 && ef2 > 0) {
-        const drift = ((ef1 - ef2) / ef1) * 100;
-        const color = drift <= 5 ? '#22c55e' : '#f87171';
-        driftHtml = `<span style="color: ${color}">${drift.toFixed(2)}%</span>`;
-      }
-      document.getElementById('driftVal').innerHTML = driftHtml;
-
-      // Top 4 de 4 minutos
       let timeline = [];
       if (records.length > 1) {
         let startT = records[0].time;

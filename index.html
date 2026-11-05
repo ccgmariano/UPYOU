@@ -27,10 +27,11 @@
 
     #summaryArea { display: none; margin-top: 20px; }
     
-    /* Rolagem horizontal invisível para manter os botões na mesma linha */
+    /* Rolagem horizontal invisível - Botões Reorganizados */
     .nav-tabs { display: flex; gap: 10px; border-bottom: 1px solid #334155; padding-bottom: 15px; margin-bottom: 20px; overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; }
     .nav-tabs::-webkit-scrollbar { display: none; }
-    .tab-btn { background: #0f172a; border: 1px solid #334155; color: #94a3b8; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; white-space: nowrap; flex-shrink: 0; }
+    .tab-btn { background: #0f172a; border: 1px solid #334155; color: #94a3b8; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; white-space: nowrap; flex-shrink: 0; transition: 0.2s; }
+    .tab-btn:hover { background: #1e293b; color: #fff; }
     .tab-btn.active { background: #fc5200; color: white; border-color: #fc5200; }
     
     .summary-table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 0.9rem; }
@@ -38,6 +39,9 @@
     .summary-table th { color: #94a3b8; font-weight: 600; text-transform: uppercase; font-size: 0.8rem; }
     .summary-table tr:hover { background: #334155; }
     .btn-small { background: #38bdf8; color: #0f172a; padding: 6px 12px; border-radius: 4px; font-size: 0.8rem; cursor: pointer; font-weight: bold; border: none; }
+    
+    .badge-estruturado { background: #22c55e; color: #fff; padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
+    .badge-livre { background: #64748b; color: #fff; padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
 
     #detailArea { display: none; margin-top: 10px; }
     .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px; }
@@ -77,6 +81,7 @@
     </div>
 
     <div id="summaryArea">
+      <!-- Navegação Reorganizada e Expandida -->
       <div class="nav-tabs">
         <button class="tab-btn active" onclick="switchDashboardTab('tableTab', this)">As Suas Pedaladas</button>
         <button class="tab-btn" onclick="switchDashboardTab('ftpTab', this)">Evolução de FTP</button>
@@ -84,41 +89,37 @@
         <button class="tab-btn" onclick="switchDashboardTab('pwrTimeTab', this)">Tempo/Zona (Potência)</button>
         <button class="tab-btn" onclick="switchDashboardTab('hrTimeTab', this)">Tempo/Zona (FC)</button>
         <button class="tab-btn" onclick="switchDashboardTab('driftChartTab', this)">Evolução do Drift</button>
+        <button class="tab-btn" style="border-color: #8b5cf6;" onclick="switchDashboardTab('viChartTab', this)">Índice de Variabilidade (VI)</button>
+        <button class="tab-btn" style="border-color: #8b5cf6;" onclick="switchDashboardTab('structureVolTab', this)">Volume de Estrutura</button>
       </div>
 
       <!-- Abas Estáticas -->
       <div id="tableTab" style="display: block;">
         <table class="summary-table">
-          <thead><tr><th>Data</th><th>Nome</th><th>Distância</th><th>Potência (Média)</th><th>Ação</th></tr></thead>
+          <thead><tr><th>Data</th><th>Nome</th><th>Distância</th><th>Potência (Méd / NP)</th><th>Perfil</th><th>Ação</th></tr></thead>
           <tbody id="summaryBody"></tbody>
         </table>
       </div>
 
       <div id="ftpTab" style="display: none;">
-        <div class="section-header">
-          <h3>Evolução do FTP (Janela Móvel 42 Dias)</h3>
-        </div>
+        <div class="section-header"><h3>Evolução do FTP (Janela Móvel 42 Dias)</h3></div>
         <canvas id="ftpCanvas"></canvas>
       </div>
 
       <div id="zonesTab" style="display: none;">
-        <div class="section-header">
-          <h3>FC Média por Zona Dinâmica</h3>
-        </div>
+        <div class="section-header"><h3>FC Média por Zona Dinâmica</h3></div>
         <canvas id="zonesCanvas"></canvas>
       </div>
 
-      <!-- Abas Dinâmicas -->
-      <div id="pwrTimeTab" style="display: none;">
+      <!-- Abas Dinâmicas (Com Filtro Sincronizado) -->
+      <div id="pwrTimeTab" style="display: none;" class="dynamic-tab">
         <div class="section-header">
           <h3>Tempo por Zona de Potência (Dinâmica)</h3>
           <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
-            <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option>
-            <option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option>
-            <option value="semestre">Semestre</option><option value="ano">Ano</option>
+            <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
           </select>
         </div>
-        <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Zonas recalculadas baseadas no seu FTP vigente (Janela 42d). Eixo vertical = Horas Absolutas.</p>
+        <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Zonas recalculadas baseadas no seu FTP vigente. Eixo vertical = Horas Absolutas.</p>
         <div class="legend-container">
           <div class="legend-item"><div class="legend-box" style="background:#94a3b8;"></div>Z1 (< 55%)</div>
           <div class="legend-item"><div class="legend-box" style="background:#38bdf8;"></div>Z2 (56-75%)</div>
@@ -130,16 +131,14 @@
         <canvas id="pwrTimeCanvas" style="height: 400px; margin-top: 10px;"></canvas>
       </div>
 
-      <div id="hrTimeTab" style="display: none;">
+      <div id="hrTimeTab" style="display: none;" class="dynamic-tab">
         <div class="section-header">
           <h3>Tempo por Zona Cardíaca</h3>
           <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
-            <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option>
-            <option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option>
-            <option value="semestre">Semestre</option><option value="ano">Ano</option>
+            <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
           </select>
         </div>
-        <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Zonas baseadas na Frequência Cardíaca Máxima de 187 bpm. Eixo vertical = Horas Absolutas.</p>
+        <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Zonas baseadas na FC Máxima de 187 bpm. Eixo vertical = Horas Absolutas.</p>
         <div class="legend-container">
           <div class="legend-item"><div class="legend-box" style="background:#94a3b8;"></div>Z1 (< 60%)</div>
           <div class="legend-item"><div class="legend-box" style="background:#38bdf8;"></div>Z2 (60-70%)</div>
@@ -150,28 +149,61 @@
         <canvas id="hrTimeCanvas" style="height: 400px; margin-top: 10px;"></canvas>
       </div>
 
-      <div id="driftChartTab" style="display: none;">
+      <div id="driftChartTab" style="display: none;" class="dynamic-tab">
         <div class="section-header">
           <h3>Evolução do Cardiac Drift (Desacoplamento)</h3>
           <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
-            <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option>
-            <option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option>
-            <option value="semestre">Semestre</option><option value="ano">Ano</option>
+            <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
           </select>
         </div>
-        <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Média do Drift % no período selecionado. Ideal: verde (<= 5%). Perda de eficiência: vermelho (> 5%).</p>
+        <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Média do Drift % no período. Ideal: verde (<= 5%). Perda de eficiência: vermelho (> 5%).</p>
         <canvas id="driftCanvas" style="height: 400px; margin-top: 10px;"></canvas>
       </div>
 
+      <!-- NOVAS ABAS DE ESTRUTURA -->
+      <div id="viChartTab" style="display: none;" class="dynamic-tab">
+        <div class="section-header">
+          <h3 style="color: #a78bfa;">Média do Índice de Variabilidade (VI)</h3>
+          <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
+            <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
+          </select>
+        </div>
+        <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">VI = Potência Normalizada (NP) / Potência Média. Faixa verde (1.0 a 1.1) = Ritmo constante.</p>
+        <canvas id="viCanvas" style="height: 400px; margin-top: 10px;"></canvas>
+      </div>
+
+      <div id="structureVolTab" style="display: none;" class="dynamic-tab">
+        <div class="section-header">
+          <h3 style="color: #a78bfa;">Horas de Treino: Estruturado vs Livre</h3>
+          <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
+            <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
+          </select>
+        </div>
+        <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Distribuição de horas mensais. Verde = Treino estruturado (VI <= 1.10). Cinza = Pedalada livre/variável.</p>
+        <div class="legend-container">
+          <div class="legend-item"><div class="legend-box" style="background:#22c55e;"></div>Estruturado/Ritmo (VI ≤ 1.10)</div>
+          <div class="legend-item"><div class="legend-box" style="background:#64748b;"></div>Livre/Estocástico (VI > 1.10)</div>
+        </div>
+        <canvas id="structureVolCanvas" style="height: 400px; margin-top: 10px;"></canvas>
+      </div>
+
       <div style="text-align: right; margin-top: 30px; border-top: 1px solid #334155; padding-top: 15px;">
+        <span style="font-size: 0.75rem; color: #64748b; margin-right: 15px;">(Clique aqui caso as novas métricas NP/VI apareçam em branco nos treinos antigos)</span>
         <button class="btn btn-danger" onclick="clearLocalDatabase()">Limpar Dados / Carregar Novo ZIP</button>
       </div>
     </div>
 
-    <!-- Detalhes do Treino -->
+    <!-- Detalhes do Treino (Expandido com NP, VI e Blocos) -->
     <div id="detailArea">
       <button class="btn" onclick="showSummary()" style="margin-bottom: 20px; background: #475569;">&larr; Voltar ao Histórico</button>
       <h2 id="actTitle" style="color: #38bdf8; margin-bottom: 20px; text-align: center;"></h2>
+      
+      <div class="stat-grid">
+        <div class="stat-box" style="border-left-color: #8b5cf6;"><div class="stat-title">Potência Normalizada (NP)</div><div class="stat-val" id="npVal">--</div></div>
+        <div class="stat-box" style="border-left-color: #8b5cf6;"><div class="stat-title">Índ. Variabilidade (VI)</div><div class="stat-val" id="viVal">--</div></div>
+        <div class="stat-box" style="border-left-color: #8b5cf6; grid-column: span 2;"><div class="stat-title">Diagnóstico de Estrutura (Blocos > 5 min)</div><div class="stat-val" id="structureVal" style="font-size: 0.95rem; font-weight: normal; line-height: 1.4;">--</div></div>
+      </div>
+
       <div class="stat-grid">
         <div class="stat-box"><div class="stat-title">Tempo Total</div><div class="stat-val" id="totalTime">--</div></div>
         <div class="stat-box"><div class="stat-title">Distância Total</div><div class="stat-val" id="totalDist">--</div></div>
@@ -223,7 +255,7 @@
     }
 
     async function clearLocalDatabase() {
-      if(confirm("Tem certeza que deseja apagar o histórico salvo? Terá de processar o ZIP novamente.")) {
+      if(confirm("Tem certeza que deseja apagar o histórico salvo e processar um novo ZIP?")) {
         const db = await initDB();
         const tx = db.transaction(STORE_NAME, "readwrite");
         tx.objectStore(STORE_NAME).delete("main_data");
@@ -238,7 +270,7 @@
         dbActivities.forEach(a => a.dateObj = new Date(a.dateObj));
         document.getElementById('uploadArea').style.display = 'none';
         document.getElementById('statusMsg').style.color = '#22c55e';
-        document.getElementById('statusMsg').innerText = `Carregamento super-rápido: ${dbActivities.length} atividades restauradas da memória.`;
+        document.getElementById('statusMsg').innerText = `Histórico carregado instantaneamente da memória.`;
         
         processGlobalMetrics();
         renderSummaryTable();
@@ -250,21 +282,19 @@
 
     window.switchDashboardTab = function(tabId, el) {
       document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-      ['tableTab', 'ftpTab', 'zonesTab', 'pwrTimeTab', 'hrTimeTab', 'driftChartTab'].forEach(id => {
+      ['tableTab', 'ftpTab', 'zonesTab', 'pwrTimeTab', 'hrTimeTab', 'driftChartTab', 'viChartTab', 'structureVolTab'].forEach(id => {
         document.getElementById(id).style.display = 'none';
       });
       el.classList.add('active');
       document.getElementById(tabId).style.display = 'block';
 
-      if (['pwrTimeTab', 'hrTimeTab', 'driftChartTab'].includes(tabId)) {
+      if (document.getElementById(tabId).classList.contains('dynamic-tab')) {
         updateDynamicCharts();
       }
     }
 
     window.syncFiltersAndUpdate = function(value) {
-      document.querySelectorAll('.time-filter').forEach(select => {
-        select.value = value;
-      });
+      document.querySelectorAll('.time-filter').forEach(select => select.value = value);
       updateDynamicCharts();
     }
 
@@ -283,7 +313,7 @@
 
       setTimeout(async () => {
         try {
-          progressText.innerText = "A carregar o ZIP para a memória (pode demorar alguns segundos)...";
+          progressText.innerText = "A carregar o ZIP para a memória...";
           const jszip = new JSZip();
           const zip = await jszip.loadAsync(file);
           
@@ -291,7 +321,6 @@
           zip.forEach((path, entry) => { if (path.toLowerCase().includes('activities.csv')) csvEntry = entry; });
           if (!csvEntry) throw new Error("O ficheiro 'activities.csv' não foi encontrado.");
 
-          progressText.innerText = "A interpretar atividades...";
           const csvText = await csvEntry.async("string");
           const lines = csvText.split('\n');
           let queue = [];
@@ -306,7 +335,6 @@
               else { if (ch === '"') inQuote = true; else if (ch === ',') { cols.push(val); val = ''; } else val += ch; }
             }
             cols.push(val);
-
             const filePath = cols.find(c => c && c.toLowerCase().includes('activities/') && (c.toLowerCase().endsWith('.fit.gz') || c.toLowerCase().endsWith('.fit')));
             if (filePath) queue.push({ date: cols[1] || 'Data', name: cols[2] || 'Pedalada', file: filePath });
           }
@@ -314,7 +342,7 @@
           dbActivities = [];
           for (let i = 0; i < queue.length; i++) {
             const task = queue[i];
-            progressText.innerText = `A processar atividade ${i + 1} de ${queue.length}...`;
+            progressText.innerText = `Lendo Watts e Estrutura: atividade ${i + 1} de ${queue.length}...`;
             progressFill.style.width = `${((i + 1) / queue.length) * 100}%`;
 
             let zipEntry = null;
@@ -325,7 +353,6 @@
                 const rawData = await zipEntry.async("uint8array");
                 let decompressed = rawData;
                 if (task.file.toLowerCase().endsWith('.gz')) decompressed = pako.inflate(rawData);
-                
                 const records = parseFitNative(decompressed);
                 const metrics = calculateMetrics(records);
                 if (metrics) dbActivities.push({ ...task, metrics, dateObj: parseStravaDate(task.date) });
@@ -336,17 +363,12 @@
 
           document.getElementById('progressArea').style.display = 'none';
           processGlobalMetrics();
-          
-          progressText.innerText = "A gravar histórico na memória do navegador...";
           await saveToDB(dbActivities);
-          
           renderSummaryTable();
           updateDynamicCharts();
 
         } catch (err) {
-          msgEl.style.color = '#f87171';
-          msgEl.innerText = 'Erro Crítico: ' + err.message;
-          progressText.innerText = 'Interrompido.';
+          msgEl.style.color = '#f87171'; msgEl.innerText = 'Erro Crítico: ' + err.message; progressText.innerText = 'Interrompido.';
         }
       }, 500); 
     });
@@ -372,7 +394,6 @@
         if ((header & 0x80) === 0) {
           const isDef = (header & 0x40) !== 0;
           const localNum = header & 0x0F;
-
           if (isDef) {
             offset += 1;
             const le = view.getUint8(offset++) === 0;
@@ -380,9 +401,7 @@
             offset += 2;
             const numFields = view.getUint8(offset++);
             const fields = [];
-            for (let i = 0; i < numFields; i++) {
-              fields.push({ num: view.getUint8(offset++), size: view.getUint8(offset++), type: view.getUint8(offset++) });
-            }
+            for (let i = 0; i < numFields; i++) { fields.push({ num: view.getUint8(offset++), size: view.getUint8(offset++), type: view.getUint8(offset++) }); }
             if ((header & 0x20) !== 0) offset += view.getUint8(offset++) * 3;
             localDefinitions[localNum] = { globalNum, le, fields };
           } else {
@@ -454,60 +473,89 @@
       const halfIdx = Math.floor(movingRecords.length / 2);
       const half1 = movingRecords.slice(0, halfIdx).filter(r => r.hr > 0 && r.power > 0);
       const half2 = movingRecords.slice(halfIdx).filter(r => r.hr > 0 && r.power > 0);
-      
       const calcEF = (recs) => {
         if (!recs.length) return 0;
         const p = recs.reduce((a, r) => a + r.power, 0) / recs.length;
         const h = recs.reduce((a, r) => a + r.hr, 0) / recs.length;
         return h > 0 ? p / h : 0;
       };
-      
-      const ef1 = calcEF(half1);
-      const ef2 = calcEF(half2);
       let drift = null;
+      const ef1 = calcEF(half1), ef2 = calcEF(half2);
       if (ef1 > 0 && ef2 > 0) drift = ((ef1 - ef2) / ef1) * 100;
 
       let timeline = [];
       if (records.length > 1) {
-        let startT = records[0].timestamp;
-        let endT = records[records.length - 1].timestamp;
+        let startT = records[0].timestamp, endT = records[records.length - 1].timestamp;
         let recMap = new Map(records.map(r => [r.timestamp, r.power]));
         for (let t = startT; t <= endT; t++) timeline.push(recMap.get(t) || 0);
       }
 
-      const windowSize = 240;
+      // NOVO: Cálculo de Potência Normalizada (NP) e Variabilidade (VI)
+      let np = avgPwr;
+      if (timeline.length >= 30) {
+        let rolling30 = [], sumPwr = 0;
+        for(let i=0; i<30; i++) sumPwr += timeline[i];
+        rolling30.push(sumPwr/30);
+        for(let i=30; i<timeline.length; i++) {
+          sumPwr = sumPwr - timeline[i-30] + timeline[i];
+          rolling30.push(sumPwr/30);
+        }
+        let sum4 = 0;
+        rolling30.forEach(p => sum4 += Math.pow(p, 4));
+        np = Math.round(Math.pow(sum4 / rolling30.length, 0.25));
+      }
+      const vi = avgPwr > 0 ? parseFloat((np / avgPwr).toFixed(2)) : 1;
+
+      // NOVO: Deteção de Blocos Contínuos / Estrutura (> 5 min sem variação absurda > 100W)
+      let blocksCount = 0;
+      let skipUntil = 0;
+      for (let i = 0; i < timeline.length - 300; i += 30) {
+        if (i < skipUntil) continue;
+        let sum = 0;
+        for (let j = 0; j < 300; j++) sum += timeline[i + j];
+        let mean = sum / 300;
+        if (mean > 100) { 
+          let sumSq = 0;
+          for (let j = 0; j < 300; j++) sumSq += Math.pow(timeline[i + j] - mean, 2);
+          let stdDev = Math.sqrt(sumSq / 300);
+          if ((stdDev / mean) < 0.15) { // Coeficiente de Variação baixo (Estável)
+            blocksCount++;
+            skipUntil = i + 300; 
+          }
+        }
+      }
+
+      // Top 4 de 4 mins
       let intervals = [];
+      const windowSize = 240;
       for (let i = 0; i <= timeline.length - windowSize; i++) {
         let sum = 0;
         for (let j = 0; j < windowSize; j++) sum += timeline[i + j];
         intervals.push({ avg: Math.round(sum / windowSize), index: i });
       }
       intervals.sort((a, b) => b.avg - a.avg);
-
       let top4 = [];
       for (const item of intervals) {
         if (!top4.some(existing => Math.abs(existing.index - item.index) < windowSize)) {
-          top4.push(item);
-          if (top4.length === 4) break;
+          top4.push(item); if (top4.length === 4) break;
         }
       }
 
       let max20m = avgPwr;
-      const w20 = 1200;
-      if (timeline.length >= w20) {
+      if (timeline.length >= 1200) {
         let sum = 0;
-        for (let i = 0; i < w20; i++) sum += timeline[i];
-        max20m = sum / w20;
-        for (let i = w20; i < timeline.length; i++) {
-          sum = sum - timeline[i - w20] + timeline[i];
-          if (sum / w20 > max20m) max20m = sum / w20;
+        for (let i = 0; i < 1200; i++) sum += timeline[i];
+        max20m = sum / 1200;
+        for (let i = 1200; i < timeline.length; i++) {
+          sum = sum - timeline[i - 1200] + timeline[i];
+          if (sum / 1200 > max20m) max20m = sum / 1200;
         }
       }
 
       return {
         totalSecs, distKm: (maxDist / 1000).toFixed(2),
         avgPwr, avgHr, avgCad, avgSpeed, top4, drift, mmp20: Math.round(max20m),
-        pwrHist, hrHist
+        pwrHist, hrHist, np, vi, blocksCount
       };
     }
 
@@ -551,11 +599,14 @@
       renderStackedZonesChart('pwr');
       renderStackedZonesChart('hr');
       renderDriftChart();
+      renderViChart();
+      renderStructureVolChart();
     }
 
-    function renderStackedZonesChart(type) {
+    // --- GRÁFICOS NOVOS DE ESTRUTURA (VI e Volume) ---
+    function renderViChart() {
       const period = document.querySelector('.time-filter').value;
-      const canvas = document.getElementById(type === 'pwr' ? 'pwrTimeCanvas' : 'hrTimeCanvas');
+      const canvas = document.getElementById('viCanvas');
       const ctx = canvas.getContext('2d');
       const w = canvas.offsetWidth || 900, h = 400;
       canvas.width = w; canvas.height = h;
@@ -563,32 +614,78 @@
 
       const groups = {}; 
       dbActivities.forEach(act => {
-        if (!act.metrics || !act.currentFtp) return;
+        if (!act.metrics || !act.metrics.vi) return;
         const key = getPeriodKey(act.dateObj, period);
-        if (!groups[key]) groups[key] = { Z1:0, Z2:0, Z3:0, Z4:0, Z5:0, Z6:0, total:0 };
-        
-        if (type === 'pwr') {
-          for (let p in act.metrics.pwrHist) {
-            const sec = act.metrics.pwrHist[p], ratio = parseInt(p) / act.currentFtp;
-            if (ratio < 0.55) groups[key].Z1 += sec;
-            else if (ratio <= 0.75) groups[key].Z2 += sec;
-            else if (ratio <= 0.90) groups[key].Z3 += sec;
-            else if (ratio <= 1.05) groups[key].Z4 += sec;
-            else if (ratio <= 1.20) groups[key].Z5 += sec;
-            else groups[key].Z6 += sec;
-            groups[key].total += sec;
-          }
-        } else {
-          for (let hrStr in act.metrics.hrHist) {
-            const sec = act.metrics.hrHist[hrStr], hr = parseInt(hrStr); 
-            if (hr < 112) groups[key].Z1 += sec;
-            else if (hr <= 130) groups[key].Z2 += sec;
-            else if (hr <= 149) groups[key].Z3 += sec;
-            else if (hr <= 168) groups[key].Z4 += sec;
-            else groups[key].Z5 += sec;
-            groups[key].total += sec;
-          }
+        if (!groups[key]) groups[key] = { sumVi: 0, count: 0 };
+        groups[key].sumVi += act.metrics.vi;
+        groups[key].count++;
+      });
+
+      const sortedKeys = Object.keys(groups).sort();
+      if (sortedKeys.length === 0) return;
+
+      const padL = 50, padR = 20, padT = 20, padB = 40;
+      const drawW = w - padL - padR, drawH = h - padT - padB;
+      const minVi = 1.0, maxVi = 1.5; 
+
+      const getY = (val) => padT + drawH - ((Math.min(Math.max(val, minVi), maxVi) - minVi) / (maxVi - minVi)) * drawH;
+
+      // Fundo Verde (Ideal <= 1.10)
+      ctx.fillStyle = 'rgba(34, 197, 94, 0.1)';
+      ctx.fillRect(padL, getY(1.10), drawW, getY(1.0) - getY(1.10));
+
+      ctx.strokeStyle = '#334155'; ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
+      for (let v = 1.0; v <= 1.5; v += 0.1) {
+        const y = getY(v);
+        ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+        ctx.fillText(v.toFixed(1), padL - 5, y + 3);
+      }
+
+      ctx.beginPath(); ctx.strokeStyle = '#a78bfa'; ctx.lineWidth = 2.5;
+      const pointSpacing = drawW / Math.max(1, sortedKeys.length - 1);
+      
+      canvas.chartHitboxes = [];
+      sortedKeys.forEach((k, idx) => {
+        const avgVi = groups[k].sumVi / groups[k].count;
+        const x = padL + idx * pointSpacing;
+        const y = getY(avgVi);
+        if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+
+        if (sortedKeys.length < 35 || idx % Math.ceil(sortedKeys.length/20) === 0) {
+          ctx.fillStyle = '#94a3b8'; ctx.textAlign = 'center'; ctx.fillText(k, x, h - 15);
         }
+        canvas.chartHitboxes.push({ x: x-5, y: y-5, w: 10, h: 10, data: { key: k, vi: avgVi.toFixed(2), count: groups[k].count }, type: 'vi' });
+      });
+      ctx.stroke();
+
+      // Desenha pontos
+      sortedKeys.forEach((k, idx) => {
+        const avgVi = groups[k].sumVi / groups[k].count;
+        const x = padL + idx * pointSpacing, y = getY(avgVi);
+        ctx.beginPath(); ctx.arc(x, y, 4, 0, 2*Math.PI);
+        ctx.fillStyle = avgVi <= 1.10 ? '#22c55e' : '#a78bfa'; ctx.fill(); ctx.stroke();
+      });
+      setupTooltip(canvas);
+    }
+
+    function renderStructureVolChart() {
+      const period = document.querySelector('.time-filter').value;
+      const canvas = document.getElementById('structureVolCanvas');
+      const ctx = canvas.getContext('2d');
+      const w = canvas.offsetWidth || 900, h = 400;
+      canvas.width = w; canvas.height = h;
+      ctx.clearRect(0, 0, w, h);
+
+      const groups = {}; 
+      dbActivities.forEach(act => {
+        if (!act.metrics || !act.metrics.vi) return;
+        const key = getPeriodKey(act.dateObj, period);
+        if (!groups[key]) groups[key] = { estruturado: 0, livre: 0, total: 0 };
+        
+        if (act.metrics.vi <= 1.10) groups[key].estruturado += act.metrics.totalSecs;
+        else groups[key].livre += act.metrics.totalSecs;
+        
+        groups[key].total += act.metrics.totalSecs;
       });
 
       const sortedKeys = Object.keys(groups).sort();
@@ -611,10 +708,6 @@
         ctx.fillText(`${i}h`, padL - 5, y + 3);
       }
 
-      const colors = type === 'pwr' 
-        ? { Z1: '#94a3b8', Z2: '#38bdf8', Z3: '#22c55e', Z4: '#eab308', Z5: '#f97316', Z6: '#ef4444' }
-        : { Z1: '#94a3b8', Z2: '#38bdf8', Z3: '#22c55e', Z4: '#eab308', Z5: '#ef4444' };
-
       canvas.chartHitboxes = [];
       sortedKeys.forEach((k, idx) => {
         const g = groups[k];
@@ -625,18 +718,80 @@
           ctx.fillStyle = '#94a3b8'; ctx.textAlign = 'center'; ctx.fillText(k, x + barW/2, h - 15);
         }
 
+        const hEstruturado = (g.estruturado / 3600) / maxHours * drawH;
+        const hLivre = (g.livre / 3600) / maxHours * drawH;
+
+        // Bloco Verde
+        ctx.fillStyle = '#22c55e'; ctx.fillRect(x, currentY - hEstruturado, barW, hEstruturado);
+        currentY -= hEstruturado;
+        // Bloco Cinza
+        ctx.fillStyle = '#64748b'; ctx.fillRect(x, currentY - hLivre, barW, hLivre);
+
+        canvas.chartHitboxes.push({ x, y: padT, w: barW, h: drawH, data: { key: k, estruturado: (g.estruturado/3600).toFixed(1), livre: (g.livre/3600).toFixed(1), total: (g.total/3600).toFixed(1) }, type: 'vol' });
+      });
+      setupTooltip(canvas);
+    }
+
+    // --- GRÁFICOS ANTIGOS MODIFICADOS PARA TOOLTIP GENÉRICA ---
+    function renderStackedZonesChart(type) {
+      const period = document.querySelector('.time-filter').value;
+      const canvas = document.getElementById(type === 'pwr' ? 'pwrTimeCanvas' : 'hrTimeCanvas');
+      const ctx = canvas.getContext('2d');
+      const w = canvas.offsetWidth || 900, h = 400; canvas.width = w; canvas.height = h; ctx.clearRect(0, 0, w, h);
+
+      const groups = {}; 
+      dbActivities.forEach(act => {
+        if (!act.metrics || !act.currentFtp) return;
+        const key = getPeriodKey(act.dateObj, period);
+        if (!groups[key]) groups[key] = { Z1:0, Z2:0, Z3:0, Z4:0, Z5:0, Z6:0, total:0 };
+        
+        if (type === 'pwr') {
+          for (let p in act.metrics.pwrHist) {
+            const sec = act.metrics.pwrHist[p], ratio = parseInt(p) / act.currentFtp;
+            if (ratio < 0.55) groups[key].Z1 += sec; else if (ratio <= 0.75) groups[key].Z2 += sec; else if (ratio <= 0.90) groups[key].Z3 += sec; else if (ratio <= 1.05) groups[key].Z4 += sec; else if (ratio <= 1.20) groups[key].Z5 += sec; else groups[key].Z6 += sec;
+            groups[key].total += sec;
+          }
+        } else {
+          for (let hrStr in act.metrics.hrHist) {
+            const sec = act.metrics.hrHist[hrStr], hr = parseInt(hrStr); 
+            if (hr < 112) groups[key].Z1 += sec; else if (hr <= 130) groups[key].Z2 += sec; else if (hr <= 149) groups[key].Z3 += sec; else if (hr <= 168) groups[key].Z4 += sec; else groups[key].Z5 += sec;
+            groups[key].total += sec;
+          }
+        }
+      });
+
+      const sortedKeys = Object.keys(groups).sort();
+      if (sortedKeys.length === 0) return;
+
+      let maxTotalSec = 0; sortedKeys.forEach(k => { if (groups[k].total > maxTotalSec) maxTotalSec = groups[k].total; });
+      const padL = 50, padR = 20, padT = 20, padB = 40;
+      const drawW = w - padL - padR, drawH = h - padT - padB;
+      const barW = Math.max(8, (drawW / sortedKeys.length) - 4);
+      const maxHours = maxTotalSec / 3600;
+      let step = maxHours > 100 ? 20 : (maxHours > 50 ? 10 : (maxHours > 20 ? 5 : (maxHours > 5 ? 2 : 1))); if (step === 0) step = 1;
+
+      ctx.strokeStyle = '#334155'; ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
+      for (let i = 0; i <= maxHours; i += step) {
+        const y = padT + drawH - (i / maxHours) * drawH; ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke(); ctx.fillText(`${i}h`, padL - 5, y + 3);
+      }
+
+      const colors = type === 'pwr' ? { Z1: '#94a3b8', Z2: '#38bdf8', Z3: '#22c55e', Z4: '#eab308', Z5: '#f97316', Z6: '#ef4444' } : { Z1: '#94a3b8', Z2: '#38bdf8', Z3: '#22c55e', Z4: '#eab308', Z5: '#ef4444' };
+      canvas.chartHitboxes = [];
+      
+      sortedKeys.forEach((k, idx) => {
+        const g = groups[k], x = padL + idx * (drawW / sortedKeys.length) + (drawW / sortedKeys.length - barW) / 2;
+        let currentY = padT + drawH;
+        if (sortedKeys.length < 35 || idx % Math.ceil(sortedKeys.length/20) === 0) { ctx.fillStyle = '#94a3b8'; ctx.textAlign = 'center'; ctx.fillText(k, x + barW/2, h - 15); }
+
         const zones = type === 'pwr' ? ['Z1','Z2','Z3','Z4','Z5','Z6'] : ['Z1','Z2','Z3','Z4','Z5'];
         let barData = { key: k, total: g.total, zones: {} };
-
         zones.forEach(z => {
           if (g[z] > 0) {
-            const zoneH = (g[z] / 3600) / maxHours * drawH;
-            ctx.fillStyle = colors[z]; ctx.fillRect(x, currentY - zoneH, barW, zoneH);
-            currentY -= zoneH;
-            barData.zones[z] = { hours: (g[z]/3600).toFixed(1), pct: ((g[z]/g.total)*100).toFixed(1) + '%' };
+            const zoneH = (g[z] / 3600) / maxHours * drawH; ctx.fillStyle = colors[z]; ctx.fillRect(x, currentY - zoneH, barW, zoneH);
+            currentY -= zoneH; barData.zones[z] = { hours: (g[z]/3600).toFixed(1), pct: ((g[z]/g.total)*100).toFixed(1) + '%' };
           }
         });
-        canvas.chartHitboxes.push({ x, y: padT, w: barW, h: drawH, data: barData, isDrift: false });
+        canvas.chartHitboxes.push({ x, y: padT, w: barW, h: drawH, data: barData, type: 'zone' });
       });
       setupTooltip(canvas);
     }
@@ -645,27 +800,19 @@
       const period = document.querySelector('.time-filter').value;
       const canvas = document.getElementById('driftCanvas');
       const ctx = canvas.getContext('2d');
-      const w = canvas.offsetWidth || 900, h = 400;
-      canvas.width = w; canvas.height = h;
-      ctx.clearRect(0, 0, w, h);
+      const w = canvas.offsetWidth || 900, h = 400; canvas.width = w; canvas.height = h; ctx.clearRect(0, 0, w, h);
 
       const groups = {}; 
       dbActivities.forEach(act => {
         if (!act.metrics || act.metrics.drift === null) return;
         const key = getPeriodKey(act.dateObj, period);
         if (!groups[key]) groups[key] = { sumDrift: 0, count: 0 };
-        groups[key].sumDrift += act.metrics.drift;
-        groups[key].count++;
+        groups[key].sumDrift += act.metrics.drift; groups[key].count++;
       });
 
-      const sortedKeys = Object.keys(groups).sort();
-      if (sortedKeys.length === 0) return;
-
+      const sortedKeys = Object.keys(groups).sort(); if (sortedKeys.length === 0) return;
       let maxDrift = 10; 
-      sortedKeys.forEach(k => { 
-        const avg = groups[k].sumDrift / groups[k].count;
-        if (avg > maxDrift) maxDrift = Math.ceil(avg);
-      });
+      sortedKeys.forEach(k => { const avg = groups[k].sumDrift / groups[k].count; if (avg > maxDrift) maxDrift = Math.ceil(avg); });
 
       const padL = 50, padR = 20, padT = 20, padB = 40;
       const drawW = w - padL - padR, drawH = h - padT - padB;
@@ -673,30 +820,20 @@
 
       ctx.strokeStyle = '#334155'; ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
       for (let i = 0; i <= maxDrift; i += 5) {
-        const y = padT + drawH - (i / maxDrift) * drawH;
-        ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
-        ctx.fillText(`${i}%`, padL - 5, y + 3);
+        const y = padT + drawH - (i / maxDrift) * drawH; ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke(); ctx.fillText(`${i}%`, padL - 5, y + 3);
       }
       
       const y5 = padT + drawH - (5 / maxDrift) * drawH;
-      ctx.beginPath(); ctx.setLineDash([5, 5]); ctx.moveTo(padL, y5); ctx.lineTo(w - padR, y5);
-      ctx.strokeStyle = '#22c55e'; ctx.stroke(); ctx.setLineDash([]);
+      ctx.beginPath(); ctx.setLineDash([5, 5]); ctx.moveTo(padL, y5); ctx.lineTo(w - padR, y5); ctx.strokeStyle = '#22c55e'; ctx.stroke(); ctx.setLineDash([]);
 
       canvas.chartHitboxes = [];
       sortedKeys.forEach((k, idx) => {
         const avg = groups[k].sumDrift / groups[k].count;
         const x = padL + idx * (drawW / sortedKeys.length) + (drawW / sortedKeys.length - barW) / 2;
-        const barH = Math.max(0, (avg / maxDrift) * drawH);
-        const y = padT + drawH - barH;
-
-        if (sortedKeys.length < 35 || idx % Math.ceil(sortedKeys.length/20) === 0) {
-          ctx.fillStyle = '#94a3b8'; ctx.textAlign = 'center'; ctx.fillText(k, x + barW/2, h - 15);
-        }
-
-        ctx.fillStyle = avg <= 5 ? '#22c55e' : '#ef4444';
-        ctx.fillRect(x, y, barW, barH);
-        
-        canvas.chartHitboxes.push({ x, y, w: barW, h: barH, data: { key: k, drift: avg.toFixed(1), count: groups[k].count }, isDrift: true });
+        const barH = Math.max(0, (avg / maxDrift) * drawH); const y = padT + drawH - barH;
+        if (sortedKeys.length < 35 || idx % Math.ceil(sortedKeys.length/20) === 0) { ctx.fillStyle = '#94a3b8'; ctx.textAlign = 'center'; ctx.fillText(k, x + barW/2, h - 15); }
+        ctx.fillStyle = avg <= 5 ? '#22c55e' : '#ef4444'; ctx.fillRect(x, y, barW, barH);
+        canvas.chartHitboxes.push({ x, y, w: barW, h: barH, data: { key: k, drift: avg.toFixed(1), count: groups[k].count }, type: 'drift' });
       });
       setupTooltip(canvas);
     }
@@ -719,12 +856,18 @@
               if (mx >= box.x - 2 && mx <= box.x + box.w + 2 && my >= box.y && my <= box.y + box.h) {
                 const d = box.data;
                 let html = '';
-                if (box.isDrift) {
+                if (box.type === 'drift') {
                   const color = d.drift <= 5 ? '#22c55e' : '#ef4444';
-                  html = `<strong style="color:#38bdf8">${d.key}</strong><hr style="border-color:#334155; margin:5px 0;"/>Média: <span style="color:${color}; font-weight:bold">${d.drift}%</span><br/>Treinos medidos: ${d.count}`;
-                } else {
+                  html = `<strong style="color:#38bdf8">${d.key}</strong><hr style="border-color:#334155; margin:5px 0;"/>Média: <span style="color:${color}; font-weight:bold">${d.drift}%</span><br/>Treinos: ${d.count}`;
+                } else if (box.type === 'zone') {
                   html = `<strong style="color:#38bdf8">${d.key}</strong><br/>Total: ${(d.total/3600).toFixed(1)}h<hr style="border-color:#334155; margin:5px 0;" />`;
                   Object.keys(d.zones).reverse().forEach(z => { html += `<b>${z}:</b> ${d.zones[z].hours}h (${d.zones[z].pct})<br/>`; });
+                } else if (box.type === 'vi') {
+                  const color = d.vi <= 1.10 ? '#22c55e' : '#a78bfa';
+                  html = `<strong style="color:#38bdf8">${d.key}</strong><hr style="border-color:#334155; margin:5px 0;"/>VI Médio: <span style="color:${color}; font-weight:bold">${d.vi}</span><br/>Treinos: ${d.count}`;
+                } else if (box.type === 'vol') {
+                  html = `<strong style="color:#38bdf8">${d.key}</strong><br/>Total: ${d.total}h<hr style="border-color:#334155; margin:5px 0;" />`;
+                  html += `<b style="color:#22c55e">Estruturado:</b> ${d.estruturado}h<br/><b style="color:#64748b">Livre:</b> ${d.livre}h`;
                 }
                 canvas.tooltipDiv.innerHTML = html;
                 canvas.tooltipDiv.style.left = (e.pageX + 15) + 'px'; canvas.tooltipDiv.style.top = (e.pageY + 15) + 'px';
@@ -739,11 +882,8 @@
     }
 
     function renderFtpChart(data) {
-      const canvas = document.getElementById('ftpCanvas');
-      const ctx = canvas.getContext('2d');
-      const w = canvas.offsetWidth || 900, h = 350;
-      canvas.width = w; canvas.height = h;
-      ctx.clearRect(0, 0, w, h);
+      const canvas = document.getElementById('ftpCanvas'); const ctx = canvas.getContext('2d');
+      const w = canvas.offsetWidth || 900, h = 350; canvas.width = w; canvas.height = h; ctx.clearRect(0, 0, w, h);
       if (data.length < 2) return;
       const minT = data[0].date.getTime(), maxT = data[data.length - 1].date.getTime();
       const minF = Math.max(0, Math.min(...data.map(d => d.ftp)) * 0.85), maxF = Math.max(...data.map(d => d.ftp)) * 1.1;
@@ -756,8 +896,7 @@
         ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right'; ctx.fillText(`${f}W`, pad - 5, y + 3);
       }
       ctx.beginPath(); ctx.strokeStyle = '#fc5200'; ctx.lineWidth = 2;
-      data.forEach((pt, idx) => { const x = getX(pt.date.getTime()), y = getY(pt.ftp); if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
-      ctx.stroke();
+      data.forEach((pt, idx) => { const x = getX(pt.date.getTime()), y = getY(pt.ftp); if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }); ctx.stroke();
     }
 
     function renderDynamicZones() {
@@ -765,9 +904,7 @@
       dbActivities.forEach(act => {
         if (!act.metrics || act.metrics.avgHr < 60 || !act.currentFtp) return;
         const ratio = act.metrics.avgPwr / act.currentFtp;
-        for (const key in zonesData) {
-          const z = zonesData[key]; if (ratio >= z.minP && ratio <= z.maxP) { z.sumHr += act.metrics.avgHr; z.count++; break; }
-        }
+        for (const key in zonesData) { const z = zonesData[key]; if (ratio >= z.minP && ratio <= z.maxP) { z.sumHr += act.metrics.avgHr; z.count++; break; } }
       });
       const canvas = document.getElementById('zonesCanvas'); const ctx = canvas.getContext('2d');
       const w = canvas.offsetWidth || 900, h = 350, pad = 40; canvas.width = w; canvas.height = h; ctx.clearRect(0, 0, w, h);
@@ -788,8 +925,17 @@
       const tbody = document.getElementById('summaryBody'); tbody.innerHTML = '';
       [...dbActivities].reverse().forEach((act) => {
         if (!act.metrics) return;
+        
+        let pwrStr = `${act.metrics.avgPwr} W`;
+        let badgeHtml = `<span style="color:#64748b; font-size:0.8rem;">S/ Dados</span>`;
+        if (act.metrics.vi) {
+          pwrStr = `${act.metrics.avgPwr} W / <span style="color:#a78bfa; font-weight:bold;">${act.metrics.np} W</span>`;
+          if (act.metrics.vi <= 1.10) badgeHtml = `<span class="badge-estruturado">Estruturado</span>`;
+          else badgeHtml = `<span class="badge-livre">Livre</span>`;
+        }
+
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td><strong>${act.date}</strong></td><td>${act.name}</td><td>${act.metrics.distKm} km</td><td>${act.metrics.avgPwr} W</td><td><button class="btn-small" onclick="viewDetails(${dbActivities.indexOf(act)})">Detalhes</button></td>`;
+        tr.innerHTML = `<td><strong>${act.date}</strong></td><td>${act.name}</td><td>${act.metrics.distKm} km</td><td>${pwrStr}</td><td>${badgeHtml}</td><td><button class="btn-small" onclick="viewDetails(${dbActivities.indexOf(act)})">Detalhes</button></td>`;
         tbody.appendChild(tr);
       });
     }
@@ -799,6 +945,19 @@
       document.getElementById('summaryArea').style.display = 'none'; document.getElementById('detailArea').style.display = 'block';
       document.getElementById('actTitle').innerText = `${act.name} (${act.date})`;
       const m = act.metrics;
+
+      // Novas Métricas de Estrutura
+      document.getElementById('npVal').innerText = m.np ? `${m.np} W` : "--";
+      if (m.vi) {
+        document.getElementById('viVal').innerHTML = `<span style="color: ${m.vi <= 1.10 ? '#22c55e' : '#ef4444'}">${m.vi}</span>`;
+      } else { document.getElementById('viVal').innerText = "--"; }
+      
+      if (m.blocksCount !== undefined) {
+        if (m.blocksCount > 0) document.getElementById('structureVal').innerHTML = `<span style="color:#22c55e; font-weight:bold;">${m.blocksCount} bloco(s) detetado(s)</span><br><span style="color:#94a3b8; font-size:0.8rem;">Ritmo disciplinado encontrado</span>`;
+        else document.getElementById('structureVal').innerHTML = `<span style="color:#ef4444; font-weight:bold;">Nenhum bloco estável</span><br><span style="color:#94a3b8; font-size:0.8rem;">Padrão estocástico / reativo</span>`;
+      } else { document.getElementById('structureVal').innerText = "--"; }
+
+      // Métricas Antigas
       document.getElementById('totalTime').innerText = `${Math.floor(m.totalSecs/3600)>0?Math.floor(m.totalSecs/3600)+'h ':''}${Math.floor((m.totalSecs%3600)/60)}m ${m.totalSecs%60}s`;
       document.getElementById('totalDist').innerText = `${m.distKm} km`; document.getElementById('avgSpeed').innerText = `${m.avgSpeed} km/h`;
       document.getElementById('avgPwr').innerText = `${m.avgPwr} W`; document.getElementById('avgHr').innerText = `${m.avgHr} bpm`;

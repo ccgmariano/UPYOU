@@ -16,7 +16,7 @@
     .upload-area:hover { border-color: #fc5200; background: #334155; }
     input[type="file"] { display: none; }
     
-    .btn { display: inline-block; background: #fc5200; color: white; padding: 10px 20px; border-radius: 6px; font-weight: 600; cursor: pointer; border: none; margin-top: 10px; text-decoration: none; }
+    .btn { display: inline-block; background: #fc5200; color: white; padding: 10px 20px; border-radius: 6px; font-weight: 600; cursor: pointer; border: none; margin-top: 10px; text-decoration: none; transition: 0.2s; }
     .btn:hover { background: #e04a00; }
     .btn-danger { background: #ef4444; }
     .btn-danger:hover { background: #dc2626; }
@@ -27,18 +27,18 @@
 
     #summaryArea { display: none; margin-top: 20px; }
     
-    /* Rolagem horizontal invisível - Botões Reorganizados */
-    .nav-tabs { display: flex; gap: 10px; border-bottom: 1px solid #334155; padding-bottom: 15px; margin-bottom: 20px; overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; }
-    .nav-tabs::-webkit-scrollbar { display: none; }
-    .tab-btn { background: #0f172a; border: 1px solid #334155; color: #94a3b8; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; white-space: nowrap; flex-shrink: 0; transition: 0.2s; }
-    .tab-btn:hover { background: #1e293b; color: #fff; }
-    .tab-btn.active { background: #fc5200; color: white; border-color: #fc5200; }
+    /* Layout de Botões Elegante e Envolvente (Múltiplas Linhas) */
+    .nav-tabs { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; border-bottom: 1px solid #334155; padding-bottom: 20px; margin-bottom: 25px; }
+    .tab-btn { background: #0f172a; border: 1px solid #334155; color: #94a3b8; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; white-space: nowrap; transition: all 0.2s ease; }
+    .tab-btn:hover { background: #1e293b; color: #fff; border-color: #475569; }
+    .tab-btn.active { background: #fc5200; color: white; border-color: #fc5200; box-shadow: 0 4px 12px rgba(252, 82, 0, 0.2); }
     
     .summary-table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 0.9rem; }
     .summary-table th, .summary-table td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; }
     .summary-table th { color: #94a3b8; font-weight: 600; text-transform: uppercase; font-size: 0.8rem; }
     .summary-table tr:hover { background: #334155; }
-    .btn-small { background: #38bdf8; color: #0f172a; padding: 6px 12px; border-radius: 4px; font-size: 0.8rem; cursor: pointer; font-weight: bold; border: none; }
+    .btn-small { background: #38bdf8; color: #0f172a; padding: 6px 12px; border-radius: 4px; font-size: 0.8rem; cursor: pointer; font-weight: bold; border: none; transition: 0.2s; }
+    .btn-small:hover { background: #0284c7; color: #fff; }
     
     .badge-estruturado { background: #22c55e; color: #fff; padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
     .badge-livre { background: #64748b; color: #fff; padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
@@ -56,9 +56,9 @@
     .section-header h3 { margin: 0; color: #f8fafc; }
     .custom-select { background: #1e293b; color: #fff; border: 1px solid #475569; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; outline: none; font-size: 0.85rem; }
     
-    .legend-container { display: flex; gap: 15px; flex-wrap: wrap; margin-top: 10px; }
-    .legend-item { display: inline-flex; align-items: center; font-size: 0.8rem; color: #cbd5e1; }
-    .legend-box { width: 12px; height: 12px; margin-right: 5px; border-radius: 2px; }
+    .legend-container { display: flex; gap: 15px; flex-wrap: wrap; margin-top: 10px; justify-content: center; }
+    .legend-item { display: inline-flex; align-items: center; font-size: 0.85rem; color: #cbd5e1; }
+    .legend-box { width: 12px; height: 12px; margin-right: 6px; border-radius: 2px; }
   </style>
 </head>
 <body>
@@ -81,7 +81,7 @@
     </div>
 
     <div id="summaryArea">
-      <!-- Navegação Reorganizada e Expandida -->
+      <!-- Navegação Multilinha Centralizada -->
       <div class="nav-tabs">
         <button class="tab-btn active" onclick="switchDashboardTab('tableTab', this)">As Suas Pedaladas</button>
         <button class="tab-btn" onclick="switchDashboardTab('ftpTab', this)">Evolução de FTP</button>
@@ -120,7 +120,7 @@
           </select>
         </div>
         <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Zonas recalculadas baseadas no seu FTP vigente. Eixo vertical = Horas Absolutas.</p>
-        <div class="legend-container">
+        <div class="legend-container" style="justify-content: flex-start;">
           <div class="legend-item"><div class="legend-box" style="background:#94a3b8;"></div>Z1 (< 55%)</div>
           <div class="legend-item"><div class="legend-box" style="background:#38bdf8;"></div>Z2 (56-75%)</div>
           <div class="legend-item"><div class="legend-box" style="background:#22c55e;"></div>Z3 (76-90%)</div>
@@ -139,7 +139,7 @@
           </select>
         </div>
         <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Zonas baseadas na FC Máxima de 187 bpm. Eixo vertical = Horas Absolutas.</p>
-        <div class="legend-container">
+        <div class="legend-container" style="justify-content: flex-start;">
           <div class="legend-item"><div class="legend-box" style="background:#94a3b8;"></div>Z1 (< 60%)</div>
           <div class="legend-item"><div class="legend-box" style="background:#38bdf8;"></div>Z2 (60-70%)</div>
           <div class="legend-item"><div class="legend-box" style="background:#22c55e;"></div>Z3 (70-80%)</div>
@@ -180,7 +180,7 @@
           </select>
         </div>
         <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Distribuição de horas mensais. Verde = Treino estruturado (VI <= 1.10). Cinza = Pedalada livre/variável.</p>
-        <div class="legend-container">
+        <div class="legend-container" style="justify-content: flex-start;">
           <div class="legend-item"><div class="legend-box" style="background:#22c55e;"></div>Estruturado/Ritmo (VI ≤ 1.10)</div>
           <div class="legend-item"><div class="legend-box" style="background:#64748b;"></div>Livre/Estocástico (VI > 1.10)</div>
         </div>
@@ -188,7 +188,6 @@
       </div>
 
       <div style="text-align: right; margin-top: 30px; border-top: 1px solid #334155; padding-top: 15px;">
-        <span style="font-size: 0.75rem; color: #64748b; margin-right: 15px;">(Clique aqui caso as novas métricas NP/VI apareçam em branco nos treinos antigos)</span>
         <button class="btn btn-danger" onclick="clearLocalDatabase()">Limpar Dados / Carregar Novo ZIP</button>
       </div>
     </div>
@@ -490,7 +489,6 @@
         for (let t = startT; t <= endT; t++) timeline.push(recMap.get(t) || 0);
       }
 
-      // NOVO: Cálculo de Potência Normalizada (NP) e Variabilidade (VI)
       let np = avgPwr;
       if (timeline.length >= 30) {
         let rolling30 = [], sumPwr = 0;
@@ -506,7 +504,6 @@
       }
       const vi = avgPwr > 0 ? parseFloat((np / avgPwr).toFixed(2)) : 1;
 
-      // NOVO: Deteção de Blocos Contínuos / Estrutura (> 5 min sem variação absurda > 100W)
       let blocksCount = 0;
       let skipUntil = 0;
       for (let i = 0; i < timeline.length - 300; i += 30) {
@@ -518,14 +515,13 @@
           let sumSq = 0;
           for (let j = 0; j < 300; j++) sumSq += Math.pow(timeline[i + j] - mean, 2);
           let stdDev = Math.sqrt(sumSq / 300);
-          if ((stdDev / mean) < 0.15) { // Coeficiente de Variação baixo (Estável)
+          if ((stdDev / mean) < 0.15) { 
             blocksCount++;
             skipUntil = i + 300; 
           }
         }
       }
 
-      // Top 4 de 4 mins
       let intervals = [];
       const windowSize = 240;
       for (let i = 0; i <= timeline.length - windowSize; i++) {
@@ -603,7 +599,6 @@
       renderStructureVolChart();
     }
 
-    // --- GRÁFICOS NOVOS DE ESTRUTURA (VI e Volume) ---
     function renderViChart() {
       const period = document.querySelector('.time-filter').value;
       const canvas = document.getElementById('viCanvas');
@@ -630,7 +625,6 @@
 
       const getY = (val) => padT + drawH - ((Math.min(Math.max(val, minVi), maxVi) - minVi) / (maxVi - minVi)) * drawH;
 
-      // Fundo Verde (Ideal <= 1.10)
       ctx.fillStyle = 'rgba(34, 197, 94, 0.1)';
       ctx.fillRect(padL, getY(1.10), drawW, getY(1.0) - getY(1.10));
 
@@ -658,7 +652,6 @@
       });
       ctx.stroke();
 
-      // Desenha pontos
       sortedKeys.forEach((k, idx) => {
         const avgVi = groups[k].sumVi / groups[k].count;
         const x = padL + idx * pointSpacing, y = getY(avgVi);
@@ -721,10 +714,8 @@
         const hEstruturado = (g.estruturado / 3600) / maxHours * drawH;
         const hLivre = (g.livre / 3600) / maxHours * drawH;
 
-        // Bloco Verde
         ctx.fillStyle = '#22c55e'; ctx.fillRect(x, currentY - hEstruturado, barW, hEstruturado);
         currentY -= hEstruturado;
-        // Bloco Cinza
         ctx.fillStyle = '#64748b'; ctx.fillRect(x, currentY - hLivre, barW, hLivre);
 
         canvas.chartHitboxes.push({ x, y: padT, w: barW, h: drawH, data: { key: k, estruturado: (g.estruturado/3600).toFixed(1), livre: (g.livre/3600).toFixed(1), total: (g.total/3600).toFixed(1) }, type: 'vol' });
@@ -732,7 +723,6 @@
       setupTooltip(canvas);
     }
 
-    // --- GRÁFICOS ANTIGOS MODIFICADOS PARA TOOLTIP GENÉRICA ---
     function renderStackedZonesChart(type) {
       const period = document.querySelector('.time-filter').value;
       const canvas = document.getElementById(type === 'pwr' ? 'pwrTimeCanvas' : 'hrTimeCanvas');
@@ -946,7 +936,6 @@
       document.getElementById('actTitle').innerText = `${act.name} (${act.date})`;
       const m = act.metrics;
 
-      // Novas Métricas de Estrutura
       document.getElementById('npVal').innerText = m.np ? `${m.np} W` : "--";
       if (m.vi) {
         document.getElementById('viVal').innerHTML = `<span style="color: ${m.vi <= 1.10 ? '#22c55e' : '#ef4444'}">${m.vi}</span>`;
@@ -957,7 +946,6 @@
         else document.getElementById('structureVal').innerHTML = `<span style="color:#ef4444; font-weight:bold;">Nenhum bloco estável</span><br><span style="color:#94a3b8; font-size:0.8rem;">Padrão estocástico / reativo</span>`;
       } else { document.getElementById('structureVal').innerText = "--"; }
 
-      // Métricas Antigas
       document.getElementById('totalTime').innerText = `${Math.floor(m.totalSecs/3600)>0?Math.floor(m.totalSecs/3600)+'h ':''}${Math.floor((m.totalSecs%3600)/60)}m ${m.totalSecs%60}s`;
       document.getElementById('totalDist').innerText = `${m.distKm} km`; document.getElementById('avgSpeed').innerText = `${m.avgSpeed} km/h`;
       document.getElementById('avgPwr').innerText = `${m.avgPwr} W`; document.getElementById('avgHr').innerText = `${m.avgHr} bpm`;

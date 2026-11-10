@@ -89,7 +89,7 @@
     
     <!-- Configuração do Botão Google -->
     <div id="g_id_onload"
-         data-client_id="COLOQUE_O_SEU_CLIENT_ID_AQUI"
+         data-client_id="731921508137-alvl8q48tpsvhp02531v1el2naia457g.apps.googleusercontent.com"
          data-context="signin"
          data-ux_mode="popup"
          data-callback="handleCredentialResponse"
@@ -276,7 +276,6 @@
 
     // --- SISTEMA DE LOGIN GOOGLE ---
     function handleCredentialResponse(response) {
-      // Descodifica o token JWT (JSON Web Token) sem precisar de bibliotecas pesadas externas
       const base64Url = response.credential.split('.')[1];
       const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
       const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
@@ -285,28 +284,26 @@
       
       const payload = JSON.parse(jsonPayload);
       
-      currentUserId = payload.sub; // ID Único universal da conta Google da pessoa
+      currentUserId = payload.sub;
       currentUserName = payload.given_name || payload.name;
 
-      // Troca os ecrãs
       document.getElementById('loginScreen').style.display = 'none';
       document.getElementById('mainApp').style.display = 'flex';
       document.getElementById('userGreeting').innerText = `Olá, ${currentUserName}`;
 
-      // Inicia a aplicação usando a pasta de dados deste utilizador específico
       initializeAppForUser();
     }
 
     function logout() {
       currentUserId = null;
       dbActivities = [];
-      location.reload(); // Recarregar a página é a forma mais limpa de limpar o ecrã e a memória RAM
+      location.reload(); 
     }
 
-    // --- BANCO DE DADOS LOCAL (Agora Isolado por Utilizador) ---
+    // --- BANCO DE DADOS LOCAL ---
     function initDB() {
       return new Promise((resolve, reject) => {
-        const request = indexedDB.open(DB_NAME, 2); // Atualizado para versão 2
+        const request = indexedDB.open(DB_NAME, 2); 
         request.onupgradeneeded = (e) => {
           const db = e.target.result;
           if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME, { keyPath: "id" });
@@ -321,7 +318,6 @@
       const db = await initDB();
       const tx = db.transaction(STORE_NAME, "readwrite");
       const store = tx.objectStore(STORE_NAME);
-      // Salva os dados na chave do utilizador logado
       store.put({ id: currentUserId, data: activities });
       return new Promise(resolve => tx.oncomplete = resolve);
     }
@@ -349,7 +345,7 @@
       }
     }
 
-    // --- INICIALIZAÇÃO DA APP (Chamado após o Login) ---
+    // --- INICIALIZAÇÃO DA APP ---
     async function initializeAppForUser() {
       const savedData = await loadFromDB();
       if (savedData && savedData.length > 0) {
@@ -365,7 +361,6 @@
         
         setTimeout(() => document.getElementById('statusMsg').innerText = '', 3000);
       } else {
-        // Se não tem dados, mostra o botão de Upload
         document.getElementById('uploadArea').style.display = 'block';
         document.getElementById('summaryArea').style.display = 'none';
       }
@@ -452,7 +447,6 @@
           document.getElementById('progressArea').style.display = 'none';
           processGlobalMetrics();
           
-          // Salva os dados para o utilizador atual
           await saveToDB(dbActivities);
           
           renderSummaryTable();
@@ -463,8 +457,6 @@
         }
       }, 500); 
     });
-
-    // === FUNÇÕES MATEMÁTICAS E DE RENDERIZAÇÃO (Mantidas inalteradas) ===
 
     function parseStravaDate(str) {
       if (!str) return new Date();

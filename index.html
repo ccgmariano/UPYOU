@@ -24,8 +24,11 @@
     /* Barra de Utilizador Logado */
     .user-header { display: flex; justify-content: space-between; align-items: center; background: #1e293b; width: 100%; max-width: 950px; padding: 15px 30px; border-radius: 12px; margin-bottom: 20px; box-sizing: border-box; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
     .user-greeting { font-weight: bold; color: #38bdf8; font-size: 1.1rem; }
+    .header-actions { display: flex; gap: 10px; align-items: center; }
     .btn-logout { background: transparent; border: 1px solid #475569; color: #94a3b8; padding: 6px 15px; border-radius: 6px; cursor: pointer; transition: 0.2s; font-weight: bold; }
     .btn-logout:hover { background: #334155; color: #fff; }
+    .btn-sync { background: #0284c7; border: none; color: #fff; padding: 6px 15px; border-radius: 6px; cursor: pointer; transition: 0.2s; font-weight: bold; }
+    .btn-sync:hover { background: #0369a1; }
 
     /* Estrutura Principal */
     #mainApp { display: none; width: 100%; display: flex; flex-direction: column; align-items: center; }
@@ -61,6 +64,7 @@
     
     .badge-estruturado { background: #22c55e; color: #fff; padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
     .badge-livre { background: #64748b; color: #fff; padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
+    .badge-garmin { background: #0284c7; color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 0.65rem; font-weight: bold; margin-left: 6px; vertical-align: middle; }
 
     #detailArea { display: none; margin-top: 10px; }
     .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px; }
@@ -85,7 +89,7 @@
   <!-- ECRÃ DE LOGIN -->
   <div id="loginScreen" class="card">
     <div class="logo-title">UPYOU</div>
-    <div class="logo-sub">Inteligência de Treino & Histórico Strava</div>
+    <div class="logo-sub">Inteligência de Treino & Sincronização Garmin / Strava</div>
     
     <!-- Configuração do Botão Google -->
     <div id="g_id_onload"
@@ -113,14 +117,17 @@
     
     <div class="user-header">
       <div class="user-greeting" id="userGreeting">Olá, Ciclista</div>
-      <button class="btn-logout" onclick="logout()">Sair</button>
+      <div class="header-actions">
+        <button class="btn-sync" onclick="syncWithGarminCloud()">↻ Sincronizar Garmin</button>
+        <button class="btn-logout" onclick="logout()">Sair</button>
+      </div>
     </div>
 
     <div class="card">
       <h1>Painel de Desempenho</h1>
 
       <div class="upload-area" id="uploadArea" onclick="document.getElementById('zipInput').click()">
-        <p>Ainda não há dados salvos para a sua conta.</p>
+        <p>Ainda não há dados locais ou na nuvem para a sua conta.</p>
         <span class="btn">Carregar ZIP do Strava</span>
         <input type="file" id="zipInput" accept=".zip">
       </div>
@@ -236,8 +243,9 @@
           <canvas id="structureVolCanvas" style="height: 400px; margin-top: 10px;"></canvas>
         </div>
 
-        <div style="text-align: right; margin-top: 30px; border-top: 1px solid #334155; padding-top: 15px;">
-          <button class="btn btn-danger" onclick="clearLocalDatabase()">Substituir ZIP (Os seus dados atuais serão apagados)</button>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 30px; border-top: 1px solid #334155; padding-top: 15px;">
+          <button class="btn" style="background:#334155;" onclick="document.getElementById('zipInput').click()">+ Importar ZIP do Strava</button>
+          <button class="btn btn-danger" onclick="clearLocalDatabase()">Limpar Banco Local</button>
         </div>
       </div>
 
@@ -273,6 +281,7 @@
     
     const DB_NAME = "UpYouDB";
     const STORE_NAME = "activitiesStore";
+    const GARMIN_API_URL = "https://garmin-webhook-731921508137.us-central1.run.app";
 
     // --- SISTEMA DE LOGIN GOOGLE ---
     function handleCredentialResponse(response) {
@@ -335,7 +344,7 @@
     }
 
     async function clearLocalDatabase() {
-      if(confirm("Tem a certeza que deseja apagar o SEU histórico? (Os dados de outros ciclistas neste computador não serão afetados).")) {
+      if(confirm("Tem a certeza que deseja apagar o histórico local? As atividades na nuvem Garmin serão recarregadas na próxima sincronização.")) {
         const db = await initDB();
         const tx = db.transaction(STORE_NAME, "readwrite");
         tx.objectStore(STORE_NAME).delete(currentUserId);
@@ -345,25 +354,144 @@
       }
     }
 
-    // --- INICIALIZAÇÃO DA APP ---
+    // --- INICIALIZAÇÃO E SINCRONIZAÇÃO GARMIN CLOUD ---
     async function initializeAppForUser() {
       const savedData = await loadFromDB();
       if (savedData && savedData.length > 0) {
         dbActivities = savedData;
         dbActivities.forEach(a => a.dateObj = new Date(a.dateObj));
         document.getElementById('uploadArea').style.display = 'none';
-        document.getElementById('statusMsg').style.color = '#22c55e';
-        document.getElementById('statusMsg').innerText = `O seu histórico pessoal foi carregado da memória.`;
-        
         processGlobalMetrics();
         renderSummaryTable();
         updateDynamicCharts();
-        
-        setTimeout(() => document.getElementById('statusMsg').innerText = '', 3000);
-      } else {
-        document.getElementById('uploadArea').style.display = 'block';
-        document.getElementById('summaryArea').style.display = 'none';
       }
+      // Busca automaticamente novas atividades no Cloud Run (Garmin)
+      await syncWithGarminCloud();
+    }
+
+    async function syncWithGarminCloud() {
+      const msgEl = document.getElementById('statusMsg');
+      msgEl.style.color = '#38bdf8';
+      msgEl.innerText = 'A sincronizar atividades com a nuvem Garmin...';
+
+      try {
+        const res = await fetch(GARMIN_API_URL);
+        if (!res.ok) throw new Error('Falha ao contactar servidor Garmin');
+        const cloudList = await res.json();
+
+        let newCount = 0;
+        for (const item of cloudList) {
+          if (!item.id || item.id === 'dados') continue;
+          const exists = dbActivities.some(a => String(a.garminId) === String(item.id));
+          if (!exists) {
+            const detailRes = await fetch(`${GARMIN_API_URL}?id=${item.id}`);
+            if (detailRes.ok) {
+              const garminJson = await detailRes.json();
+              const parsedAct = parseGarminJsonToActivity(garminJson, item.id);
+              if (parsedAct) {
+                dbActivities.push(parsedAct);
+                newCount++;
+              }
+            }
+          }
+        }
+
+        if (newCount > 0) {
+          await saveToDB(dbActivities);
+          msgEl.style.color = '#22c55e';
+          msgEl.innerText = `${newCount} nova(s) atividade(s) Garmin sincronizada(s)!`;
+        } else if (dbActivities.length > 0) {
+          msgEl.style.color = '#22c55e';
+          msgEl.innerText = 'Histórico atualizado com a nuvem Garmin.';
+        } else {
+          msgEl.innerText = '';
+        }
+
+        if (dbActivities.length > 0) {
+          document.getElementById('uploadArea').style.display = 'none';
+          processGlobalMetrics();
+          renderSummaryTable();
+          updateDynamicCharts();
+        } else {
+          document.getElementById('uploadArea').style.display = 'block';
+          document.getElementById('summaryArea').style.display = 'none';
+        }
+      } catch (err) {
+        console.warn('Erro ao sincronizar Garmin:', err);
+        msgEl.style.color = '#f87171';
+        msgEl.innerText = 'Modo offline: não foi possível verificar novas atividades na nuvem.';
+      }
+      setTimeout(() => { if (msgEl.innerText.includes('sincronizada') || msgEl.innerText.includes('atualizado')) msgEl.innerText = ''; }, 4000);
+    }
+
+    function parseGarminJsonToActivity(data, fallbackId) {
+      let summary = null;
+      let samples = [];
+
+      if (data.activityDetails && data.activityDetails.length > 0) {
+        const detail = data.activityDetails[0];
+        summary = detail.summary || {};
+        samples = detail.samples || [];
+      } else if (data.activities && data.activities.length > 0) {
+        summary = data.activities[0];
+      } else {
+        return null;
+      }
+
+      const actId = summary.activityId || fallbackId;
+      const startSec = summary.startTimeInSeconds || Math.floor(Date.now() / 1000);
+      const dateObj = new Date(startSec * 1000);
+      const dateStr = dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
+      const actName = summary.activityName || 'Pedalada Garmin';
+
+      let records = [];
+      if (samples.length > 0) {
+        records = samples.map(s => ({
+          timestamp: s.startTimeInSeconds || 0,
+          power: s.powerInWatts || 0,
+          hr: s.heartRate || 0,
+          cad: s.bikeCadenceInRPM || 0,
+          speed: (s.speedMetersPerSecond || 0) * 3.6,
+          distance: s.totalDistanceInMeters || 0
+        })).filter(r => r.timestamp > 0);
+      }
+
+      let metrics = calculateMetrics(records);
+
+      // Fallback caso seja um resumo sem samples ou atividade curtíssima de teste
+      if (!metrics && summary) {
+        const totalSecs = summary.durationInSeconds || 0;
+        const distKm = ((summary.distanceInMeters || 0) / 1000).toFixed(2);
+        const avgSpeed = ((summary.averageSpeedInMetersPerSecond || 0) * 3.6).toFixed(1);
+        const avgPwr = Math.round(summary.averagePowerInWatts || 0);
+        const avgHr = Math.round(summary.averageHeartRateInBeatsPerMinute || 0);
+        const avgCad = Math.round(summary.averageBikeCadenceInRoundsPerMinute || 0);
+        metrics = {
+          totalSecs, distKm, avgPwr, avgHr, avgCad, avgSpeed,
+          top4: [], drift: null, mmp20: avgPwr,
+          pwrHist: {}, hrHist: {}, np: avgPwr, vi: 1.0, blocksCount: 0
+        };
+      }
+
+      if (!metrics) return null;
+
+      // Garante que a distância e duração do sumário oficial prevaleçam se o cálculo de amostras der zero
+      if (parseFloat(metrics.distKm) === 0 && summary.distanceInMeters) {
+        metrics.distKm = (summary.distanceInMeters / 1000).toFixed(2);
+      }
+      if (metrics.totalSecs === 0 && summary.durationInSeconds) {
+        metrics.totalSecs = summary.durationInSeconds;
+      }
+
+      return {
+        garminId: String(actId),
+        date: dateStr,
+        name: actName,
+        file: `garmin_${actId}.json`,
+        metrics,
+        dateObj,
+        source: 'garmin'
+      };
     }
 
     window.switchDashboardTab = function(tabId, el) {
@@ -422,7 +550,10 @@
             if (filePath) queue.push({ date: cols[1] || 'Data', name: cols[2] || 'Pedalada', file: filePath });
           }
 
-          dbActivities = [];
+          // Preserva atividades que vieram da nuvem Garmin
+          const garminActs = dbActivities.filter(a => a.source === 'garmin');
+          dbActivities = [...garminActs];
+
           for (let i = 0; i < queue.length; i++) {
             const task = queue[i];
             progressText.innerText = `Lendo Watts e Estrutura: atividade ${i + 1} de ${queue.length}...`;
@@ -539,8 +670,8 @@
 
       const maxDist = records.reduce((max, r) => r.distance > max ? r.distance : max, 0);
       const totalSecs = records[records.length - 1].timestamp - records[0].timestamp;
-      const movingRecords = records.filter(r => r.speed >= 3);
-      if (movingRecords.length === 0) return null;
+      let movingRecords = records.filter(r => r.speed >= 3 || r.power > 0 || r.cad > 0);
+      if (movingRecords.length === 0) movingRecords = records;
 
       const avgPwr = Math.round(movingRecords.reduce((acc, r) => acc + r.power, 0) / movingRecords.length);
       const validHr = movingRecords.filter(r => r.hr > 0 && r.hr < 220);
@@ -652,8 +783,8 @@
         const minDate = new Date(curr.dateObj.getTime() - (daysWindow * 86400000));
         const windowActs = dbActivities.filter(a => a.dateObj >= minDate && a.dateObj <= curr.dateObj);
         
-        const bestEffort = Math.max(...windowActs.map(a => a.metrics.mmp20 || a.metrics.avgPwr));
-        const estimatedFtp = Math.round(bestEffort * 0.95);
+        const bestEffort = Math.max(...windowActs.map(a => a.metrics.mmp20 || a.metrics.avgPwr || 0));
+        const estimatedFtp = Math.round(bestEffort * 0.95) || 200;
         if (estimatedFtp > maxFtpGlobal) maxFtpGlobal = estimatedFtp;
         
         curr.currentFtp = estimatedFtp;
@@ -748,6 +879,7 @@
 
       const sortedKeys = Object.keys(groups).sort(); if (sortedKeys.length === 0) return;
       let maxTotalSec = 0; sortedKeys.forEach(k => { if (groups[k].total > maxTotalSec) maxTotalSec = groups[k].total; });
+      if (maxTotalSec === 0) maxTotalSec = 3600;
 
       const padL = 50, padR = 20, padT = 20, padB = 40;
       const drawW = w - padL - padR, drawH = h - padT - padB;
@@ -803,6 +935,7 @@
 
       const sortedKeys = Object.keys(groups).sort(); if (sortedKeys.length === 0) return;
       let maxTotalSec = 0; sortedKeys.forEach(k => { if (groups[k].total > maxTotalSec) maxTotalSec = groups[k].total; });
+      if (maxTotalSec === 0) return;
       const padL = 50, padR = 20, padT = 20, padB = 40;
       const drawW = w - padL - padR, drawH = h - padT - padB;
       const barW = Math.max(8, (drawW / sortedKeys.length) - 4);
@@ -927,7 +1060,7 @@
       const minT = data[0].date.getTime(), maxT = data[data.length - 1].date.getTime();
       const minF = Math.max(0, Math.min(...data.map(d => d.ftp)) * 0.85), maxF = Math.max(...data.map(d => d.ftp)) * 1.1;
       const pad = 40;
-      const getX = (t) => pad + ((t - minT) / (maxT - minT)) * (w - pad * 2), getY = (f) => h - pad - ((f - minF) / (maxF - minF)) * (h - pad * 2);
+      const getX = (t) => pad + ((t - minT) / Math.max(1, maxT - minT)) * (w - pad * 2), getY = (f) => h - pad - ((f - minF) / Math.max(1, maxF - minF)) * (h - pad * 2);
 
       ctx.strokeStyle = '#334155'; ctx.lineWidth = 1;
       for (let f = Math.ceil(minF / 50) * 50; f <= maxF; f += 50) {
@@ -973,8 +1106,10 @@
           else badgeHtml = `<span class="badge-livre">Livre</span>`;
         }
 
+        const sourceBadge = act.source === 'garmin' ? `<span class="badge-garmin">GARMIN</span>` : '';
+
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td><strong>${act.date}</strong></td><td>${act.name}</td><td>${act.metrics.distKm} km</td><td>${pwrStr}</td><td>${badgeHtml}</td><td><button class="btn-small" onclick="viewDetails(${dbActivities.indexOf(act)})">Detalhes</button></td>`;
+        tr.innerHTML = `<td><strong>${act.date}</strong></td><td>${act.name}${sourceBadge}</td><td>${act.metrics.distKm} km</td><td>${pwrStr}</td><td>${badgeHtml}</td><td><button class="btn-small" onclick="viewDetails(${dbActivities.indexOf(act)})">Detalhes</button></td>`;
         tbody.appendChild(tr);
       });
     }

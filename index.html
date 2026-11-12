@@ -22,13 +22,16 @@
     .google-btn-wrapper { display: flex; justify-content: center; }
 
     /* Barra de Utilizador Logado */
-    .user-header { display: flex; justify-content: space-between; align-items: center; background: #1e293b; width: 100%; max-width: 950px; padding: 15px 30px; border-radius: 12px; margin-bottom: 20px; box-sizing: border-box; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+    .user-header { display: flex; justify-content: space-between; align-items: center; background: #1e293b; width: 100%; max-width: 950px; padding: 15px 30px; border-radius: 12px; margin-bottom: 20px; box-sizing: border-box; box-shadow: 0 4px 15px rgba(0,0,0,0.2); flex-wrap: wrap; gap: 10px; }
     .user-greeting { font-weight: bold; color: #38bdf8; font-size: 1.1rem; }
-    .header-actions { display: flex; gap: 10px; align-items: center; }
+    .header-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
     .btn-logout { background: transparent; border: 1px solid #475569; color: #94a3b8; padding: 6px 15px; border-radius: 6px; cursor: pointer; transition: 0.2s; font-weight: bold; }
     .btn-logout:hover { background: #334155; color: #fff; }
     .btn-sync { background: #0284c7; border: none; color: #fff; padding: 6px 15px; border-radius: 6px; cursor: pointer; transition: 0.2s; font-weight: bold; }
     .btn-sync:hover { background: #0369a1; }
+    .btn-connect-garmin { background: #22c55e; border: none; color: #fff; padding: 6px 15px; border-radius: 6px; cursor: pointer; transition: 0.2s; font-weight: bold; }
+    .btn-connect-garmin:hover { background: #16a34a; }
+    .badge-connected { background: #0f172a; border: 1px solid #22c55e; color: #22c55e; padding: 5px 12px; border-radius: 6px; font-size: 0.8rem; font-weight: bold; }
 
     /* Estrutura Principal */
     #mainApp { display: none; width: 100%; display: flex; flex-direction: column; align-items: center; }
@@ -118,6 +121,8 @@
     <div class="user-header">
       <div class="user-greeting" id="userGreeting">Olá, Ciclista</div>
       <div class="header-actions">
+        <span id="garminConnectedBadge" class="badge-connected" style="display: none;">✓ Garmin Vinculado</span>
+        <button id="btnConnectGarmin" class="btn-connect-garmin" onclick="connectGarminAccount()">Conectar Garmin</button>
         <button class="btn-sync" onclick="syncWithGarminCloud()">↻ Sincronizar Garmin</button>
         <button class="btn-logout" onclick="logout()">Sair</button>
       </div>
@@ -127,7 +132,7 @@
       <h1>Painel de Desempenho</h1>
 
       <div class="upload-area" id="uploadArea" onclick="document.getElementById('zipInput').click()">
-        <p>Ainda não há dados locais ou na nuvem para a sua conta.</p>
+        <p>Ainda não há dados locais ou na nuvem para a sua conta. Conecte o seu Garmin acima ou carregue o histórico do Strava abaixo.</p>
         <span class="btn">Carregar ZIP do Strava</span>
         <input type="file" id="zipInput" accept=".zip">
       </div>
@@ -283,6 +288,22 @@
     const STORE_NAME = "activitiesStore";
     const GARMIN_API_URL = "https://garmin-webhook-731921508137.us-central1.run.app";
 
+    // Restaura sessão se o utilizador voltar do redirecionamento da Garmin
+    window.addEventListener('DOMContentLoaded', () => {
+      const savedUser = sessionStorage.getItem('upyou_user');
+      if (savedUser) {
+        try {
+          const parsed = JSON.parse(savedUser);
+          currentUserId = parsed.id;
+          currentUserName = parsed.name;
+          document.getElementById('loginScreen').style.display = 'none';
+          document.getElementById('mainApp').style.display = 'flex';
+          document.getElementById('userGreeting').innerText = `Olá, ${currentUserName}`;
+          initializeAppForUser();
+        } catch (e) {}
+      }
+    });
+
     // --- SISTEMA DE LOGIN GOOGLE ---
     function handleCredentialResponse(response) {
       const base64Url = response.credential.split('.')[1];
@@ -295,6 +316,7 @@
       
       currentUserId = payload.sub;
       currentUserName = payload.given_name || payload.name;
+      sessionStorage.setItem('upyou_user', JSON.stringify({ id: currentUserId, name: currentUserName }));
 
       document.getElementById('loginScreen').style.display = 'none';
       document.getElementById('mainApp').style.display = 'flex';
@@ -306,7 +328,34 @@
     function logout() {
       currentUserId = null;
       dbActivities = [];
-      location.reload(); 
+      sessionStorage.removeItem('upyou_user');
+      location.href = location.pathname; 
+    }
+
+    // --- VINCULAR CONTA GARMIN (MULTIUSUÁRIO) ---
+    function connectGarminAccount() {
+      if (!currentUserId) {
+        alert("Faça login com o Google primeiro.");
+        return;
+      }
+      window.location.href = `${GARMIN_API_URL}?action=auth&google_id=${encodeURIComponent(currentUserId)}`;
+    }
+
+    async function checkGarminConnectionStatus() {
+      if (!currentUserId) return;
+      try {
+        const res = await fetch(`${GARMIN_API_URL}?action=status&google_id=${encodeURIComponent(currentUserId)}`);
+        if (res.ok) {
+          const status = await res.json();
+          if (status.connected) {
+            document.getElementById('garminConnectedBadge').style.display = 'inline-block';
+            document.getElementById('btnConnectGarmin').innerText = 'Reconectar Garmin';
+            document.getElementById('btnConnectGarmin').style.background = '#475569';
+          }
+        }
+      } catch (e) {
+        console.warn('Não foi possível verificar status Garmin:', e);
+      }
     }
 
     // --- BANCO DE DADOS LOCAL ---
@@ -365,17 +414,18 @@
         renderSummaryTable();
         updateDynamicCharts();
       }
-      // Busca automaticamente novas atividades no Cloud Run (Garmin)
+      await checkGarminConnectionStatus();
       await syncWithGarminCloud();
     }
 
     async function syncWithGarminCloud() {
+      if (!currentUserId) return;
       const msgEl = document.getElementById('statusMsg');
       msgEl.style.color = '#38bdf8';
       msgEl.innerText = 'A sincronizar atividades com a nuvem Garmin...';
 
       try {
-        const res = await fetch(GARMIN_API_URL);
+        const res = await fetch(`${GARMIN_API_URL}?google_id=${encodeURIComponent(currentUserId)}`);
         if (!res.ok) throw new Error('Falha ao contactar servidor Garmin');
         const cloudList = await res.json();
 
@@ -384,7 +434,7 @@
           if (!item.id || item.id === 'dados') continue;
           const exists = dbActivities.some(a => String(a.garminId) === String(item.id));
           if (!exists) {
-            const detailRes = await fetch(`${GARMIN_API_URL}?id=${item.id}`);
+            const detailRes = await fetch(`${GARMIN_API_URL}?google_id=${encodeURIComponent(currentUserId)}&id=${encodeURIComponent(item.id)}`);
             if (detailRes.ok) {
               const garminJson = await detailRes.json();
               const parsedAct = parseGarminJsonToActivity(garminJson, item.id);
@@ -396,7 +446,12 @@
           }
         }
 
-        if (newCount > 0) {
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('garmin') === 'ok') {
+          msgEl.style.color = '#22c55e';
+          msgEl.innerText = 'Conta Garmin vinculada com sucesso!';
+          window.history.replaceState({}, document.title, window.location.pathname);
+        } else if (newCount > 0) {
           await saveToDB(dbActivities);
           msgEl.style.color = '#22c55e';
           msgEl.innerText = `${newCount} nova(s) atividade(s) Garmin sincronizada(s)!`;
@@ -405,6 +460,10 @@
           msgEl.innerText = 'Histórico atualizado com a nuvem Garmin.';
         } else {
           msgEl.innerText = '';
+        }
+
+        if (newCount > 0) {
+          await saveToDB(dbActivities);
         }
 
         if (dbActivities.length > 0) {
@@ -421,7 +480,7 @@
         msgEl.style.color = '#f87171';
         msgEl.innerText = 'Modo offline: não foi possível verificar novas atividades na nuvem.';
       }
-      setTimeout(() => { if (msgEl.innerText.includes('sincronizada') || msgEl.innerText.includes('atualizado')) msgEl.innerText = ''; }, 4000);
+      setTimeout(() => { if (msgEl.innerText.includes('sincronizada') || msgEl.innerText.includes('atualizado') || msgEl.innerText.includes('vinculada')) msgEl.innerText = ''; }, 4000);
     }
 
     function parseGarminJsonToActivity(data, fallbackId) {
@@ -458,7 +517,6 @@
 
       let metrics = calculateMetrics(records);
 
-      // Fallback caso seja um resumo sem samples ou atividade curtíssima de teste
       if (!metrics && summary) {
         const totalSecs = summary.durationInSeconds || 0;
         const distKm = ((summary.distanceInMeters || 0) / 1000).toFixed(2);
@@ -475,7 +533,6 @@
 
       if (!metrics) return null;
 
-      // Garante que a distância e duração do sumário oficial prevaleçam se o cálculo de amostras der zero
       if (parseFloat(metrics.distKm) === 0 && summary.distanceInMeters) {
         metrics.distKm = (summary.distanceInMeters / 1000).toFixed(2);
       }
@@ -550,7 +607,6 @@
             if (filePath) queue.push({ date: cols[1] || 'Data', name: cols[2] || 'Pedalada', file: filePath });
           }
 
-          // Preserva atividades que vieram da nuvem Garmin
           const garminActs = dbActivities.filter(a => a.source === 'garmin');
           dbActivities = [...garminActs];
 

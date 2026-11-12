@@ -2,7 +2,1448 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Treinador Virtual UPYOU - Histórico Completo</title>
+  
+  <!-- Biblioteca de Login do Google -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  
+  <!-- Bibliotecas de Processamento ZIP -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; margin: 0; }
+    
+    /* Ecrã de Login */
+    #loginScreen { text-align: center; padding: 60px 40px; width: 100%; max-width: 500px; margin-top: 50px; }
+    .logo-title { font-size: 2.2rem; color: #fc5200; margin-bottom: 10px; font-weight: 800; }
+    .logo-sub { color: #94a3b8; margin-bottom: 40px; font-size: 1.1rem; }
+    .google-btn-wrapper { display: flex; justify-content: center; }
+
+    /* Barra de Utilizador Logado */
+    .user-header { display: flex; justify-content: space-between; align-items: center; background: #1e293b; width: 100%; max-width: 950px; padding: 15px 30px; border-radius: 12px; margin-bottom: 20px; box-sizing: border-box; box-shadow: 0 4px 15px rgba(0,0,0,0.2); flex-wrap: wrap; gap: 10px; }
+    .user-greeting { font-weight: bold; color: #38bdf8; font-size: 1.1rem; }
+    .header-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .hr-config-box { display: flex; align-items: center; gap: 6px; background: #0f172a; padding: 4px 10px; border-radius: 6px; border: 1px solid #334155; font-size: 0.8rem; color: #94a3b8; }
+    .hr-config-box input { width: 48px; background: transparent; border: none; color: #fff; font-weight: bold; font-size: 0.85rem; text-align: center; outline: none; border-bottom: 1px solid #475569; }
+    .btn-logout { background: transparent; border: 1px solid #475569; color: #94a3b8; padding: 6px 15px; border-radius: 6px; cursor: pointer; transition: 0.2s; font-weight: bold; }
+    .btn-logout:hover { background: #334155; color: #fff; }
+    .btn-sync { background: #0284c7; border: none; color: #fff; padding: 6px 15px; border-radius: 6px; cursor: pointer; transition: 0.2s; font-weight: bold; }
+    .btn-sync:hover { background: #0369a1; }
+    .btn-connect-garmin { background: #22c55e; border: none; color: #fff; padding: 6px 15px; border-radius: 6px; cursor: pointer; transition: 0.2s; font-weight: bold; }
+    .btn-connect-garmin:hover { background: #16a34a; }
+    .badge-connected { background: #0f172a; border: 1px solid #22c55e; color: #22c55e; padding: 5px 12px; border-radius: 6px; font-size: 0.8rem; font-weight: bold; }
+
+    /* Estrutura Principal */
+    #mainApp { display: none; width: 100%; display: flex; flex-direction: column; align-items: center; }
+    .card { background: #1e293b; padding: 30px; border-radius: 12px; width: 100%; max-width: 950px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); box-sizing: border-box; }
+    h1 { text-align: center; color: #f8fafc; margin-bottom: 20px; }
+    
+    .upload-area { border: 2px dashed #475569; border-radius: 8px; padding: 40px; text-align: center; cursor: pointer; transition: all 0.3s; margin-top: 20px; }
+    .upload-area:hover { border-color: #fc5200; background: #334155; }
+    input[type="file"] { display: none; }
+    
+    .btn { display: inline-block; background: #fc5200; color: white; padding: 10px 20px; border-radius: 6px; font-weight: 600; cursor: pointer; border: none; margin-top: 10px; text-decoration: none; transition: 0.2s; }
+    .btn:hover { background: #e04a00; }
+    .btn-danger { background: #ef4444; }
+    .btn-danger:hover { background: #dc2626; }
+    
+    #progressArea { display: none; text-align: center; padding: 30px 0; }
+    .progress-bar-bg { background: #334155; height: 10px; border-radius: 5px; width: 100%; max-width: 400px; margin: 15px auto; overflow: hidden; }
+    .progress-bar-fill { background: #fc5200; height: 100%; width: 0%; transition: width 0.1s linear; }
+
+    #summaryArea { display: none; margin-top: 20px; }
+    
+    .nav-tabs { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; border-bottom: 1px solid #334155; padding-bottom: 20px; margin-bottom: 25px; }
+    .tab-btn { background: #0f172a; border: 1px solid #334155; color: #94a3b8; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; white-space: nowrap; transition: all 0.2s ease; }
+    .tab-btn:hover { background: #1e293b; color: #fff; border-color: #475569; }
+    .tab-btn.active { background: #fc5200; color: white; border-color: #fc5200; box-shadow: 0 4px 12px rgba(252, 82, 0, 0.2); }
+    
+    .summary-table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 0.9rem; }
+    .summary-table th, .summary-table td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; }
+    .summary-table th { color: #94a3b8; font-weight: 600; text-transform: uppercase; font-size: 0.8rem; }
+    .summary-table tr:hover { background: #334155; }
+    .btn-small { background: #38bdf8; color: #0f172a; padding: 6px 12px; border-radius: 4px; font-size: 0.8rem; cursor: pointer; font-weight: bold; border: none; transition: 0.2s; }
+    .btn-small:hover { background: #0284c7; color: #fff; }
+    
+    .badge-estruturado { background: #22c55e; color: #fff; padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
+    .badge-livre { background: #64748b; color: #fff; padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
+    .badge-garmin { background: #0284c7; color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 0.65rem; font-weight: bold; margin-left: 6px; vertical-align: middle; }
+
+    #detailArea { display: none; margin-top: 10px; }
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px; }
+    .stat-box { background: #0f172a; padding: 15px; border-radius: 8px; border-left: 4px solid #fc5200; }
+    .stat-title { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; margin-bottom: 5px; }
+    .stat-val { font-size: 1.2rem; font-weight: bold; color: #fff; }
+    
+    #statusMsg { color: #38bdf8; font-weight: bold; margin-top: 10px; text-align: center; }
+    canvas { background: #0f172a; border-radius: 8px; width: 100%; height: 350px; margin-top: 15px; }
+
+    .section-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #fc5200; padding-bottom: 10px; margin-bottom: 10px; }
+    .section-header h3 { margin: 0; color: #f8fafc; }
+    .custom-select { background: #1e293b; color: #fff; border: 1px solid #475569; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; outline: none; font-size: 0.85rem; }
+    
+    .legend-container { display: flex; gap: 15px; flex-wrap: wrap; margin-top: 10px; justify-content: flex-start; }
+    .legend-item { display: inline-flex; align-items: center; font-size: 0.85rem; color: #cbd5e1; }
+    .legend-box { width: 12px; height: 12px; margin-right: 6px; border-radius: 2px; }
+  </style>
+</head>
+<body>
+
+  <!-- ECRÃ DE LOGIN -->
+  <div id="loginScreen" class="card">
+    <div class="logo-title">UPYOU</div>
+    <div class="logo-sub">Inteligência de Treino & Sincronização Garmin / Strava</div>
+    
+    <!-- Configuração do Botão Google -->
+    <div id="g_id_onload"
+         data-client_id="731921508137-alvl8q48tpsvhp02531v1el2naia457g.apps.googleusercontent.com"
+         data-context="signin"
+         data-ux_mode="popup"
+         data-callback="handleCredentialResponse"
+         data-auto_prompt="false">
+    </div>
+    
+    <div class="google-btn-wrapper">
+      <div class="g_id_signin"
+           data-type="standard"
+           data-shape="rectangular"
+           data-theme="outline"
+           data-text="signin_with"
+           data-size="large"
+           data-logo_alignment="left">
+      </div>
+    </div>
+  </div>
+
+  <!-- APLICAÇÃO PRINCIPAL (Escondida até ao Login) -->
+  <div id="mainApp" style="display: none;">
+    
+    <div class="user-header">
+      <div class="user-greeting" id="userGreeting">Olá, Ciclista</div>
+      <div class="header-actions">
+        <div class="hr-config-box" title="A sua Frequência Cardíaca Máxima para cálculo das Zonas de FC">
+          <span>FC Máx:</span>
+          <input type="number" id="maxHrInput" value="187" min="120" max="230" onchange="updateUserMaxHr(this.value)">
+          <span>bpm</span>
+        </div>
+        <span id="garminConnectedBadge" class="badge-connected" style="display: none;">✓ Garmin Vinculado</span>
+        <button id="btnConnectGarmin" class="btn-connect-garmin" onclick="connectGarminAccount()">Conectar Garmin</button>
+        <button class="btn-sync" onclick="syncWithGarminCloud()">↻ Sincronizar Garmin</button>
+        <button class="btn-logout" onclick="logout()">Sair</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h1>Painel de Desempenho</h1>
+
+      <div class="upload-area" id="uploadArea" onclick="document.getElementById('zipInput').click()">
+        <p>Ainda não há dados locais ou na nuvem para a sua conta. Conecte o seu Garmin acima ou carregue o histórico do Strava abaixo.</p>
+        <span class="btn">Carregar ZIP do Strava</span>
+        <input type="file" id="zipInput" accept=".zip">
+      </div>
+
+      <div id="statusMsg"></div>
+      
+      <div id="progressArea">
+        <h3 style="color: #38bdf8;">A processar o seu histórico...</h3>
+        <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
+        <p id="progressText" style="color: #94a3b8;">A preparar ambiente (aguarde)...</p>
+      </div>
+
+      <div id="summaryArea">
+        <div class="nav-tabs">
+          <button class="tab-btn active" onclick="switchDashboardTab('tableTab', this)">As Suas Pedaladas</button>
+          <button class="tab-btn" onclick="switchDashboardTab('ftpTab', this)">Evolução de FTP</button>
+          <button class="tab-btn" onclick="switchDashboardTab('zonesTab', this)">Assinatura Cardíaca</button>
+          <button class="tab-btn" onclick="switchDashboardTab('pwrTimeTab', this)">Tempo/Zona (Potência)</button>
+          <button class="tab-btn" onclick="switchDashboardTab('hrTimeTab', this)">Tempo/Zona (FC)</button>
+          <button class="tab-btn" onclick="switchDashboardTab('driftChartTab', this)">Evolução do Drift</button>
+          <button class="tab-btn" style="border-color: #8b5cf6;" onclick="switchDashboardTab('viChartTab', this)">Índice de Variabilidade (VI)</button>
+          <button class="tab-btn" style="border-color: #8b5cf6;" onclick="switchDashboardTab('structureVolTab', this)">Volume de Estrutura</button>
+        </div>
+
+        <div id="tableTab" style="display: block;">
+          <table class="summary-table">
+            <thead><tr><th>Data</th><th>Nome</th><th>Distância</th><th>Potência (Méd / NP)</th><th>Perfil</th><th>Ação</th></tr></thead>
+            <tbody id="summaryBody"></tbody>
+          </table>
+        </div>
+
+        <div id="ftpTab" style="display: none;">
+          <div class="section-header"><h3>Evolução do FTP (Janela Móvel 42 Dias + Retenção de Base)</h3></div>
+          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Calculado apenas em atividades ≥ 20 min (95% da MMP20), com decaimento fisiológico suave em períodos sem testes máximos.</p>
+          <canvas id="ftpCanvas"></canvas>
+        </div>
+
+        <div id="zonesTab" style="display: none;">
+          <div class="section-header"><h3>FC Média por Zona Dinâmica de Potência</h3></div>
+          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Pareamento segundo a segundo entre Watts (relativos ao FTP vigente) e Frequência Cardíaca correspondente.</p>
+          <canvas id="zonesCanvas"></canvas>
+        </div>
+
+        <div id="pwrTimeTab" style="display: none;" class="dynamic-tab">
+          <div class="section-header">
+            <h3>Tempo por Zona de Potência (Dinâmica)</h3>
+            <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
+              <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
+            </select>
+          </div>
+          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Zonas recalculadas baseadas no seu FTP vigente. Eixo vertical = Horas Absolutas.</p>
+          <div class="legend-container">
+            <div class="legend-item"><div class="legend-box" style="background:#94a3b8;"></div>Z1 (menos de 55%)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#38bdf8;"></div>Z2 (56-75%)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#22c55e;"></div>Z3 (76-90%)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#eab308;"></div>Z4 (91-105%)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#f97316;"></div>Z5 (106-120%)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#ef4444;"></div>Z6 (acima de 120%)</div>
+          </div>
+          <canvas id="pwrTimeCanvas" style="height: 400px; margin-top: 10px;"></canvas>
+        </div>
+
+        <div id="hrTimeTab" style="display: none;" class="dynamic-tab">
+          <div class="section-header">
+            <h3>Tempo por Zona Cardíaca</h3>
+            <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
+              <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
+            </select>
+          </div>
+          <p id="hrZoneSubtitle" style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Zonas baseadas na FC Máxima configurada no topo. Eixo vertical = Horas Absolutas.</p>
+          <div class="legend-container">
+            <div class="legend-item"><div class="legend-box" style="background:#94a3b8;"></div>Z1 (menos de 60%)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#38bdf8;"></div>Z2 (60-70%)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#22c55e;"></div>Z3 (70-80%)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#eab308;"></div>Z4 (80-90%)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#ef4444;"></div>Z5 (acima de 90%)</div>
+          </div>
+          <canvas id="hrTimeCanvas" style="height: 400px; margin-top: 10px;"></canvas>
+        </div>
+
+        <div id="driftChartTab" style="display: none;" class="dynamic-tab">
+          <div class="section-header">
+            <h3>Evolução do Cardiac Drift (Desacoplamento Aeróbico)</h3>
+            <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
+              <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
+            </select>
+          </div>
+          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Apenas treinos contínuos elegíveis (duração ≥ 30 min e VI ≤ 1.12, excluindo aquecimento). Ideal: verde (≤ 5%).</p>
+          <canvas id="driftCanvas" style="height: 400px; margin-top: 10px;"></canvas>
+        </div>
+
+        <div id="viChartTab" style="display: none;" class="dynamic-tab">
+          <div class="section-header">
+            <h3 style="color: #a78bfa;">Média do Índice de Variabilidade (VI)</h3>
+            <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
+              <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
+            </select>
+          </div>
+          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">VI = Potência Normalizada (NP) / Potência Média (incluindo zeros em movimento). Faixa verde (1.00 a 1.10) = Ritmo constante.</p>
+          <canvas id="viCanvas" style="height: 400px; margin-top: 10px;"></canvas>
+        </div>
+
+        <div id="structureVolTab" style="display: none;" class="dynamic-tab">
+          <div class="section-header">
+            <h3 style="color: #a78bfa;">Horas de Treino: Estruturado vs Livre</h3>
+            <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
+              <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
+            </select>
+          </div>
+          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Distribuição de horas no período. Verde = Treino estruturado (VI ≤ 1.10 ou ≥ 2 blocos estáveis). Cinza = Pedalada livre/variável.</p>
+          <div class="legend-container">
+            <div class="legend-item"><div class="legend-box" style="background:#22c55e;"></div>Estruturado/Ritmo</div>
+            <div class="legend-item"><div class="legend-box" style="background:#64748b;"></div>Livre/Estocástico</div>
+          </div>
+          <canvas id="structureVolCanvas" style="height: 400px; margin-top: 10px;"></canvas>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 30px; border-top: 1px solid #334155; padding-top: 15px;">
+          <button class="btn" style="background:#334155;" onclick="document.getElementById('zipInput').click()">+ Importar / Recalcular ZIP do Strava</button>
+          <button class="btn btn-danger" onclick="clearLocalDatabase()">Limpar Banco Local</button>
+        </div>
+      </div>
+
+      <div id="detailArea">
+        <button class="btn" onclick="showSummary()" style="margin-bottom: 20px; background: #475569;">&larr; Voltar ao Histórico</button>
+        <h2 id="actTitle" style="color: #38bdf8; margin-bottom: 20px; text-align: center;"></h2>
+        
+        <div class="stat-grid">
+          <div class="stat-box" style="border-left-color: #8b5cf6;"><div class="stat-title">Potência Normalizada (NP)</div><div class="stat-val" id="npVal">--</div></div>
+          <div class="stat-box" style="border-left-color: #8b5cf6;"><div class="stat-title">Índ. Variabilidade (VI)</div><div class="stat-val" id="viVal">--</div></div>
+          <div class="stat-box" style="border-left-color: #8b5cf6; grid-column: span 2;"><div class="stat-title">Diagnóstico de Estrutura (Blocos ≥ 5 min)</div><div class="stat-val" id="structureVal" style="font-size: 0.95rem; font-weight: normal; line-height: 1.4;">--</div></div>
+        </div>
+
+        <div class="stat-grid">
+          <div class="stat-box"><div class="stat-title">Tempo Total</div><div class="stat-val" id="totalTime">--</div></div>
+          <div class="stat-box"><div class="stat-title">Distância Total</div><div class="stat-val" id="totalDist">--</div></div>
+          <div class="stat-box"><div class="stat-title">Velocidade Média (Mov)</div><div class="stat-val" id="avgSpeed">--</div></div>
+          <div class="stat-box"><div class="stat-title">Potência Média (Mov)</div><div class="stat-val" id="avgPwr">--</div></div>
+          <div class="stat-box"><div class="stat-title">FC Média (Mov)</div><div class="stat-val" id="avgHr">--</div></div>
+          <div class="stat-box"><div class="stat-title">Cadência Média (Mov)</div><div class="stat-val" id="avgCad">--</div></div>
+          <div class="stat-box" style="border-left-color: #22c55e;"><div class="stat-title">Cardiac Drift (Pa:Hr)</div><div class="stat-val" id="driftVal">--</div></div>
+        </div>
+        <div class="stat-box" style="border-left-color: #38bdf8; margin-bottom: 15px;"><div class="stat-title">Maior Bloco 20 Minutos (MMP20)</div><div class="stat-val" id="mmp20Val">--</div></div>
+        <div class="stat-box" style="border-left-color: #38bdf8;"><div class="stat-title">Top 4 Maiores Períodos de Potência (4 Minutos)</div><div class="stat-val" id="top4Mins" style="font-size: 0.95rem; font-weight: normal;">--</div></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let dbActivities = [];
+    let currentUserId = null;
+    let currentUserName = "";
+    let userMaxHr = 187;
+    
+    const DB_NAME = "UpYouDB";
+    const STORE_NAME = "activitiesStore";
+    const GARMIN_API_URL = "https://garmin-webhook-731921508137.us-central1.run.app";
+
+    // Restaura sessão se o utilizador voltar do redirecionamento da Garmin
+    window.addEventListener('DOMContentLoaded', () => {
+      const savedUser = sessionStorage.getItem('upyou_user');
+      if (savedUser) {
+        try {
+          const parsed = JSON.parse(savedUser);
+          currentUserId = parsed.id;
+          currentUserName = parsed.name;
+          loadUserPreferences();
+          document.getElementById('loginScreen').style.display = 'none';
+          document.getElementById('mainApp').style.display = 'flex';
+          document.getElementById('userGreeting').innerText = `Olá, ${currentUserName}`;
+          initializeAppForUser();
+        } catch (e) {}
+      }
+    });
+
+    function loadUserPreferences() {
+      if (!currentUserId) return;
+      const savedMaxHr = localStorage.getItem(`upyou_maxhr_${currentUserId}`);
+      if (savedMaxHr) {
+        userMaxHr = parseInt(savedMaxHr, 10) || 187;
+        document.getElementById('maxHrInput').value = userMaxHr;
+      }
+      updateHrSubtitle();
+    }
+
+    window.updateUserMaxHr = function(val) {
+      const parsed = parseInt(val, 10);
+      if (parsed >= 120 && parsed <= 230) {
+        userMaxHr = parsed;
+        if (currentUserId) localStorage.setItem(`upyou_maxhr_${currentUserId}`, userMaxHr);
+        updateHrSubtitle();
+        if (dbActivities.length > 0) updateDynamicCharts();
+      }
+    };
+
+    function updateHrSubtitle() {
+      const sub = document.getElementById('hrZoneSubtitle');
+      if (sub) sub.innerText = `Zonas baseadas na sua FC Máxima configurada (${userMaxHr} bpm). Eixo vertical = Horas Absolutas.`;
+    }
+
+    // --- SISTEMA DE LOGIN GOOGLE ---
+    function handleCredentialResponse(response) {
+      const base64Url = response.credential.split('.')[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+      }).join(''));
+      
+      const payload = JSON.parse(jsonPayload);
+      
+      currentUserId = payload.sub;
+      currentUserName = payload.given_name || payload.name;
+      sessionStorage.setItem('upyou_user', JSON.stringify({ id: currentUserId, name: currentUserName }));
+
+      loadUserPreferences();
+      document.getElementById('loginScreen').style.display = 'none';
+      document.getElementById('mainApp').style.display = 'flex';
+      document.getElementById('userGreeting').innerText = `Olá, ${currentUserName}`;
+
+      initializeAppForUser();
+    }
+
+    function logout() {
+      currentUserId = null;
+      dbActivities = [];
+      sessionStorage.removeItem('upyou_user');
+      location.href = location.pathname; 
+    }
+
+    // --- VINCULAR CONTA GARMIN (MULTIUSUÁRIO) ---
+    function connectGarminAccount() {
+      if (!currentUserId) {
+        alert("Faça login com o Google primeiro.");
+        return;
+      }
+      window.location.href = `${GARMIN_API_URL}?action=auth&google_id=${encodeURIComponent(currentUserId)}`;
+    }
+
+    async function checkGarminConnectionStatus() {
+      if (!currentUserId) return;
+      try {
+        const res = await fetch(`${GARMIN_API_URL}?action=status&google_id=${encodeURIComponent(currentUserId)}`);
+        if (res.ok) {
+          const status = await res.json();
+          if (status.connected) {
+            document.getElementById('garminConnectedBadge').style.display = 'inline-block';
+            document.getElementById('btnConnectGarmin').innerText = 'Reconectar Garmin';
+            document.getElementById('btnConnectGarmin').style.background = '#475569';
+          }
+        }
+      } catch (e) {
+        console.warn('Não foi possível verificar status Garmin:', e);
+      }
+    }
+
+    // --- BANCO DE DADOS LOCAL ---
+    function initDB() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, 2); 
+        request.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME, { keyPath: "id" });
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    async function saveToDB(activities) {
+      if (!currentUserId) return;
+      const db = await initDB();
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
+      store.put({ id: currentUserId, data: activities });
+      return new Promise(resolve => tx.oncomplete = resolve);
+    }
+
+    async function loadFromDB() {
+      if (!currentUserId) return null;
+      const db = await initDB();
+      const tx = db.transaction(STORE_NAME, "readonly");
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.get(currentUserId);
+      return new Promise(resolve => {
+        request.onsuccess = () => resolve(request.result ? request.result.data : null);
+        request.onerror = () => resolve(null);
+      });
+    }
+
+    async function clearLocalDatabase() {
+      if(confirm("Tem a certeza que deseja apagar o histórico local? As atividades na nuvem Garmin serão recarregadas na próxima sincronização.")) {
+        const db = await initDB();
+        const tx = db.transaction(STORE_NAME, "readwrite");
+        tx.objectStore(STORE_NAME).delete(currentUserId);
+        document.getElementById('summaryArea').style.display = 'none';
+        document.getElementById('uploadArea').style.display = 'block';
+        dbActivities = [];
+      }
+    }
+
+    // --- INICIALIZAÇÃO E SINCRONIZAÇÃO GARMIN CLOUD ---
+    async function initializeAppForUser() {
+      const savedData = await loadFromDB();
+      if (savedData && savedData.length > 0) {
+        dbActivities = savedData;
+        dbActivities.forEach(a => a.dateObj = new Date(a.dateObj));
+        document.getElementById('uploadArea').style.display = 'none';
+        processGlobalMetrics();
+        renderSummaryTable();
+        updateDynamicCharts();
+      }
+      await checkGarminConnectionStatus();
+      await syncWithGarminCloud();
+    }
+
+    async function syncWithGarminCloud() {
+      if (!currentUserId) return;
+      const msgEl = document.getElementById('statusMsg');
+      msgEl.style.color = '#38bdf8';
+      msgEl.innerText = 'A sincronizar atividades com a nuvem Garmin...';
+
+      try {
+        const res = await fetch(`${GARMIN_API_URL}?google_id=${encodeURIComponent(currentUserId)}`);
+        if (!res.ok) throw new Error('Falha ao contactar servidor Garmin');
+        const cloudList = await res.json();
+
+        let newCount = 0;
+        for (const item of cloudList) {
+          if (!item.id || item.id === 'dados') continue;
+          const existingIdx = dbActivities.findIndex(a => String(a.garminId) === String(item.id));
+          // Atualiza também se a atividade antiga não tinha a tabela pwrHrPairs
+          if (existingIdx === -1 || !dbActivities[existingIdx].metrics.pwrHrPairs) {
+            const detailRes = await fetch(`${GARMIN_API_URL}?google_id=${encodeURIComponent(currentUserId)}&id=${encodeURIComponent(item.id)}`);
+            if (detailRes.ok) {
+              const garminJson = await detailRes.json();
+              const parsedAct = parseGarminJsonToActivity(garminJson, item.id);
+              if (parsedAct) {
+                if (existingIdx !== -1) {
+                  dbActivities[existingIdx] = parsedAct;
+                } else {
+                  dbActivities.push(parsedAct);
+                  newCount++;
+                }
+              }
+            }
+          }
+        }
+
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('garmin') === 'ok') {
+          msgEl.style.color = '#22c55e';
+          msgEl.innerText = 'Conta Garmin vinculada com sucesso!';
+          window.history.replaceState({}, document.title, window.location.pathname);
+        } else if (newCount > 0) {
+          msgEl.style.color = '#22c55e';
+          msgEl.innerText = `${newCount} nova(s) atividade(s) Garmin sincronizada(s)!`;
+        } else if (dbActivities.length > 0) {
+          msgEl.style.color = '#22c55e';
+          msgEl.innerText = 'Histórico atualizado com a nuvem Garmin.';
+        } else {
+          msgEl.innerText = '';
+        }
+
+        if (dbActivities.length > 0) {
+          await saveToDB(dbActivities);
+          document.getElementById('uploadArea').style.display = 'none';
+          processGlobalMetrics();
+          renderSummaryTable();
+          updateDynamicCharts();
+        } else {
+          document.getElementById('uploadArea').style.display = 'block';
+          document.getElementById('summaryArea').style.display = 'none';
+        }
+      } catch (err) {
+        console.warn('Erro ao sincronizar Garmin:', err);
+        msgEl.style.color = '#f87171';
+        msgEl.innerText = 'Modo offline: não foi possível verificar novas atividades na nuvem.';
+      }
+      setTimeout(() => { if (msgEl.innerText.includes('sincronizada') || msgEl.innerText.includes('atualizado') || msgEl.innerText.includes('vinculada')) msgEl.innerText = ''; }, 4000);
+    }
+
+    function parseGarminJsonToActivity(data, fallbackId) {
+      let summary = null;
+      let samples = [];
+
+      if (data.activityDetails && data.activityDetails.length > 0) {
+        const detail = data.activityDetails[0];
+        summary = detail.summary || {};
+        samples = detail.samples || [];
+      } else if (data.activities && data.activities.length > 0) {
+        summary = data.activities[0];
+      } else {
+        return null;
+      }
+
+      const actId = summary.activityId || fallbackId;
+      const startSec = summary.startTimeInSeconds || Math.floor(Date.now() / 1000);
+      const dateObj = new Date(startSec * 1000);
+      const dateStr = dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
+      const actName = summary.activityName || 'Pedalada Garmin';
+
+      let records = [];
+      if (samples.length > 0) {
+        records = samples.map(s => ({
+          timestamp: s.startTimeInSeconds || 0,
+          power: s.powerInWatts !== undefined ? s.powerInWatts : 0,
+          hr: s.heartRate || 0,
+          cad: s.bikeCadenceInRPM || 0,
+          speed: (s.speedMetersPerSecond || 0) * 3.6,
+          distance: s.totalDistanceInMeters || 0
+        })).filter(r => r.timestamp > 0);
+      }
+
+      let metrics = calculateMetrics(records);
+
+      if (!metrics && summary) {
+        const totalSecs = summary.durationInSeconds || 0;
+        const distKm = ((summary.distanceInMeters || 0) / 1000).toFixed(2);
+        const avgSpeed = ((summary.averageSpeedInMetersPerSecond || 0) * 3.6).toFixed(1);
+        const avgPwr = Math.round(summary.averagePowerInWatts || 0);
+        const avgHr = Math.round(summary.averageHeartRateInBeatsPerMinute || 0);
+        const avgCad = Math.round(summary.averageBikeCadenceInRoundsPerMinute || 0);
+        metrics = {
+          totalSecs, movingSecs: totalSecs, distKm, avgPwr, avgHr, avgCad, avgSpeed,
+          top4: [], drift: null, driftEligible: false, mmp20: totalSecs >= 1200 ? avgPwr : 0,
+          pwrHist: {}, hrHist: {}, pwrHrPairs: {}, np: avgPwr, vi: 1.0, blocksCount: 0
+        };
+      }
+
+      if (!metrics) return null;
+
+      if (parseFloat(metrics.distKm) === 0 && summary.distanceInMeters) {
+        metrics.distKm = (summary.distanceInMeters / 1000).toFixed(2);
+      }
+      if (metrics.totalSecs === 0 && summary.durationInSeconds) {
+        metrics.totalSecs = summary.durationInSeconds;
+      }
+
+      return {
+        garminId: String(actId),
+        date: dateStr,
+        name: actName,
+        file: `garmin_${actId}.json`,
+        metrics,
+        dateObj,
+        source: 'garmin'
+      };
+    }
+
+    window.switchDashboardTab = function(tabId, el) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      ['tableTab', 'ftpTab', 'zonesTab', 'pwrTimeTab', 'hrTimeTab', 'driftChartTab', 'viChartTab', 'structureVolTab'].forEach(id => {
+        document.getElementById(id).style.display = 'none';
+      });
+      el.classList.add('active');
+      document.getElementById(tabId).style.display = 'block';
+      if (document.getElementById(tabId).classList.contains('dynamic-tab')) updateDynamicCharts();
+      if (tabId === 'ftpTab' || tabId === 'zonesTab') processGlobalMetrics();
+    }
+
+    window.syncFiltersAndUpdate = function(value) {
+      document.querySelectorAll('.time-filter').forEach(select => select.value = value);
+      updateDynamicCharts();
+    }
+
+    document.getElementById('zipInput').addEventListener('change', async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      document.getElementById('uploadArea').style.display = 'none';
+      document.getElementById('progressArea').style.display = 'block';
+      const msgEl = document.getElementById('statusMsg');
+      const progressText = document.getElementById('progressText');
+      const progressFill = document.getElementById('progressFill');
+
+      msgEl.innerText = '';
+      document.body.offsetHeight; 
+
+      setTimeout(async () => {
+        try {
+          progressText.innerText = "A carregar o ZIP para a memória...";
+          const jszip = new JSZip();
+          const zip = await jszip.loadAsync(file);
+          
+          let csvEntry = null;
+          zip.forEach((path, entry) => { if (path.toLowerCase().includes('activities.csv')) csvEntry = entry; });
+          if (!csvEntry) throw new Error("O ficheiro 'activities.csv' não foi encontrado.");
+
+          const csvText = await csvEntry.async("string");
+          const lines = csvText.split('\n');
+          let queue = [];
+
+          for (let i = 1; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line) continue;
+            let cols = [];
+            let inQuote = false, val = '';
+            for (let ch of line) {
+              if (inQuote) { if (ch === '"') inQuote = false; else val += ch; } 
+              else { if (ch === '"') inQuote = true; else if (ch === ',') { cols.push(val); val = ''; } else val += ch; }
+            }
+            cols.push(val);
+            const filePath = cols.find(c => c && c.toLowerCase().includes('activities/') && (c.toLowerCase().endsWith('.fit.gz') || c.toLowerCase().endsWith('.fit')));
+            if (filePath) queue.push({ date: cols[1] || 'Data', name: cols[2] || 'Pedalada', file: filePath });
+          }
+
+          const garminActs = dbActivities.filter(a => a.source === 'garmin');
+          dbActivities = [...garminActs];
+
+          for (let i = 0; i < queue.length; i++) {
+            const task = queue[i];
+            progressText.innerText = `A processar fisiologia e zonas: atividade ${i + 1} de ${queue.length}...`;
+            progressFill.style.width = `${((i + 1) / queue.length) * 100}%`;
+
+            let zipEntry = null;
+            zip.forEach((path, entry) => { if (path.toLowerCase().includes(task.file.toLowerCase())) zipEntry = entry; });
+
+            if (zipEntry) {
+              try {
+                const rawData = await zipEntry.async("uint8array");
+                let decompressed = rawData;
+                if (task.file.toLowerCase().endsWith('.gz')) decompressed = pako.inflate(rawData);
+                const records = parseFitNative(decompressed);
+                const metrics = calculateMetrics(records);
+                if (metrics) dbActivities.push({ ...task, metrics, dateObj: parseStravaDate(task.date) });
+              } catch (e) { console.warn(`Aviso: ${task.file}`); }
+            }
+            if(i % 5 === 0) await new Promise(r => setTimeout(r, 1)); 
+          }
+
+          document.getElementById('progressArea').style.display = 'none';
+          processGlobalMetrics();
+          
+          await saveToDB(dbActivities);
+          
+          renderSummaryTable();
+          updateDynamicCharts();
+
+        } catch (err) {
+          msgEl.style.color = '#f87171'; msgEl.innerText = 'Erro Crítico: ' + err.message; progressText.innerText = 'Interrompido.';
+        }
+      }, 500); 
+    });
+
+    function parseStravaDate(str) {
+      if (!str) return new Date();
+      const months = { 'jan': 0, 'fev': 1, 'mar': 2, 'abr': 3, 'mai': 4, 'jun': 5, 'jul': 6, 'ago': 7, 'set': 8, 'out': 9, 'nov': 10, 'dez': 11 };
+      const parts = str.match(/(\d{1,2})\s+de\s+([a-zç]{3})[^\s]*\s+de\s+(\d{4})/i);
+      if (parts) return new Date(parseInt(parts[3]), months[parts[2].toLowerCase()] || 0, parseInt(parts[1]));
+      const d = new Date(str);
+      return isNaN(d.getTime()) ? new Date() : d;
+    }
+
+    // Leitura nativa de ficheiros FIT com suporte à velocidade oficial do sensor/GPS
+    function parseFitNative(u8) {
+      const view = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+      let offset = view.getUint8(0);
+      const endOffset = offset + view.getUint32(4, true);
+      const localDefinitions = {};
+      const records = [];
+      let prevLat = null, prevLon = null, prevTime = null, prevDist = null;
+
+      while (offset < endOffset && offset < u8.length) {
+        const header = view.getUint8(offset++);
+        if ((header & 0x80) === 0) {
+          const isDef = (header & 0x40) !== 0;
+          const localNum = header & 0x0F;
+          if (isDef) {
+            offset += 1;
+            const le = view.getUint8(offset++) === 0;
+            const globalNum = view.getUint16(offset, le);
+            offset += 2;
+            const numFields = view.getUint8(offset++);
+            const fields = [];
+            for (let i = 0; i < numFields; i++) { fields.push({ num: view.getUint8(offset++), size: view.getUint8(offset++), type: view.getUint8(offset++) }); }
+            if ((header & 0x20) !== 0) offset += view.getUint8(offset++) * 3;
+            localDefinitions[localNum] = { globalNum, le, fields };
+          } else {
+            const def = localDefinitions[localNum];
+            if (!def) break;
+            let rec = { timestamp: 0, power: 0, hr: 0, cad: 0, speed: -1, distance: 0 };
+            let isRec = def.globalNum === 20;
+            let lat = 0, lon = 0;
+
+            for (const f of def.fields) {
+              let val = 0;
+              if (f.size === 1) val = view.getUint8(offset);
+              else if (f.size === 2) val = view.getUint16(offset, def.le);
+              else if (f.size === 4) val = view.getUint32(offset, def.le);
+              offset += f.size;
+
+              if (isRec) {
+                if (f.num === 253) rec.timestamp = val;
+                else if (f.num === 7) rec.power = (val !== 0xFFFF && val < 3000) ? val : 0;
+                else if (f.num === 3) rec.hr = (val !== 0xFF && val < 240) ? val : 0;
+                else if (f.num === 4) rec.cad = (val !== 0xFF && val < 200) ? val : 0;
+                else if (f.num === 5) rec.distance = (val !== 0xFFFFFFFF) ? val / 100 : 0;
+                else if (f.num === 6) { if (val !== 0xFFFF) rec.speed = (val / 1000) * 3.6; }
+                else if (f.num === 134) { if (val !== 0xFFFFFFFF) rec.speed = (val / 1000) * 3.6; }
+                else if (f.num === 0) lat = (val !== 0x7FFFFFFF) ? val * (180 / Math.pow(2, 31)) : 0;
+                else if (f.num === 1) lon = (val !== 0x7FFFFFFF) ? val * (180 / Math.pow(2, 31)) : 0;
+              }
+            }
+            if (isRec && rec.timestamp > 0) {
+              if (rec.speed < 0) {
+                if (prevTime !== null && rec.timestamp > prevTime) {
+                  const dt = rec.timestamp - prevTime;
+                  if (prevDist !== null && rec.distance > prevDist) {
+                    rec.speed = ((rec.distance - prevDist) / dt) * 3.6;
+                  } else if (lat !== 0 && lon !== 0 && prevLat !== null) {
+                    const distKm = getDistanceFromLatLonInKm(prevLat, prevLon, lat, lon);
+                    rec.speed = distKm / (dt / 3600);
+                  } else {
+                    rec.speed = 0;
+                  }
+                } else {
+                  rec.speed = 0;
+                }
+              }
+              if (rec.speed > 130) rec.speed = 0; // Filtra spikes de GPS
+              if (lat !== 0 && lon !== 0) { prevLat = lat; prevLon = lon; }
+              prevTime = rec.timestamp;
+              prevDist = rec.distance;
+              records.push(rec);
+            }
+          }
+        } else {
+          const def = localDefinitions[(header >> 5) & 0x03];
+          if (def) { for (const f of def.fields) offset += f.size; } else break;
+        }
+      }
+      return records;
+    }
+
+    // Cálculo fisiológico completo com delta de tempo real (dt) e pareamento Potência-FC
+    function calculateMetrics(records) {
+      if (!records || records.length === 0) return null;
+      records.sort((a, b) => a.timestamp - b.timestamp);
+
+      // Remove timestamps duplicados
+      const uniqueRecs = [];
+      for (let i = 0; i < records.length; i++) {
+        if (i === 0 || records[i].timestamp > records[i - 1].timestamp) {
+          uniqueRecs.push(records[i]);
+        }
+      }
+      if (uniqueRecs.length === 0) return null;
+
+      const startT = uniqueRecs[0].timestamp;
+      const endT = uniqueRecs[uniqueRecs.length - 1].timestamp;
+      const totalSecs = Math.max(1, endT - startT);
+      const maxDist = uniqueRecs.reduce((max, r) => r.distance > max ? r.distance : max, 0);
+
+      // Verifica se o treino é outdoor (com deslocamento) ou rolo indoor
+      const hasSpeedData = uniqueRecs.some(r => r.speed >= 3);
+
+      let movingSecs = 0;
+      let sumPwrDt = 0, sumSpeedDt = 0;
+      let sumHrDt = 0, hrSecs = 0;
+      let sumCadDt = 0, cadSecs = 0;
+
+      const pwrHist = {};
+      const hrHist = {};
+      const pwrHrPairs = {}; // Guarda { [wattBucket]: { sumHr, secs } } para Assinatura Cardíaca exata
+
+      const movingSamples = [];
+
+      for (let i = 0; i < uniqueRecs.length; i++) {
+        const r = uniqueRecs[i];
+        // Calcula a duração real desta amostra (corrige Smart Recording do Garmin Edge)
+        let dt = (i < uniqueRecs.length - 1) ? (uniqueRecs[i + 1].timestamp - r.timestamp) : 1;
+        if (dt <= 0) dt = 1;
+        if (dt > 10) dt = 1; // Pausa de gravação / paragem no semáforo não infla zonas
+
+        const isMoving = hasSpeedData ? (r.speed >= 3) : (r.power > 0 || r.cad > 0 || r.hr > 90);
+        if (!isMoving) continue;
+
+        movingSecs += dt;
+        // Inclui os zeros em movimento (roda livre na descida/curva) na Potência Média!
+        sumPwrDt += (r.power || 0) * dt;
+        sumSpeedDt += (r.speed || 0) * dt;
+
+        if (r.hr > 40 && r.hr < 230) {
+          sumHrDt += r.hr * dt;
+          hrSecs += dt;
+          hrHist[r.hr] = (hrHist[r.hr] || 0) + dt;
+        }
+        if (r.cad > 0 && r.cad < 190) {
+          sumCadDt += r.cad * dt;
+          cadSecs += dt;
+        }
+
+        const pBucket = Math.round((r.power || 0) / 5) * 5;
+        if (r.power > 0) {
+          pwrHist[pBucket] = (pwrHist[pBucket] || 0) + dt;
+        }
+
+        // Assinatura Cardíaca: pareia Potência e FC segundo a segundo após os primeiros 5 min de inércia cardíaca
+        const elapsed = r.timestamp - startT;
+        if (r.power > 20 && r.hr >= 60 && r.hr < 225 && (elapsed >= 300 || totalSecs < 600)) {
+          if (!pwrHrPairs[pBucket]) pwrHrPairs[pBucket] = { sumHr: 0, secs: 0 };
+          pwrHrPairs[pBucket].sumHr += r.hr * dt;
+          pwrHrPairs[pBucket].secs += dt;
+        }
+
+        movingSamples.push({ elapsed, power: r.power || 0, hr: r.hr || 0, dt });
+      }
+
+      if (movingSecs === 0) return null;
+
+      const avgPwr = Math.round(sumPwrDt / movingSecs);
+      const avgHr = hrSecs > 0 ? Math.round(sumHrDt / hrSecs) : 0;
+      const avgCad = cadSecs > 0 ? Math.round(sumCadDt / cadSecs) : 0;
+      const avgSpeed = (sumSpeedDt / movingSecs).toFixed(1);
+
+      // Linha do tempo contínua de 1s interpolando Smart Recording (até 8s) e zerando pausas (>8s)
+      let timeline = [];
+      for (let i = 0; i < uniqueRecs.length - 1; i++) {
+        const curr = uniqueRecs[i];
+        const gap = uniqueRecs[i + 1].timestamp - curr.timestamp;
+        const fillPwr = gap <= 8 ? (curr.power || 0) : 0;
+        for (let s = 0; s < gap; s++) {
+          timeline.push(fillPwr);
+          if (timeline.length > 54000) break; // Limite de segurança de 15h
+        }
+      }
+      timeline.push(uniqueRecs[uniqueRecs.length - 1].power || 0);
+
+      // Potência Normalizada (NP)
+      let np = avgPwr;
+      if (timeline.length >= 30) {
+        let rolling30 = [], sumPwr = 0;
+        for (let i = 0; i < 30; i++) sumPwr += timeline[i];
+        rolling30.push(sumPwr / 30);
+        for (let i = 30; i < timeline.length; i++) {
+          sumPwr = sumPwr - timeline[i - 30] + timeline[i];
+          rolling30.push(sumPwr / 30);
+        }
+        let sum4 = 0;
+        rolling30.forEach(p => sum4 += Math.pow(p, 4));
+        np = Math.round(Math.pow(sum4 / rolling30.length, 0.25));
+      }
+      const vi = avgPwr > 0 ? parseFloat((np / avgPwr).toFixed(2)) : 1.0;
+
+      // Deteção de blocos estruturados (>= 5 min com Coeficiente de Variação < 18%)
+      let blocksCount = 0;
+      let skipUntil = 0;
+      for (let i = 0; i <= timeline.length - 300; i += 15) {
+        if (i < skipUntil) continue;
+        let sum = 0;
+        for (let j = 0; j < 300; j++) sum += timeline[i + j];
+        let mean = sum / 300;
+        if (mean >= 100) {
+          let sumSq = 0;
+          for (let j = 0; j < 300; j++) sumSq += Math.pow(timeline[i + j] - mean, 2);
+          let stdDev = Math.sqrt(sumSq / 300);
+          if ((stdDev / mean) <= 0.18) {
+            blocksCount++;
+            skipUntil = i + 300;
+          }
+        }
+      }
+
+      // Top 4 esforços de 4 minutos (240s)
+      let top4 = [];
+      const windowSize = 240;
+      if (timeline.length >= windowSize) {
+        let intervals = [];
+        let sum = 0;
+        for (let j = 0; j < windowSize; j++) sum += timeline[j];
+        intervals.push({ avg: Math.round(sum / windowSize), index: 0 });
+        for (let i = 1; i <= timeline.length - windowSize; i++) {
+          sum = sum - timeline[i - 1] + timeline[i + windowSize - 1];
+          if (i % 5 === 0) intervals.push({ avg: Math.round(sum / windowSize), index: i });
+        }
+        intervals.sort((a, b) => b.avg - a.avg);
+        for (const item of intervals) {
+          if (item.avg > 0 && !top4.some(existing => Math.abs(existing.index - item.index) < windowSize)) {
+            top4.push(item);
+            if (top4.length === 4) break;
+          }
+        }
+      }
+
+      // MMP20: Exige pelo menos 20 minutos (1200s) reais de atividade!
+      let mmp20 = 0;
+      if (timeline.length >= 1200) {
+        let sum = 0;
+        for (let i = 0; i < 1200; i++) sum += timeline[i];
+        let max20m = sum / 1200;
+        for (let i = 1200; i < timeline.length; i++) {
+          sum = sum - timeline[i - 1200] + timeline[i];
+          if (sum / 1200 > max20m) max20m = sum / 1200;
+        }
+        mmp20 = Math.round(max20m);
+      }
+
+      // Cardiac Drift (Pa:Hr): Calculado após os primeiros 5 min de aquecimento
+      let drift = null;
+      const steadySamples = movingSamples.filter(s => s.elapsed >= 300 && s.hr > 60 && s.power > 20);
+      const steadySecs = steadySamples.reduce((a, s) => a + s.dt, 0);
+      if (steadySecs >= 600) {
+        let accSec = 0;
+        const halfSec = steadySecs / 2;
+        const half1 = [], half2 = [];
+        for (const s of steadySamples) {
+          if (accSec < halfSec) half1.push(s); else half2.push(s);
+          accSec += s.dt;
+        }
+        const calcEF = (arr) => {
+          const totDt = arr.reduce((a, s) => a + s.dt, 0);
+          if (totDt === 0) return 0;
+          const p = arr.reduce((a, s) => a + s.power * s.dt, 0) / totDt;
+          const h = arr.reduce((a, s) => a + s.hr * s.dt, 0) / totDt;
+          return h > 0 ? p / h : 0;
+        };
+        const ef1 = calcEF(half1), ef2 = calcEF(half2);
+        if (ef1 > 0 && ef2 > 0) drift = ((ef1 - ef2) / ef1) * 100;
+      }
+
+      // Elegibilidade fisiológica do Drift para o gráfico de evolução (mín. 30 min em movimento e ritmo constante VI <= 1.12)
+      const driftEligible = (movingSecs >= 1800 && vi <= 1.12 && drift !== null && Math.abs(drift) <= 25);
+
+      return {
+        totalSecs, movingSecs, distKm: (maxDist / 1000).toFixed(2),
+        avgPwr, avgHr, avgCad, avgSpeed, top4, drift, driftEligible, mmp20,
+        pwrHist, hrHist, pwrHrPairs, np, vi, blocksCount
+      };
+    }
+
+    // Evolução de FTP com retenção fisiológica (evita quedas abruptas quando não há testes máximos de 20m)
+    function processGlobalMetrics() {
+      dbActivities.sort((a, b) => a.dateObj - b.dateObj); 
+      const daysWindow = 42;
+      let ftpHistory = [];
+
+      // Descobre um FTP inicial plausível a partir do primeiro esforço válido da história do ciclista
+      let firstValidMmp20 = 0;
+      for (const a of dbActivities) {
+        if (a.metrics && a.metrics.mmp20 >= 100) { firstValidMmp20 = a.metrics.mmp20; break; }
+      }
+      let rollingFtp = firstValidMmp20 > 0 ? Math.round(firstValidMmp20 * 0.95) : 200;
+
+      for (let i = 0; i < dbActivities.length; i++) {
+        const curr = dbActivities[i];
+        const minDate = new Date(curr.dateObj.getTime() - (daysWindow * 86400000));
+        const windowActs = dbActivities.filter(a => a.dateObj >= minDate && a.dateObj <= curr.dateObj);
+        
+        // Considera apenas MMP20 válidos (de treinos >= 20 min)
+        const validMmps = windowActs
+          .filter(a => a.metrics && (a.metrics.totalSecs >= 1200 || !a.metrics.movingSecs) && a.metrics.mmp20 >= 100)
+          .map(a => a.metrics.mmp20);
+
+        const windowBestFtp = validMmps.length > 0 ? Math.round(Math.max(...validMmps) * 0.95) : 0;
+
+        if (i > 0) {
+          const daysDiff = Math.max(0, (curr.dateObj - dbActivities[i - 1].dateObj) / 86400000);
+          // Decaimento fisiológico suave de 0.5% por semana se não houver novo pico
+          const decayedPrev = Math.round(rollingFtp * Math.pow(0.9993, daysDiff));
+          rollingFtp = Math.max(windowBestFtp, decayedPrev, 120);
+        } else if (windowBestFtp > 0) {
+          rollingFtp = windowBestFtp;
+        }
+        
+        curr.currentFtp = rollingFtp;
+        ftpHistory.push({ date: curr.dateObj, ftp: rollingFtp });
+      }
+      renderFtpChart(ftpHistory);
+      renderDynamicZones();
+    }
+
+    function getPeriodKey(date, period) {
+      const y = date.getFullYear(), m = date.getMonth(), d = date.getDate();
+      if (period === 'ano') return `${y}`;
+      if (period === 'semestre') return `${y}-S${Math.floor(m/6)+1}`;
+      if (period === 'trimestre') return `${y}-T${Math.floor(m/3)+1}`;
+      if (period === 'mes') return `${y}-${String(m+1).padStart(2,'0')}`;
+      if (period === 'quinzena') return `${y}-${String(m+1).padStart(2,'0')}-Q${d<=15?1:2}`;
+      if (period === 'semana') {
+        const w = Math.ceil((((date - new Date(y,0,1))/86400000) + new Date(y,0,1).getDay()+1)/7);
+        return `${y}-W${String(w).padStart(2,'0')}`;
+      }
+      return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    }
+
+    function isActivityStructured(m) {
+      if (!m) return false;
+      return (m.vi && m.vi <= 1.10) || (m.blocksCount && m.blocksCount >= 2);
+    }
+
+    function updateDynamicCharts() {
+      renderStackedZonesChart('pwr');
+      renderStackedZonesChart('hr');
+      renderDriftChart();
+      renderViChart();
+      renderStructureVolChart();
+    }
+
+    function renderViChart() {
+      const period = document.querySelector('.time-filter').value;
+      const canvas = document.getElementById('viCanvas');
+      const ctx = canvas.getContext('2d');
+      const w = canvas.offsetWidth || 900, h = 400; canvas.width = w; canvas.height = h; ctx.clearRect(0, 0, w, h);
+
+      const groups = {}; 
+      dbActivities.forEach(act => {
+        if (!act.metrics || !act.metrics.vi || act.metrics.avgPwr < 50) return;
+        const key = getPeriodKey(act.dateObj, period);
+        if (!groups[key]) groups[key] = { sumVi: 0, count: 0 };
+        groups[key].sumVi += act.metrics.vi; groups[key].count++;
+      });
+      const sortedKeys = Object.keys(groups).sort(); if (sortedKeys.length === 0) return;
+
+      const padL = 50, padR = 20, padT = 20, padB = 40;
+      const drawW = w - padL - padR, drawH = h - padT - padB;
+      const minVi = 1.0, maxVi = 1.5; 
+      const getY = (val) => padT + drawH - ((Math.min(Math.max(val, minVi), maxVi) - minVi) / (maxVi - minVi)) * drawH;
+
+      ctx.fillStyle = 'rgba(34, 197, 94, 0.1)'; ctx.fillRect(padL, getY(1.10), drawW, getY(1.0) - getY(1.10));
+      ctx.strokeStyle = '#334155'; ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
+      for (let v = 1.0; v <= 1.5; v += 0.1) {
+        const y = getY(v); ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke(); ctx.fillText(v.toFixed(1), padL - 5, y + 3);
+      }
+
+      ctx.beginPath(); ctx.strokeStyle = '#a78bfa'; ctx.lineWidth = 2.5;
+      const pointSpacing = drawW / Math.max(1, sortedKeys.length - 1);
+      
+      canvas.chartHitboxes = [];
+      sortedKeys.forEach((k, idx) => {
+        const avgVi = groups[k].sumVi / groups[k].count, x = padL + idx * pointSpacing, y = getY(avgVi);
+        if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        if (sortedKeys.length < 35 || idx % Math.ceil(sortedKeys.length/20) === 0) { ctx.fillStyle = '#94a3b8'; ctx.textAlign = 'center'; ctx.fillText(k, x, h - 15); }
+        canvas.chartHitboxes.push({ x: x-5, y: y-5, w: 10, h: 10, data: { key: k, vi: avgVi.toFixed(2), count: groups[k].count }, type: 'vi' });
+      });
+      ctx.stroke();
+
+      sortedKeys.forEach((k, idx) => {
+        const avgVi = groups[k].sumVi / groups[k].count, x = padL + idx * pointSpacing, y = getY(avgVi);
+        ctx.beginPath(); ctx.arc(x, y, 4, 0, 2*Math.PI);
+        ctx.fillStyle = avgVi <= 1.10 ? '#22c55e' : '#a78bfa'; ctx.fill(); ctx.stroke();
+      });
+      setupTooltip(canvas);
+    }
+
+    function renderStructureVolChart() {
+      const period = document.querySelector('.time-filter').value;
+      const canvas = document.getElementById('structureVolCanvas');
+      const ctx = canvas.getContext('2d');
+      const w = canvas.offsetWidth || 900, h = 400; canvas.width = w; canvas.height = h; ctx.clearRect(0, 0, w, h);
+
+      const groups = {}; 
+      dbActivities.forEach(act => {
+        if (!act.metrics || !act.metrics.vi) return;
+        const key = getPeriodKey(act.dateObj, period);
+        if (!groups[key]) groups[key] = { estruturado: 0, livre: 0, total: 0 };
+        const dur = act.metrics.movingSecs || act.metrics.totalSecs || 0;
+        if (isActivityStructured(act.metrics)) groups[key].estruturado += dur; else groups[key].livre += dur;
+        groups[key].total += dur;
+      });
+
+      const sortedKeys = Object.keys(groups).sort(); if (sortedKeys.length === 0) return;
+      let maxTotalSec = 0; sortedKeys.forEach(k => { if (groups[k].total > maxTotalSec) maxTotalSec = groups[k].total; });
+      if (maxTotalSec === 0) maxTotalSec = 3600;
+
+      const padL = 50, padR = 20, padT = 20, padB = 40;
+      const drawW = w - padL - padR, drawH = h - padT - padB;
+      const barW = Math.max(8, (drawW / sortedKeys.length) - 4);
+      const maxHours = maxTotalSec / 3600;
+      let step = maxHours > 100 ? 20 : (maxHours > 50 ? 10 : (maxHours > 20 ? 5 : (maxHours > 5 ? 2 : 1))); if (step === 0) step = 1;
+
+      ctx.strokeStyle = '#334155'; ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
+      for (let i = 0; i <= maxHours; i += step) {
+        const y = padT + drawH - (i / maxHours) * drawH; ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke(); ctx.fillText(`${i}h`, padL - 5, y + 3);
+      }
+
+      canvas.chartHitboxes = [];
+      sortedKeys.forEach((k, idx) => {
+        const g = groups[k], x = padL + idx * (drawW / sortedKeys.length) + (drawW / sortedKeys.length - barW) / 2;
+        let currentY = padT + drawH;
+        if (sortedKeys.length < 35 || idx % Math.ceil(sortedKeys.length/20) === 0) { ctx.fillStyle = '#94a3b8'; ctx.textAlign = 'center'; ctx.fillText(k, x + barW/2, h - 15); }
+
+        const hEstruturado = (g.estruturado / 3600) / maxHours * drawH, hLivre = (g.livre / 3600) / maxHours * drawH;
+        ctx.fillStyle = '#22c55e'; ctx.fillRect(x, currentY - hEstruturado, barW, hEstruturado); currentY -= hEstruturado;
+        ctx.fillStyle = '#64748b'; ctx.fillRect(x, currentY - hLivre, barW, hLivre);
+        canvas.chartHitboxes.push({ x, y: padT, w: barW, h: drawH, data: { key: k, estruturado: (g.estruturado/3600).toFixed(1), livre: (g.livre/3600).toFixed(1), total: (g.total/3600).toFixed(1) }, type: 'vol' });
+      });
+      setupTooltip(canvas);
+    }
+
+    function renderStackedZonesChart(type) {
+      const period = document.querySelector('.time-filter').value;
+      const canvas = document.getElementById(type === 'pwr' ? 'pwrTimeCanvas' : 'hrTimeCanvas');
+      const ctx = canvas.getContext('2d');
+      const w = canvas.offsetWidth || 900, h = 400; canvas.width = w; canvas.height = h; ctx.clearRect(0, 0, w, h);
+
+      const groups = {}; 
+      const z1Lim = Math.round(userMaxHr * 0.60);
+      const z2Lim = Math.round(userMaxHr * 0.70);
+      const z3Lim = Math.round(userMaxHr * 0.80);
+      const z4Lim = Math.round(userMaxHr * 0.90);
+
+      dbActivities.forEach(act => {
+        if (!act.metrics || !act.currentFtp) return;
+        const key = getPeriodKey(act.dateObj, period);
+        if (!groups[key]) groups[key] = { Z1:0, Z2:0, Z3:0, Z4:0, Z5:0, Z6:0, total:0 };
+        
+        if (type === 'pwr') {
+          for (let p in act.metrics.pwrHist) {
+            const sec = act.metrics.pwrHist[p], ratio = parseInt(p, 10) / act.currentFtp;
+            if (ratio < 0.55) groups[key].Z1 += sec; else if (ratio <= 0.75) groups[key].Z2 += sec; else if (ratio <= 0.90) groups[key].Z3 += sec; else if (ratio <= 1.05) groups[key].Z4 += sec; else if (ratio <= 1.20) groups[key].Z5 += sec; else groups[key].Z6 += sec;
+            groups[key].total += sec;
+          }
+        } else {
+          for (let hrStr in act.metrics.hrHist) {
+            const sec = act.metrics.hrHist[hrStr], hr = parseInt(hrStr, 10); 
+            if (hr < z1Lim) groups[key].Z1 += sec; else if (hr <= z2Lim) groups[key].Z2 += sec; else if (hr <= z3Lim) groups[key].Z3 += sec; else if (hr <= z4Lim) groups[key].Z4 += sec; else groups[key].Z5 += sec;
+            groups[key].total += sec;
+          }
+        }
+      });
+
+      const sortedKeys = Object.keys(groups).sort(); if (sortedKeys.length === 0) return;
+      let maxTotalSec = 0; sortedKeys.forEach(k => { if (groups[k].total > maxTotalSec) maxTotalSec = groups[k].total; });
+      if (maxTotalSec === 0) return;
+      const padL = 50, padR = 20, padT = 20, padB = 40;
+      const drawW = w - padL - padR, drawH = h - padT - padB;
+      const barW = Math.max(8, (drawW / sortedKeys.length) - 4);
+      const maxHours = maxTotalSec / 3600;
+      let step = maxHours > 100 ? 20 : (maxHours > 50 ? 10 : (maxHours > 20 ? 5 : (maxHours > 5 ? 2 : 1))); if (step === 0) step = 1;
+
+      ctx.strokeStyle = '#334155'; ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
+      for (let i = 0; i <= maxHours; i += step) {
+        const y = padT + drawH - (i / maxHours) * drawH; ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke(); ctx.fillText(`${i}h`, padL - 5, y + 3);
+      }
+
+      const colors = type === 'pwr' ? { Z1: '#94a3b8', Z2: '#38bdf8', Z3: '#22c55e', Z4: '#eab308', Z5: '#f97316', Z6: '#ef4444' } : { Z1: '#94a3b8', Z2: '#38bdf8', Z3: '#22c55e', Z4: '#eab308', Z5: '#ef4444' };
+      canvas.chartHitboxes = [];
+      
+      sortedKeys.forEach((k, idx) => {
+        const g = groups[k], x = padL + idx * (drawW / sortedKeys.length) + (drawW / sortedKeys.length - barW) / 2;
+        let currentY = padT + drawH;
+        if (sortedKeys.length < 35 || idx % Math.ceil(sortedKeys.length/20) === 0) { ctx.fillStyle = '#94a3b8'; ctx.textAlign = 'center'; ctx.fillText(k, x + barW/2, h - 15); }
+
+        const zones = type === 'pwr' ? ['Z1','Z2','Z3','Z4','Z5','Z6'] : ['Z1','Z2','Z3','Z4','Z5'];
+        let barData = { key: k, total: g.total, zones: {} };
+        zones.forEach(z => {
+          if (g[z] > 0) {
+            const zoneH = (g[z] / 3600) / maxHours * drawH; ctx.fillStyle = colors[z]; ctx.fillRect(x, currentY - zoneH, barW, zoneH);
+            currentY -= zoneH; barData.zones[z] = { hours: (g[z]/3600).toFixed(1), pct: ((g[z]/g.total)*100).toFixed(1) + '%' };
+          }
+        });
+        canvas.chartHitboxes.push({ x, y: padT, w: barW, h: drawH, data: barData, type: 'zone' });
+      });
+      setupTooltip(canvas);
+    }
+
+    function renderDriftChart() {
+      const period = document.querySelector('.time-filter').value;
+      const canvas = document.getElementById('driftCanvas');
+      const ctx = canvas.getContext('2d');
+      const w = canvas.offsetWidth || 900, h = 400; canvas.width = w; canvas.height = h; ctx.clearRect(0, 0, w, h);
+
+      const groups = {}; 
+      dbActivities.forEach(act => {
+        const m = act.metrics;
+        if (!m || m.drift === null) return;
+        // Filtra apenas treinos contínuos elegíveis (ou aceita legados se >= 30m e VI <= 1.12)
+        const isEligible = m.driftEligible !== undefined ? m.driftEligible : (m.totalSecs >= 1800 && m.vi <= 1.12 && Math.abs(m.drift) <= 25);
+        if (!isEligible) return;
+
+        const key = getPeriodKey(act.dateObj, period);
+        if (!groups[key]) groups[key] = { sumDrift: 0, count: 0 };
+        groups[key].sumDrift += Math.max(0, m.drift);
+        groups[key].count++;
+      });
+
+      const sortedKeys = Object.keys(groups).sort(); if (sortedKeys.length === 0) return;
+      let maxDrift = 10; 
+      sortedKeys.forEach(k => { const avg = groups[k].sumDrift / groups[k].count; if (avg > maxDrift) maxDrift = Math.ceil(avg); });
+
+      const padL = 50, padR = 20, padT = 20, padB = 40;
+      const drawW = w - padL - padR, drawH = h - padT - padB;
+      const barW = Math.max(8, (drawW / sortedKeys.length) - 4);
+
+      ctx.strokeStyle = '#334155'; ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
+      for (let i = 0; i <= maxDrift; i += 5) {
+        const y = padT + drawH - (i / maxDrift) * drawH; ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke(); ctx.fillText(`${i}%`, padL - 5, y + 3);
+      }
+      
+      const y5 = padT + drawH - (5 / maxDrift) * drawH;
+      ctx.beginPath(); ctx.setLineDash([5, 5]); ctx.moveTo(padL, y5); ctx.lineTo(w - padR, y5); ctx.strokeStyle = '#22c55e'; ctx.stroke(); ctx.setLineDash([]);
+
+      canvas.chartHitboxes = [];
+      sortedKeys.forEach((k, idx) => {
+        const avg = groups[k].sumDrift / groups[k].count;
+        const x = padL + idx * (drawW / sortedKeys.length) + (drawW / sortedKeys.length - barW) / 2;
+        const barH = Math.max(2, (avg / maxDrift) * drawH); const y = padT + drawH - barH;
+        if (sortedKeys.length < 35 || idx % Math.ceil(sortedKeys.length/20) === 0) { ctx.fillStyle = '#94a3b8'; ctx.textAlign = 'center'; ctx.fillText(k, x + barW/2, h - 15); }
+        ctx.fillStyle = avg <= 5 ? '#22c55e' : '#ef4444'; ctx.fillRect(x, y, barW, barH);
+        canvas.chartHitboxes.push({ x, y, w: barW, h: barH, data: { key: k, drift: avg.toFixed(1), count: groups[k].count }, type: 'drift' });
+      });
+      setupTooltip(canvas);
+    }
+
+    function setupTooltip(canvas) {
+      if (!canvas.tooltipDiv) {
+        canvas.tooltipDiv = document.createElement('div');
+        Object.assign(canvas.tooltipDiv.style, {
+          position: 'absolute', background: 'rgba(15, 23, 42, 0.95)', border: '1px solid #475569',
+          padding: '10px', borderRadius: '6px', color: '#fff', pointerEvents: 'none', display: 'none', zIndex: '100', fontSize: '12px'
+        });
+        document.body.appendChild(canvas.tooltipDiv);
+
+        canvas.addEventListener('mousemove', (e) => {
+          const rect = canvas.getBoundingClientRect();
+          const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+          let found = false;
+          if (canvas.chartHitboxes) {
+            for (let box of canvas.chartHitboxes) {
+              if (mx >= box.x - 2 && mx <= box.x + box.w + 2 && my >= box.y && my <= box.y + box.h) {
+                const d = box.data;
+                let html = '';
+                if (box.type === 'drift') {
+                  const color = d.drift <= 5 ? '#22c55e' : '#ef4444';
+                  html = `<strong style="color:#38bdf8">${d.key}</strong><hr style="border-color:#334155; margin:5px 0;"/>Drift Médio: <span style="color:${color}; font-weight:bold">${d.drift}%</span><br/>Pedais elegíveis: ${d.count}`;
+                } else if (box.type === 'zone') {
+                  html = `<strong style="color:#38bdf8">${d.key}</strong><br/>Total: ${(d.total/3600).toFixed(1)}h<hr style="border-color:#334155; margin:5px 0;" />`;
+                  Object.keys(d.zones).reverse().forEach(z => { html += `<b>${z}:</b> ${d.zones[z].hours}h (${d.zones[z].pct})<br/>`; });
+                } else if (box.type === 'vi') {
+                  const color = d.vi <= 1.10 ? '#22c55e' : '#a78bfa';
+                  html = `<strong style="color:#38bdf8">${d.key}</strong><hr style="border-color:#334155; margin:5px 0;"/>VI Médio: <span style="color:${color}; font-weight:bold">${d.vi}</span><br/>Treinos: ${d.count}`;
+                } else if (box.type === 'vol') {
+                  html = `<strong style="color:#38bdf8">${d.key}</strong><br/>Total: ${d.total}h<hr style="border-color:#334155; margin:5px 0;" />`;
+                  html += `<b style="color:#22c55e">Estruturado:</b> ${d.estruturado}h<br/><b style="color:#64748b">Livre:</b> ${d.livre}h`;
+                }
+                canvas.tooltipDiv.innerHTML = html;
+                canvas.tooltipDiv.style.left = (e.pageX + 15) + 'px'; canvas.tooltipDiv.style.top = (e.pageY + 15) + 'px';
+                canvas.tooltipDiv.style.display = 'block'; found = true; break;
+              }
+            }
+          }
+          if (!found) canvas.tooltipDiv.style.display = 'none';
+        });
+        canvas.addEventListener('mouseleave', () => canvas.tooltipDiv.style.display = 'none');
+      }
+    }
+
+    function renderFtpChart(data) {
+      const canvas = document.getElementById('ftpCanvas'); const ctx = canvas.getContext('2d');
+      const w = canvas.offsetWidth || 900, h = 350; canvas.width = w; canvas.height = h; ctx.clearRect(0, 0, w, h);
+      if (data.length < 2) return;
+      const minT = data[0].date.getTime(), maxT = data[data.length - 1].date.getTime();
+      const minF = Math.max(0, Math.min(...data.map(d => d.ftp)) * 0.85), maxF = Math.max(...data.map(d => d.ftp)) * 1.1;
+      const pad = 45;
+      const getX = (t) => pad + ((t - minT) / Math.max(1, maxT - minT)) * (w - pad * 2), getY = (f) => h - pad - ((f - minF) / Math.max(1, maxF - minF)) * (h - pad * 2);
+
+      ctx.strokeStyle = '#334155'; ctx.lineWidth = 1;
+      for (let f = Math.ceil(minF / 25) * 25; f <= maxF; f += 25) {
+        const y = getY(f); ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(w - pad, y); ctx.stroke();
+        ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right'; ctx.fillText(`${f}W`, pad - 6, y + 3);
+      }
+      ctx.beginPath(); ctx.strokeStyle = '#fc5200'; ctx.lineWidth = 2.5;
+      data.forEach((pt, idx) => { const x = getX(pt.date.getTime()), y = getY(pt.ftp); if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }); ctx.stroke();
+    }
+
+    // Assinatura Cardíaca pareada segundo a segundo por Zona Dinâmica de Potência
+    function renderDynamicZones() {
+      const zonesData = {
+        Z1: { minP: 0.20, maxP: 0.55, sumHrSec: 0, totSec: 0, color: '#94a3b8', n: 'Z1 (<55%)' },
+        Z2: { minP: 0.55, maxP: 0.75, sumHrSec: 0, totSec: 0, color: '#38bdf8', n: 'Z2 (56-75%)' },
+        Z3: { minP: 0.75, maxP: 0.90, sumHrSec: 0, totSec: 0, color: '#22c55e', n: 'Z3 (76-90%)' },
+        Z4: { minP: 0.90, maxP: 1.05, sumHrSec: 0, totSec: 0, color: '#eab308', n: 'Z4 (91-105%)' },
+        Z5: { minP: 1.05, maxP: 1.20, sumHrSec: 0, totSec: 0, color: '#f97316', n: 'Z5 (106-120%)' },
+        Z6: { minP: 1.20, maxP: 2.50, sumHrSec: 0, totSec: 0, color: '#ef4444', n: 'Z6 (>120%)' }
+      };
+
+      dbActivities.forEach(act => {
+        const m = act.metrics;
+        if (!m || !act.currentFtp) return;
+
+        // 1. Se tiver o pareamento segundo a segundo (novas importações e Garmin), usa precisão exata!
+        if (m.pwrHrPairs && Object.keys(m.pwrHrPairs).length > 0) {
+          for (const pStr in m.pwrHrPairs) {
+            const p = parseInt(pStr, 10);
+            const pair = m.pwrHrPairs[pStr];
+            if (!pair || pair.secs <= 0) continue;
+            const ratio = p / act.currentFtp;
+            for (const key in zonesData) {
+              const z = zonesData[key];
+              if (ratio > z.minP && ratio <= z.maxP) {
+                z.sumHrSec += pair.sumHr;
+                z.totSec += pair.secs;
+                break;
+              }
+            }
+          }
+        } else if (m.pwrHist && m.hrHist && m.avgHr >= 60) {
+          // 2. Fallback para dados antigos já salvos no navegador: mapeia os quantis de potência com os quantis de FC da atividade
+          let pEntries = Object.entries(m.pwrHist).map(([w, s]) => ({ w: parseInt(w, 10), s })).filter(x => x.w > 20).sort((a, b) => a.w - b.w);
+          let hEntries = Object.entries(m.hrHist).map(([h, s]) => ({ h: parseInt(h, 10), s })).filter(x => x.h >= 60).sort((a, b) => a.h - b.h);
+          const totP = pEntries.reduce((a, x) => a + x.s, 0);
+          const totH = hEntries.reduce((a, x) => a + x.s, 0);
+          if (totP > 300 && totH > 300) {
+            let cumP = 0;
+            for (const pe of pEntries) {
+              const midPct = (cumP + pe.s / 2) / totP;
+              cumP += pe.s;
+              // Encontra a FC correspondente ao mesmo percentil de esforço naquela atividade
+              let cumH = 0, matchedHr = m.avgHr;
+              for (const he of hEntries) {
+                if ((cumH + he.s) / totH >= midPct) { matchedHr = he.h; break; }
+                cumH += he.s;
+              }
+              const ratio = pe.w / act.currentFtp;
+              for (const key in zonesData) {
+                const z = zonesData[key];
+                if (ratio > z.minP && ratio <= z.maxP) {
+                  z.sumHrSec += matchedHr * pe.s;
+                  z.totSec += pe.s;
+                  break;
+                }
+              }
+            }
+          }
+        }
+      });
+
+      const canvas = document.getElementById('zonesCanvas'); const ctx = canvas.getContext('2d');
+      const w = canvas.offsetWidth || 900, h = 350, pad = 40; canvas.width = w; canvas.height = h; ctx.clearRect(0, 0, w, h);
+      const zoneKeys = Object.keys(zonesData); const barWidth = (w - pad * 2) / zoneKeys.length - 15;
+
+      zoneKeys.forEach((key, idx) => {
+        const z = zonesData[key], avgHr = z.totSec > 60 ? Math.round(z.sumHrSec / z.totSec) : 0;
+        const x = pad + idx * (barWidth + 15) + 10;
+        const barH = avgHr > 0 ? Math.max(10, ((avgHr - 80) / 115) * (h - pad * 2)) : 5;
+        const y = h - pad - barH;
+        ctx.fillStyle = z.color; ctx.fillRect(x, y, barWidth, barH);
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+        if (avgHr > 0) ctx.fillText(`${avgHr} bpm`, x + barWidth / 2, y - 8);
+        ctx.fillStyle = '#94a3b8'; ctx.font = '11px sans-serif'; ctx.fillText(z.n, x + barWidth / 2, h - pad + 16);
+      });
+    }
+
+    function renderSummaryTable() {
+      document.getElementById('summaryArea').style.display = 'block'; document.getElementById('detailArea').style.display = 'none';
+      const tbody = document.getElementById('summaryBody'); tbody.innerHTML = '';
+      [...dbActivities].reverse().forEach((act) => {
+        if (!act.metrics) return;
+        
+        let pwrStr = `${act.metrics.avgPwr} W`;
+        let badgeHtml = `<span style="color:#64748b; font-size:0.8rem;">S/ Dados</span>`;
+        if (act.metrics.vi) {
+          pwrStr = `${act.metrics.avgPwr} W / <span style="color:#a78bfa; font-weight:bold;">${act.metrics.np} W</span>`;
+          if (isActivityStructured(act.metrics)) badgeHtml = `<span class="badge-estruturado">Estruturado</span>`;
+          else badgeHtml = `<span class="badge-livre">Livre</span>`;
+        }
+
+        const sourceBadge = act.source === 'garmin' ? `<span class="badge-garmin">GARMIN</span>` : '';
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td><strong>${act.date}</strong></td><td>${act.name}${sourceBadge}</td><td>${act.metrics.distKm} km</td><td>${pwrStr}</td><td>${badgeHtml}</td><td><button class="btn-small" onclick="viewDetails(${dbActivities.indexOf(act)})">Detalhes</button></td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    window.viewDetails = function(index) {
+      const act = dbActivities[index]; if (!act || !act.metrics) return;
+      document.getElementById('summaryArea').style.display = 'none'; document.getElementById('detailArea').style.display = 'block';
+      document.getElementById('actTitle').innerText = `${act.name} (${act.date})`;
+      const m = act.metrics;
+
+      document.getElementById('npVal').innerText = m.np ? `${m.np} W` : "--";
+      if (m.vi) {
+        document.getElementById('viVal').innerHTML = `<span style="color: ${m.vi <= 1.10 ? '#22c55e' : '#ef4444'}">${m.vi}</span>`;
+      } else { document.getElementById('viVal').innerText = "--"; }
+      
+      if (m.blocksCount !== undefined) {
+        if (m.blocksCount > 0) document.getElementById('structureVal').innerHTML = `<span style="color:#22c55e; font-weight:bold;">${m.blocksCount} bloco(s) estável(is) detetado(s)</span><br><span style="color:#94a3b8; font-size:0.8rem;">Ritmo disciplinado encontrado</span>`;
+        else document.getElementById('structureVal').innerHTML = `<span style="color:#ef4444; font-weight:bold;">Nenhum bloco estável ≥ 5m</span><br><span style="color:#94a3b8; font-size:0.8rem;">Padrão livre / estocástico</span>`;
+      } else { document.getElementById('structureVal').innerText = "--"; }
+
+      document.getElementById('totalTime').innerText = `${Math.floor(m.totalSecs/3600)>0?Math.floor(m.totalSecs/3600)+'h ':''}${Math.floor((m.totalSecs%3600)/60)}m ${m.totalSecs%60}s`;
+      document.getElementById('totalDist').innerText = `${m.distKm} km`; document.getElementById('avgSpeed').innerText = `${m.avgSpeed} km/h`;
+      document.getElementById('avgPwr').innerText = `${m.avgPwr} W`; document.getElementById('avgHr').innerText = `${m.avgHr} bpm`;
+      document.getElementById('avgCad').innerText = `${m.avgCad} rpm`;
+      document.getElementById('mmp20Val').innerText = m.mmp20 && m.mmp20 > 0 ? `${m.mmp20} W` : "Treino < 20 min";
+      if (m.drift !== null) {
+        const eligibilityNote = (m.driftEligible === false) ? ` <span style="font-size:0.75rem; color:#94a3b8;">(Treino curto/variável)</span>` : '';
+        document.getElementById('driftVal').innerHTML = `<span style="color: ${m.drift<=5?'#22c55e':'#f87171'}">${m.drift.toFixed(2)}%</span>${eligibilityNote}`;
+      } else {
+        document.getElementById('driftVal').innerText = "S/ Dados (< 15 min)";
+      }
+      document.getElementById('top4Mins').innerHTML = m.top4 && m.top4.length > 0 ? m.top4.map((item, idx) => `<b>${idx + 1}º esforço:</b> <span style="color: #fc5200; font-weight: bold;">${item.avg} W</span> (Média 4m)`).join('<br>') : 'Dados insuficientes (< 4 min).';
+    }
+
+    window.showSummary = function() { document.getElementById('detailArea').style.display = 'none'; document.getElementById('summaryArea').style.display = 'block'; }
+    function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) { const R = 6371; const dLat = (lat2 - lat1) * (Math.PI/180), dLon = (lon2 - lon1) * (Math.PI/180); const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * (Math.PI/180)) * Math.cos(lat2 * (Math.PI/180)) * Math.sin(dLon/2) * Math.sin(dLon/2); return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))); }
+  </script>
+</body>
+</html>
   <title>Treinador Virtual UPYOU - Histórico Completo</title>
   
   <!-- Biblioteca de Login do Google -->

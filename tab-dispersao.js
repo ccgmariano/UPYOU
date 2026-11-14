@@ -1,4 +1,4 @@
-// Módulo Definitivo: Dispersão Avançada (Watt vs. BPM) baseado em pwrHrPairs
+// Módulo de Dispersão Avançada: Fatiamento Sequencial por Janela de Tempo (Ignorando Pausas)
 let dispAllBlocks = [];
 let dispUniquePeriods = [];
 let dispCurrentSliderIndex = 0;
@@ -27,15 +27,43 @@ function processDispersaoData() {
     if (!act.dateObj || !act.metrics) return;
     const pKey = getPeriodKey(act.dateObj, agrupamento);
 
-    // Coleta diretamente dos pares de potência e FC processados na atividade
-    const pairs = act.metrics.pwrHrPairs;
-    if (pairs && typeof pairs === 'object') {
-      for (const pStr in pairs) {
+    // Se a atividade tem movingSamples segundo a segundo, fazemos o fatiamento sequencial direto
+    if (act.metrics.movingSamples && act.metrics.movingSamples.length > 0) {
+      const samples = act.metrics.movingSamples;
+      let windowSecs = 0;
+      let sumPwr = 0, sumHr = 0, count = 0;
+
+      for (let i = 0; i < samples.length; i++) {
+        const s = samples[i];
+        // Ignora pausas (potência e FC zeradas ou muito baixas)
+        if (s.power <= 5 && s.hr <= 40) continue;
+
+        sumPwr += (s.power || 0);
+        sumHr += (s.hr || 0);
+        count++;
+        windowSecs += (s.dt || 1);
+
+        // Quando atinge o tamanho da janela parametrizada (ex: 1min, 5min, 10min...), fecha o bloco
+        if (windowSecs >= janelaSecs || i === samples.length - 1) {
+          if (count > 0) {
+            const avgP = Math.round(sumPwr / count);
+            const avgH = Math.round(sumHr / count);
+            if (avgP > 30 && avgH > 50 && avgH < 220) {
+              dispAllBlocks.push({ x: avgP, y: avgH, periodKey: pKey, date: act.dateObj });
+              periodMap.add(pKey);
+            }
+          }
+          windowSecs = 0; sumPwr = 0; sumHr = 0; count = 0;
+        }
+      }
+    } else if (act.metrics.pwrHrPairs) {
+      // Fallback de segurança caso venha do Garmin Cloud resumido
+      for (const pStr in act.metrics.pwrHrPairs) {
         const p = parseInt(pStr, 10);
-        const pair = pairs[pStr];
-        if (p > 40 && pair && pair.secs > 0) {
+        const pair = act.metrics.pwrHrPairs[pStr];
+        if (p > 30 && pair && pair.secs > 0) {
           const avgHr = Math.round(pair.sumHr / pair.secs);
-          if (avgHr > 50 && avgHr < 230) {
+          if (avgHr > 50 && avgHr < 220) {
             dispAllBlocks.push({ x: p, y: avgHr, periodKey: pKey, date: act.dateObj });
             periodMap.add(pKey);
           }
@@ -73,7 +101,7 @@ function renderDispersaoChart() {
   
   if (dispUniquePeriods.length === 0 || dispAllBlocks.length === 0) {
     ctx.fillStyle = '#94a3b8'; ctx.font = '14px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText('Nenhum dado de potência/FC encontrado. Importe ou sincronize as atividades.', w / 2, h / 2);
+    ctx.fillText('Nenhum dado encontrado com os parâmetros selecionados.', w / 2, h / 2);
     return;
   }
 

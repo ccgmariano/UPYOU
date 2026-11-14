@@ -49,7 +49,7 @@
     <div class="user-header">
       <div class="user-greeting" id="userGreeting">Olá, Ciclista</div>
       <div class="header-actions">
-        <div class="hr-config-box" title="A sua Frequência Cardíaca Máxima para cálculo das Zonas de FC">
+        <div class="hr-config-box" title="A sua Frequência Cardíaca Máxima (o Limiar LTHR de Coggan é estimado automaticamente nos bastidores)">
           <span>FC Máx:</span>
           <input type="number" id="maxHrInput" value="187" min="120" max="230" onchange="updateUserMaxHr(this.value)">
           <span>bpm</span>
@@ -104,44 +104,45 @@
         </div>
 
         <div id="zonesTab" style="display: none;">
-          <div class="section-header"><h3>FC Média por Zona Dinâmica de Potência</h3></div>
-          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Pareamento segundo a segundo entre Watts (relativos ao FTP vigente) e Frequência Cardíaca correspondente.</p>
+          <div class="section-header"><h3>Assinatura Cardíaca: FC Média por Zona Dinâmica de Potência (Coggan Z1–Z7)</h3></div>
+          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0; line-height: 1.45;">A <strong>Assinatura Cardíaca</strong> revela o custo fisiológico (batimentos por minuto) exigido pelo seu corpo para sustentar cada zona de potência (relativa ao seu FTP vigente, descontando os 5 minutos iniciais de inércia cardíaca). Uma redução na FC média para uma mesma faixa de Watts ao longo do tempo indica ganho direto de condicionamento e eficiência aeróbica; além disso, a FC média observada na <strong>Z4 (91–105% do FTP)</strong> serve como referência direta da sua Frequência Cardíaca de Limiar de Lactato (LTHR).</p>
           <canvas id="zonesCanvas"></canvas>
         </div>
 
         <div id="pwrTimeTab" style="display: none;" class="dynamic-tab">
           <div class="section-header">
-            <h3>Tempo por Zona de Potência (Dinâmica)</h3>
+            <h3>Tempo por Zona de Potência (Andrew Coggan Z1–Z7)</h3>
             <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
               <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
             </select>
           </div>
-          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Zonas recalculadas baseadas no seu FTP vigente. Eixo vertical = Horas Absolutas.</p>
+          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">7 zonas de potência de Andrew Coggan recalculadas sobre o seu FTP vigente. Eixo vertical = Horas Absolutas.</p>
           <div class="legend-container">
-            <div class="legend-item"><div class="legend-box" style="background:#94a3b8;"></div>Z1 (menos de 55%)</div>
-            <div class="legend-item"><div class="legend-box" style="background:#38bdf8;"></div>Z2 (56-75%)</div>
-            <div class="legend-item"><div class="legend-box" style="background:#22c55e;"></div>Z3 (76-90%)</div>
-            <div class="legend-item"><div class="legend-box" style="background:#eab308;"></div>Z4 (91-105%)</div>
-            <div class="legend-item"><div class="legend-box" style="background:#f97316;"></div>Z5 (106-120%)</div>
-            <div class="legend-item"><div class="legend-box" style="background:#ef4444;"></div>Z6 (acima de 120%)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#94a3b8;"></div>Z1 Recup. Ativa (&lt;55%)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#38bdf8;"></div>Z2 Resistência (56-75%)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#22c55e;"></div>Z3 Tempo/Ritmo (76-90%)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#eab308;"></div>Z4 Limiar FTP (91-105%)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#f97316;"></div>Z5 VO2 Máx (106-120%)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#ef4444;"></div>Z6 Cap. Anaeróbica (121-150%)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#a855f7;"></div>Z7 Neuromuscular (&gt;150%)</div>
           </div>
           <canvas id="pwrTimeCanvas" style="height: 400px; margin-top: 10px;"></canvas>
         </div>
 
         <div id="hrTimeTab" style="display: none;" class="dynamic-tab">
           <div class="section-header">
-            <h3>Tempo por Zona Cardíaca</h3>
+            <h3>Tempo por Zona Cardíaca (Andrew Coggan Z1–Z5)</h3>
             <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
               <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
             </select>
           </div>
-          <p id="hrZoneSubtitle" style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Zonas baseadas na FC Máxima configurada no topo. Eixo vertical = Horas Absolutas.</p>
+          <p id="hrZoneSubtitle" style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Zonas de Andrew Coggan baseadas na LTHR estimada automaticamente nos bastidores. Eixo vertical = Horas Absolutas.</p>
           <div class="legend-container">
-            <div class="legend-item"><div class="legend-box" style="background:#94a3b8;"></div>Z1 (menos de 60%)</div>
-            <div class="legend-item"><div class="legend-box" style="background:#38bdf8;"></div>Z2 (60-70%)</div>
-            <div class="legend-item"><div class="legend-box" style="background:#22c55e;"></div>Z3 (70-80%)</div>
-            <div class="legend-item"><div class="legend-box" style="background:#eab308;"></div>Z4 (80-90%)</div>
-            <div class="legend-item"><div class="legend-box" style="background:#ef4444;"></div>Z5 (acima de 90%)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#94a3b8;"></div>Z1 Recup. Ativa (&lt;68% LTHR)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#38bdf8;"></div>Z2 Resistência (69-83% LTHR)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#22c55e;"></div>Z3 Tempo/Ritmo (84-94% LTHR)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#eab308;"></div>Z4 Limiar Lactato (95-105% LTHR)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#ef4444;"></div>Z5 VO2 Máximo (&gt;106% LTHR)</div>
           </div>
           <canvas id="hrTimeCanvas" style="height: 400px; margin-top: 10px;"></canvas>
         </div>
@@ -175,10 +176,10 @@
               <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
             </select>
           </div>
-          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Distribuição de horas no período. Verde = Treino estruturado (VI ≤ 1.10). Cinza = Pedalada livre/variável (VI > 1.10).</p>
+          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Distribuição de horas no período. Verde = Treino estruturado (VI ≤ 1.10). Cinza = Pedalada livre/variável (VI &gt; 1.10).</p>
           <div class="legend-container">
             <div class="legend-item"><div class="legend-box" style="background:#22c55e;"></div>Estruturado/Ritmo (VI ≤ 1.10)</div>
-            <div class="legend-item"><div class="legend-box" style="background:#64748b;"></div>Livre/Estocástico (VI > 1.10)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#64748b;"></div>Livre/Estocástico (VI &gt; 1.10)</div>
           </div>
           <canvas id="structureVolCanvas" style="height: 400px; margin-top: 10px;"></canvas>
         </div>
@@ -214,7 +215,7 @@
     </div>
   </div>
 
-  <!-- Módulos Separados (Código 100% preservado do index original) -->
+  <!-- Módulos Separados -->
   <script src="chart-theme.js"></script>
   <script src="tab-atividades.js"></script>
   <script src="tab-ftp.js"></script>

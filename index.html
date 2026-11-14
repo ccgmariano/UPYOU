@@ -213,7 +213,7 @@
           <div class="section-header">
             <h3 style="color: #a78bfa;">Estudo de Dispersão Avançada (Watt vs. BPM)</h3>
           </div>
-          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0; line-height: 1.45;">Analise a nuvem de pontos exata (resolução de 1W e 1BPM). Parametrize o agrupamento, o intervalo de cada ponto, a quantidade de períodos (2 a 24) e use o controle deslizante abaixo para percorrer o histórico.</p>
+          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0; line-height: 1.45;">Compare diretamente os períodos selecionados (gradiente cronológico do roxo/azul mais antigo ao verde/amarelo mais recente, com linha de tendência própria e estimativa de FC a 200W para cada período).</p>
           
           <div style="display: flex; gap: 15px; flex-wrap: wrap; background: #0f172a; padding: 12px 15px; border-radius: 6px; border: 1px solid #334155; margin: 15px 0; align-items: center;">
             <label style="font-size: 0.82rem; color: #cbd5e1;">Agrupamento: 
@@ -229,8 +229,8 @@
             <label style="font-size: 0.82rem; color: #cbd5e1;">Intervalo do Ponto: 
               <select class="custom-select" id="dspJanelaPonto" onchange="onDispParamChange()" style="padding: 4px 8px; margin-left: 5px;">
                 <option value="60">1 minuto</option>
-                <option value="300">5 minutos</option>
-                <option value="600" selected>10 minutos</option>
+                <option value="300" selected>5 minutos</option>
+                <option value="600">10 minutos</option>
                 <option value="900">15 minutos</option>
                 <option value="3600">60 minutos</option>
               </select>
@@ -248,7 +248,10 @@
             </label>
           </div>
 
-          <canvas id="dispersaoCanvas" style="height: 400px; margin-top: 10px;"></canvas>
+          <!-- Legenda Dinâmica dos Períodos Comparados -->
+          <div id="dspLegendContainer" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px;"></div>
+
+          <canvas id="dispersaoCanvas" style="height: 420px; margin-top: 5px;"></canvas>
 
           <!-- Slider de Deslocamento Temporal -->
           <div style="margin-top: 15px; background: #0f172a; padding: 12px 15px; border-radius: 6px; border: 1px solid #334155;">

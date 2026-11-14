@@ -1,4 +1,4 @@
-// Módulo de Dispersão Avançada: Fatiamento Sequencial por Janela de Tempo (Ignorando Pausas)
+// Módulo Corrigido: Dispersão Avançada com Fatiamento Real por Janela de Tempo e Alta Precisão (1W / 1BPM)
 let dispAllBlocks = [];
 let dispUniquePeriods = [];
 let dispCurrentSliderIndex = 0;
@@ -27,7 +27,7 @@ function processDispersaoData() {
     if (!act.dateObj || !act.metrics) return;
     const pKey = getPeriodKey(act.dateObj, agrupamento);
 
-    // Se a atividade tem movingSamples segundo a segundo, fazemos o fatiamento sequencial direto
+    // Fatiamento sequencial exato segundo a segundo usando movingSamples
     if (act.metrics.movingSamples && act.metrics.movingSamples.length > 0) {
       const samples = act.metrics.movingSamples;
       let windowSecs = 0;
@@ -35,19 +35,19 @@ function processDispersaoData() {
 
       for (let i = 0; i < samples.length; i++) {
         const s = samples[i];
-        // Ignora pausas (potência e FC zeradas ou muito baixas)
-        if (s.power <= 5 && s.hr <= 40) continue;
+        // Ignora pausas reais (potência e FC zeradas ou muito baixas)
+        if (s.power <= 5 || s.hr <= 40) continue;
 
-        sumPwr += (s.power || 0);
-        sumHr += (s.hr || 0);
+        sumPwr += s.power;
+        sumHr += s.hr;
         count++;
         windowSecs += (s.dt || 1);
 
-        // Quando atinge o tamanho da janela parametrizada (ex: 1min, 5min, 10min...), fecha o bloco
+        // Quando atinge o tamanho exato da janela parametrizada (1min, 5min, 10min, 15min, 60min)
         if (windowSecs >= janelaSecs || i === samples.length - 1) {
-          if (count > 0) {
-            const avgP = Math.round(sumPwr / count);
-            const avgH = Math.round(sumHr / count);
+          if (count > 5) {
+            const avgP = Math.round(sumPwr / count); // Precisão de 1 Watt
+            const avgH = Math.round(sumHr / count); // Precisão de 1 BPM
             if (avgP > 30 && avgH > 50 && avgH < 220) {
               dispAllBlocks.push({ x: avgP, y: avgH, periodKey: pKey, date: act.dateObj });
               periodMap.add(pKey);
@@ -57,7 +57,7 @@ function processDispersaoData() {
         }
       }
     } else if (act.metrics.pwrHrPairs) {
-      // Fallback de segurança caso venha do Garmin Cloud resumido
+      // Fallback caso venha do Garmin Cloud resumido
       for (const pStr in act.metrics.pwrHrPairs) {
         const p = parseInt(pStr, 10);
         const pair = act.metrics.pwrHrPairs[pStr];
@@ -84,7 +84,7 @@ function processDispersaoData() {
   if (slider) {
     slider.min = 0;
     slider.max = Math.max(0, dispUniquePeriods.length - 1);
-    dispCurrentSliderIndex = dispUniquePeriods.length - 1; // Posiciona no período mais recente
+    dispCurrentSliderIndex = dispUniquePeriods.length - 1; // Posiciona por defeito no período mais recente
     slider.value = dispCurrentSliderIndex;
   }
 
@@ -123,7 +123,7 @@ function renderDispersaoChart() {
   const getX = (p) => padL + ((Math.min(Math.max(p, minX), maxX) - minX) / (maxX - minX)) * drawW;
   const getY = (hr) => padT + drawH - ((Math.min(Math.max(hr, minY), maxY) - minY) / (maxY - minY)) * drawH;
 
-  // Grid e Eixos
+  // Grid e Eixos (Intervalo de batimentos real a cada 10/15 bpm, mas precisão de 1 bpm nos pontos)
   ctx.strokeStyle = '#334155'; ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif';
   ctx.textAlign = 'right';
   for (let hr = minY; hr <= maxY; hr += 15) {
@@ -139,18 +139,18 @@ function renderDispersaoChart() {
     ctx.fillText(`${p}W`, x, h - padB + 15);
   }
 
-  // 1. Resto do Histórico (Fundo - cinza translúcido)
+  // 1. Resto do Histórico (Fundo - cinza translúcido, pontos delicados raio 1.5)
   dispAllBlocks.filter(pt => !activePeriods.includes(pt.periodKey)).forEach(pt => {
-    ctx.beginPath(); ctx.arc(getX(pt.x), getY(pt.y), 3, 0, 2 * Math.PI);
-    ctx.fillStyle = 'rgba(100, 116, 139, 0.15)';
+    ctx.beginPath(); ctx.arc(getX(pt.x), getY(pt.y), 1.5, 0, 2 * Math.PI);
+    ctx.fillStyle = 'rgba(100, 116, 139, 0.2)';
     ctx.fill();
   });
 
-  // 2. Janela Ativa (Destaque em azul vivo)
+  // 2. Janela Ativa (Destaque em azul vivo, pontos delicados raio 2)
   const activePoints = dispAllBlocks.filter(pt => activePeriods.includes(pt.periodKey));
   activePoints.forEach(pt => {
-    ctx.beginPath(); ctx.arc(getX(pt.x), getY(pt.y), 4.5, 0, 2 * Math.PI);
-    ctx.fillStyle = 'rgba(56, 189, 248, 0.75)';
+    ctx.beginPath(); ctx.arc(getX(pt.x), getY(pt.y), 2, 0, 2 * Math.PI);
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.65)';
     ctx.fill();
   });
 

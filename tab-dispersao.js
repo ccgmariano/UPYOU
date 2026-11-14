@@ -1,7 +1,23 @@
-// Módulo de Dispersão Avançada: Comparação Direta de N Períodos com Gradiente Cronológico
+// Módulo de Dispersão Avançada: Cores de Alto Contraste e Legenda Interna no Canto Superior Esquerdo
 let dispAllBlocks = [];
 let dispUniquePeriods = [];
 let dispCurrentSliderIndex = 0;
+
+// Paleta de alto contraste para diferenciar claramente cada período
+const DISTINCT_COLORS = [
+  [56, 189, 248],   // Azul Claro (Sky)
+  [249, 115, 22],   // Laranja Vivo
+  [168, 85, 247],   // Roxo (Purple)
+  [234, 179, 8],    // Amarelo Ouro
+  [239, 68, 68],    // Vermelho Coral
+  [236, 72, 153],   // Rosa / Magenta
+  [20, 184, 166],   // Turquesa (Teal)
+  [248, 250, 252],  // Branco Gelo
+  [99, 102, 241],   // Índigo
+  [217, 119, 6],    // Âmbar
+  [14, 165, 233],   // Azul Oceano
+  [244, 63, 94]     // Carmim
+];
 
 window.initDispersaoTab = function() {
   processDispersaoData();
@@ -74,14 +90,13 @@ function processDispersaoData() {
   renderDispersaoChart();
 }
 
-// Gera cor cronológica: do Roxo/Azul (mais antigo da janela) ao Verde/Amarelo (mais recente da janela)
-function getPeriodColor(idx, total, alpha = 1) {
-  if (total <= 1) return `hsla(142, 76%, 50%, ${alpha})`;
-  const ratio = idx / (total - 1); // 0 = mais antigo, 1 = mais recente
-  // Hue: 265 (roxo) -> 195 (ciano) -> 135 (verde) -> 55 (amarelo vivo)
-  const hue = Math.round(265 - ratio * 200);
-  const light = Math.round(52 + ratio * 8);
-  return `hsla(${hue}, 85%, ${light}%, ${alpha})`;
+// Retorna cor de alto contraste; o período mais recente da janela é sempre Verde Limão (#22c55e)
+function getDistinctPeriodColor(idx, total, alpha = 1) {
+  if (idx === total - 1) {
+    return `rgba(34, 197, 94, ${alpha})`; // Verde destaque para o último período da janela
+  }
+  const rgb = DISTINCT_COLORS[idx % DISTINCT_COLORS.length];
+  return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha})`;
 }
 
 function renderDispersaoChart() {
@@ -92,11 +107,13 @@ function renderDispersaoChart() {
   canvas.width = w; canvas.height = h;
   ctx.clearRect(0, 0, w, h);
 
-  const qtdPeriodos = parseInt(document.getElementById('dspQtdPeriodos')?.value || '3', 10);
+  // Limpa eventual container HTML externo se existir
   const legendBox = document.getElementById('dspLegendContainer');
+  if (legendBox) legendBox.innerHTML = '';
+
+  const qtdPeriodos = parseInt(document.getElementById('dspQtdPeriodos')?.value || '3', 10);
   
   if (dispUniquePeriods.length === 0 || dispAllBlocks.length === 0) {
-    if (legendBox) legendBox.innerHTML = '';
     ctx.fillStyle = '#94a3b8'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center';
     ctx.fillText('Nenhum ponto encontrado para este intervalo.', w / 2, h / 2);
     return;
@@ -106,7 +123,6 @@ function renderDispersaoChart() {
   const startIndex = Math.max(0, endIndex - qtdPeriodos + 1);
   const activePeriods = dispUniquePeriods.slice(startIndex, endIndex + 1);
 
-  // Agrupa os pontos exclusivamente dos períodos selecionados na janela
   const periodGroups = {};
   activePeriods.forEach(p => periodGroups[p] = []);
 
@@ -151,13 +167,13 @@ function renderDispersaoChart() {
     ctx.fillText(`${p}W`, x, h - padB + 15);
   }
 
-  // 1. Desenha os micro-pontos de cada período (do mais antigo para o mais recente)
+  // 1. Desenha os micro-pontos de cada período com cores contrastantes
   activePeriods.forEach((pKey, idx) => {
     const pts = periodGroups[pKey];
     const isLatest = (idx === activePeriods.length - 1);
-    const ptAlpha = activePeriods.length > 8 ? 0.45 : 0.7;
-    ctx.fillStyle = getPeriodColor(idx, activePeriods.length, isLatest ? 0.9 : ptAlpha);
-    const sz = isLatest ? 2.2 : 1.7;
+    const ptAlpha = activePeriods.length > 8 ? 0.55 : 0.75;
+    ctx.fillStyle = getDistinctPeriodColor(idx, activePeriods.length, isLatest ? 0.95 : ptAlpha);
+    const sz = isLatest ? 2.2 : 1.8;
     const half = sz / 2;
 
     for (let i = 0; i < pts.length; i++) {
@@ -165,9 +181,7 @@ function renderDispersaoChart() {
     }
   });
 
-  // 2. Calcula e desenha a linha de tendência individual de cada período + monta legenda
-  let legendHtml = '';
-
+  // 2. Desenha as linhas de tendência de cada período
   ctx.save();
   ctx.beginPath();
   ctx.rect(padL, padT, drawW, drawH);
@@ -176,12 +190,9 @@ function renderDispersaoChart() {
   activePeriods.forEach((pKey, idx) => {
     const pts = periodGroups[pKey];
     const isLatest = (idx === activePeriods.length - 1);
-    const solidColor = getPeriodColor(idx, activePeriods.length, 1);
-    const lineColor = getPeriodColor(idx, activePeriods.length, isLatest ? 1 : 0.85);
+    const lineColor = getDistinctPeriodColor(idx, activePeriods.length, isLatest ? 1 : 0.9);
 
-    let hrAt200W = '--';
-
-    if (pts.length >= 3) {
+    if (pts.length >= 2) {
       let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0, n = pts.length;
       for (let i = 0; i < n; i++) {
         sumX += pts[i].x; sumY += pts[i].y;
@@ -192,8 +203,6 @@ function renderDispersaoChart() {
         const slope = (n * sumXY - sumX * sumY) / denom;
         const intercept = (sumY - slope * sumX) / n;
 
-        hrAt200W = Math.round(slope * 200 + intercept) + ' bpm';
-
         const x1 = minX, y1 = slope * x1 + intercept;
         const x2 = maxX, y2 = slope * x2 + intercept;
 
@@ -201,9 +210,8 @@ function renderDispersaoChart() {
         ctx.moveTo(getX(x1), getY(y1));
         ctx.lineTo(getX(x2), getY(y2));
         ctx.strokeStyle = lineColor;
-        // O período mais recente da janela ganha linha sólida mais grossa; anteriores ficam tracejados suaves
-        ctx.lineWidth = isLatest ? 2.8 : 1.6;
-        if (!isLatest && activePeriods.length > 3) {
+        ctx.lineWidth = isLatest ? 2.8 : 1.8;
+        if (!isLatest) {
           ctx.setLineDash([5, 3]);
         } else {
           ctx.setLineDash([]);
@@ -211,19 +219,51 @@ function renderDispersaoChart() {
         ctx.stroke();
       }
     }
-
-    legendHtml += `
-      <div style="display: inline-flex; align-items: center; gap: 6px; background: #1e293b; padding: 4px 9px; border-radius: 4px; border-left: 3px solid ${solidColor}; font-size: 0.76rem; color: ${isLatest ? '#f8fafc' : '#cbd5e1'}; font-weight: ${isLatest ? 'bold' : 'normal'};">
-        <span>${pKey}</span>
-        <span style="color: #94a3b8; font-size: 0.72rem;">(${pts.length} pts | 200W: <strong style="color:${solidColor}">${hrAt200W}</strong>)</span>
-      </div>`;
   });
-
   ctx.restore();
 
-  if (legendBox) {
-    legendBox.innerHTML = legendHtml;
-  }
+  // 3. Legenda Discreta no Canto Superior Esquerdo do Canvas (organizada em colunas se houver muitos períodos)
+  const maxRowsPerCol = 8;
+  const numCols = Math.ceil(activePeriods.length / maxRowsPerCol);
+  const colWidth = 148;
+  const rowHeight = 15;
+  const rowsInBox = Math.min(activePeriods.length, maxRowsPerCol);
+  const boxW = numCols * colWidth + 10;
+  const boxH = rowsInBox * rowHeight + 10;
+
+  // Fundo escuro translúcido discreto atrás da legenda para garantir leitura
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.82)';
+  ctx.strokeStyle = '#334155';
+  ctx.lineWidth = 1;
+  ctx.fillRect(padL + 8, padT + 6, boxW, boxH);
+  ctx.strokeRect(padL + 8, padT + 6, boxW, boxH);
+
+  ctx.textAlign = 'left';
+  activePeriods.forEach((pKey, idx) => {
+    const ptsCount = periodGroups[pKey].length;
+    const isLatest = (idx === activePeriods.length - 1);
+    const solidColor = getDistinctPeriodColor(idx, activePeriods.length, 1);
+
+    const col = Math.floor(idx / maxRowsPerCol);
+    const row = idx % maxRowsPerCol;
+    const lx = padL + 15 + col * colWidth;
+    const ly = padT + 19 + row * rowHeight;
+
+    // Traço colorido identificador
+    ctx.strokeStyle = solidColor;
+    ctx.lineWidth = isLatest ? 2.8 : 2;
+    if (!isLatest) ctx.setLineDash([3, 2]); else ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(lx, ly - 3);
+    ctx.lineTo(lx + 16, ly - 3);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Texto do período + número de pontos
+    ctx.fillStyle = isLatest ? '#f8fafc' : '#cbd5e1';
+    ctx.font = isLatest ? 'bold 10.5px sans-serif' : '10.5px sans-serif';
+    ctx.fillText(`${pKey} (${ptsCount} pts)`, lx + 21, ly);
+  });
 }
 
 window.updateDispersaoChart = function() {

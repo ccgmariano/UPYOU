@@ -1,4 +1,4 @@
-// Núcleo Principal (100% Fiel ao index.html original: IndexedDB UpYouDB v2, Leitor Nativo FIT/ZIP Strava e Sincronização Garmin)
+// Núcleo Principal (IndexedDB UpYouDB, Leitor Nativo FIT/ZIP Strava, Sincronização Garmin e Janelas de Dispersão 1W/1BPM)
 let dbActivities = [];
 let currentUserId = null;
 let currentUserName = "";
@@ -8,7 +8,6 @@ const DB_NAME = "UpYouDB";
 const STORE_NAME = "activitiesStore";
 const GARMIN_API_URL = "https://garmin-webhook-731921508137.us-central1.run.app";
 
-// Restaura sessão permanentemente (localStorage) até que o utilizador clique em Sair
 window.addEventListener('DOMContentLoaded', () => {
   const savedUser = localStorage.getItem('upyou_user') || sessionStorage.getItem('upyou_user');
   if (savedUser) {
@@ -199,7 +198,8 @@ async function syncWithGarminCloud() {
     for (const item of cloudList) {
       if (!item.id || item.id === 'dados') continue;
       const existingIdx = dbActivities.findIndex(a => String(a.garminId) === String(item.id));
-      if (existingIdx === -1 || !dbActivities[existingIdx].metrics.pwrHrPairs) {
+      // Força atualização se ainda não tiver dispWindows (janelas de 1m, 5m, 10m, 15m, 60m em 1W)
+      if (existingIdx === -1 || !dbActivities[existingIdx].metrics.pwrHrPairs || !dbActivities[existingIdx].metrics.dispWindows) {
         const detailRes = await fetch(`${GARMIN_API_URL}?google_id=${encodeURIComponent(currentUserId)}&id=${encodeURIComponent(item.id)}`);
         if (detailRes.ok) {
           const garminJson = await detailRes.json();
@@ -293,7 +293,8 @@ function parseGarminJsonToActivity(data, fallbackId) {
     metrics = {
       totalSecs, movingSecs: totalSecs, distKm, avgPwr, avgHr, avgCad, avgSpeed,
       top4: [], drift: null, driftEligible: false, mmp20: totalSecs >= 1200 ? avgPwr : 0,
-      pwrHist: {}, hrHist: {}, pwrHrPairs: {}, np: avgPwr, vi: avgPwr > 0 ? 1.0 : 0, blocksCount: 0
+      pwrHist: {}, hrHist: {}, pwrHrPairs: {}, dispWindows: { 60: [], 300: [], 600: [], 900: [], 3600: [] },
+      np: avgPwr, vi: avgPwr > 0 ? 1.0 : 0, blocksCount: 0
     };
   }
 
@@ -387,7 +388,7 @@ document.getElementById('zipInput').addEventListener('change', async (event) => 
 
       for (let i = 0; i < queue.length; i++) {
         const task = queue[i];
-        progressText.innerText = `A processar fisiologia e zonas: atividade ${i + 1} de ${queue.length}...`;
+        progressText.innerText = `A processar fisiologia e janelas de dispersão: atividade ${i + 1} de ${queue.length}...`;
         progressFill.style.width = `${((i + 1) / queue.length) * 100}%`;
 
         let zipEntry = null;
@@ -573,10 +574,33 @@ function calculateMetrics(records) {
       pwrHrPairs[pBucket].secs += dt;
     }
 
-    movingSamples.push({ elapsed, power: r.power || 0, hr: r.hr || 0, dt, timestamp: r.timestamp });
+    movingSamples.push({ elapsed, power: r.power || 0, hr: r.hr || 0, dt });
   }
 
   if (movingSecs === 0) return null;
+
+  // Calcula fatiamento real em 1W e 1BPM para cada uma das 5 janelas de tempo (60s, 300s, 600s, 900s, 3600s)
+  // Sem ignorar o início, ignorando apenas pausas (já filtradas em movingSamples)
+  const dispWindows = { 60: [], 300: [], 600: [], 900: [], 3600: [] };
+  [60, 300, 600, 900, 3600].forEach(wSize => {
+    let accDt = 0, sPwr = 0, sHr = 0;
+    for (let i = 0; i < movingSamples.length; i++) {
+      const s = movingSamples[i];
+      if (s.power > 10 && s.hr > 45 && s.hr < 230) {
+        sPwr += s.power * s.dt;
+        sHr += s.hr * s.dt;
+        accDt += s.dt;
+        if (accDt >= wSize) {
+          const avgP = Math.round(sPwr / accDt); // Precisão de 1 Watt
+          const avgH = Math.round(sHr / accDt);  // Precisão de 1 BPM
+          if (avgP >= 40 && avgH >= 50 && avgH <= 225) {
+            dispWindows[wSize].push([avgP, avgH]);
+          }
+          accDt = 0; sPwr = 0; sHr = 0;
+        }
+      }
+    }
+  });
 
   const avgPwr = Math.round(sumPwrDt / movingSecs);
   const avgHr = hrSecs > 0 ? Math.round(sumHrDt / hrSecs) : 0;
@@ -687,7 +711,7 @@ function calculateMetrics(records) {
   return {
     totalSecs, movingSecs, distKm: (maxDist / 1000).toFixed(2),
     avgPwr, avgHr, avgCad, avgSpeed, top4, drift, driftEligible, mmp20,
-    pwrHist, hrHist, pwrHrPairs, np, vi, blocksCount, movingSamples
+    pwrHist, hrHist, pwrHrPairs, dispWindows, np, vi, blocksCount
   };
 }
 
@@ -734,6 +758,7 @@ function updateDynamicCharts() {
   renderDriftChart();
   renderViChart();
   renderStructureVolChart();
+  if (typeof renderEficienciaChart === 'function') renderEficienciaChart();
   if (typeof updateDispersaoChart === 'function') updateDispersaoChart();
 }
 

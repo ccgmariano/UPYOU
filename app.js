@@ -581,26 +581,26 @@ function calculateMetrics(records) {
 
   // Calcula fatiamento real em 1W e 1BPM para cada uma das 5 janelas de tempo (60s, 300s, 600s, 900s, 3600s)
   // Sem ignorar o início, ignorando apenas pausas (já filtradas em movingSamples)
-  const dispWindows = { 60: [], 300: [], 600: [], 900: [], 3600: [] };
-  [60, 300, 600, 900, 3600].forEach(wSize => {
-    let accDt = 0, sPwr = 0, sHr = 0;
-    for (let i = 0; i < movingSamples.length; i++) {
-      const s = movingSamples[i];
-      if (s.power > 10 && s.hr > 45 && s.hr < 230) {
-        sPwr += s.power * s.dt;
-        sHr += s.hr * s.dt;
-        accDt += s.dt;
-        if (accDt >= wSize) {
-          const avgP = Math.round(sPwr / accDt); // Precisão de 1 Watt
-          const avgH = Math.round(sHr / accDt);  // Precisão de 1 BPM
-          if (avgP >= 40 && avgH >= 50 && avgH <= 225) {
-            dispWindows[wSize].push([avgP, avgH]);
-          }
-          accDt = 0; sPwr = 0; sHr = 0;
+ const dispWindows = { 15: [], 60: [], 300: [], 600: [], 900: [], 3600: [] };
+[15, 60, 300, 600, 900, 3600].forEach(wSize => {
+  let accDt = 0, sPwr = 0, sHr = 0;
+  for (let i = 0; i < movingSamples.length; i++) {
+    const s = movingSamples[i];
+    if (s.power > 10 && s.hr > 45 && s.hr < 230) {
+      sPwr += s.power * s.dt;
+      sHr += s.hr * s.dt;
+      accDt += s.dt;
+      if (accDt >= wSize) {
+        const avgP = Math.round(sPwr / accDt);
+        const avgH = Math.round(sHr / accDt);
+        if (avgP >= 40 && avgH >= 50 && avgH <= 225) {
+          dispWindows[wSize].push([avgP, avgH]);
         }
+        accDt = 0; sPwr = 0; sHr = 0;
       }
     }
-  });
+  }
+});
 
   const avgPwr = Math.round(sumPwrDt / movingSecs);
   const avgHr = hrSecs > 0 ? Math.round(sumHrDt / hrSecs) : 0;

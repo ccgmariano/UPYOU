@@ -1,39 +1,18 @@
 // Aba 2: Evolução de FTP
-let chartFtpInstance = null;
+function renderFtpChart(data) {
+  const canvas = document.getElementById('ftpCanvas'); const ctx = canvas.getContext('2d');
+  const w = canvas.offsetWidth || 900, h = 350; canvas.width = w; canvas.height = h; ctx.clearRect(0, 0, w, h);
+  if (data.length < 2) return;
+  const minT = data[0].date.getTime(), maxT = data[data.length - 1].date.getTime();
+  const minF = Math.max(0, Math.min(...data.map(d => d.ftp)) * 0.85), maxF = Math.max(...data.map(d => d.ftp)) * 1.1;
+  const pad = 45;
+  const getX = (t) => pad + ((t - minT) / Math.max(1, maxT - minT)) * (w - pad * 2), getY = (f) => h - pad - ((f - minF) / Math.max(1, maxF - minF)) * (h - pad * 2);
 
-window.renderTabFtp = function(activities) {
-    const ctx = document.getElementById('chart-ftp');
-    if (!ctx) return;
-
-    const valid = activities
-        .filter(a => (a.np || a.estNp || a.avgPower || 0) > 60 && (a.duration || 0) >= 1200)
-        .slice()
-        .reverse();
-
-    const labels = valid.map(a => formatShortDate(a.date));
-    let runningFtp = 0;
-    const ftpSeries = valid.map(a => {
-        const pwr20 = a.best20m || ((a.np || a.estNp || a.avgPower) * 1.02);
-        const candidate = Math.round(pwr20 * 0.95);
-        runningFtp = runningFtp === 0 ? candidate : Math.round(Math.max(candidate, runningFtp * 0.985));
-        return runningFtp;
-    });
-
-    if (chartFtpInstance) chartFtpInstance.destroy();
-    chartFtpInstance = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels,
-            datasets: [{
-                label: 'FTP Estimado (W)',
-                data: ftpSeries,
-                borderColor: UpYouChartTheme.colors.orange,
-                backgroundColor: 'rgba(255, 87, 0, 0.15)',
-                fill: true,
-                tension: 0.3,
-                pointRadius: 4
-            }]
-        },
-        options: UpYouChartTheme.baseOptions('Watts (W)')
-    });
-};
+  ctx.strokeStyle = '#334155'; ctx.lineWidth = 1;
+  for (let f = Math.ceil(minF / 25) * 25; f <= maxF; f += 25) {
+    const y = getY(f); ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(w - pad, y); ctx.stroke();
+    ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right'; ctx.fillText(`${f}W`, pad - 6, y + 3);
+  }
+  ctx.beginPath(); ctx.strokeStyle = '#fc5200'; ctx.lineWidth = 2.5;
+  data.forEach((pt, idx) => { const x = getX(pt.date.getTime()), y = getY(pt.ftp); if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }); ctx.stroke();
+}

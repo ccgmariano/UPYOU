@@ -1,198 +1,228 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TREINADOR VIRTUAL UPYOU</title>
-    <link rel="stylesheet" href="style.css">
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Treinador Virtual UPYOU - Histórico Completo</title>
+  
+  <!-- Biblioteca de Login do Google -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  
+  <!-- Bibliotecas de Processamento ZIP -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+
+  <!-- Folha de Estilo Modular -->
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <!-- Tela de Login -->
-    <div id="login-screen" class="login-container">
-        <div class="login-box">
-            <h1>TREINADOR VIRTUAL UPYOU</h1>
-            <p>Análise avançada de desempenho ciclístico e telemetria</p>
-            <div id="g_id_onload"
-                 data-client_id="731921508137-alvl8q48tpsvhp02531v1el2naia457g.apps.googleusercontent.com"
-                 data-callback="handleCredentialResponse"
-                 data-auto_prompt="false">
-            </div>
-            <div class="g_id_signin" data-type="standard" data-size="large" data-theme="filled_blue" data-text="sign_in_with" data-shape="rectangular" data-logo_alignment="left"></div>
+
+  <!-- ECRÃ DE LOGIN -->
+  <div id="loginScreen" class="card">
+    <div class="logo-title">UPYOU</div>
+    <div class="logo-sub">Inteligência de Treino & Sincronização Garmin / Strava</div>
+    
+    <!-- Configuração do Botão Google -->
+    <div id="g_id_onload"
+         data-client_id="731921508137-alvl8q48tpsvhp02531v1el2naia457g.apps.googleusercontent.com"
+         data-context="signin"
+         data-ux_mode="popup"
+         data-callback="handleCredentialResponse"
+         data-auto_prompt="false">
+    </div>
+    
+    <div class="google-btn-wrapper">
+      <div class="g_id_signin"
+           data-type="standard"
+           data-shape="rectangular"
+           data-theme="outline"
+           data-text="signin_with"
+           data-size="large"
+           data-logo_alignment="left">
+      </div>
+    </div>
+  </div>
+
+  <!-- APLICAÇÃO PRINCIPAL (Escondida até ao Login) -->
+  <div id="mainApp" style="display: none;">
+    
+    <div class="user-header">
+      <div class="user-greeting" id="userGreeting">Olá, Ciclista</div>
+      <div class="header-actions">
+        <div class="hr-config-box" title="A sua Frequência Cardíaca Máxima para cálculo das Zonas de FC">
+          <span>FC Máx:</span>
+          <input type="number" id="maxHrInput" value="187" min="120" max="230" onchange="updateUserMaxHr(this.value)">
+          <span>bpm</span>
         </div>
+        <span id="garminConnectedBadge" class="badge-connected" style="display: none;">✓ Garmin Vinculado</span>
+        <button id="btnConnectGarmin" class="btn-connect-garmin" onclick="connectGarminAccount()">Conectar Garmin</button>
+        <button class="btn-sync" onclick="syncWithGarminCloud()">↻ Sincronizar Garmin</button>
+        <button class="btn-logout" onclick="logout()">Sair</button>
+      </div>
     </div>
 
-    <!-- Painel Principal -->
-    <div id="app-screen" class="app-container" style="display: none;">
-        <header class="top-bar">
-            <div class="user-greeting">
-                <span id="user-name">Olá, Ciclista</span>
-            </div>
-            <div class="top-controls">
-                <div class="hr-input-group">
-                    <label for="max-hr">FC Máx:</label>
-                    <input type="number" id="max-hr" value="187" min="100" max="240">
-                    <span>bpm</span>
-                </div>
-                <span id="garmin-status" class="badge-status">Verificando Garmin...</span>
-                <button id="btn-connect-garmin" class="btn btn-secondary" onclick="connectGarmin()">Reconectar Garmin</button>
-                <button id="btn-sync-garmin" class="btn btn-primary" onclick="syncGarmin(false)">↻ Sincronizar Garmin</button>
-                <button class="btn btn-outline" onclick="logout()">Sair</button>
-            </div>
-        </header>
+    <div class="card">
+      <h1>Painel de Desempenho</h1>
 
-        <main class="dashboard-card">
-            <h1 class="dashboard-title">Painel de Desempenho</h1>
+      <div class="upload-area" id="uploadArea" onclick="document.getElementById('zipInput').click()">
+        <p>Ainda não há dados locais ou na nuvem para a sua conta. Conecte o seu Garmin acima ou carregue o histórico do Strava abaixo.</p>
+        <span class="btn">Carregar ZIP do Strava</span>
+        <input type="file" id="zipInput" accept=".zip">
+      </div>
 
-            <nav class="tabs-nav">
-                <button class="tab-btn active" data-tab="atividades" onclick="switchTab('atividades')">As Suas Pedaladas</button>
-                <button class="tab-btn" data-tab="ftp" onclick="switchTab('ftp')">Evolução de FTP</button>
-                <button class="tab-btn" data-tab="assinatura" onclick="switchTab('assinatura')">Assinatura Cardíaca</button>
-                <button class="tab-btn" data-tab="zonas-potencia" onclick="switchTab('zonas-potencia')">Tempo/Zona (Potência)</button>
-                <button class="tab-btn" data-tab="zonas-fc" onclick="switchTab('zonas-fc')">Tempo/Zona (FC)</button>
-                <button class="tab-btn" data-tab="drift" onclick="switchTab('drift')">Evolução do Drift</button>
-                <button class="tab-btn tab-purple" data-tab="vi" onclick="switchTab('vi')">Índice de Variabilidade (VI)</button>
-                <button class="tab-btn tab-purple" data-tab="estrutura" onclick="switchTab('estrutura')">Volume de Estrutura</button>
-                <button class="tab-btn tab-green" data-tab="potencia-estimada" onclick="switchTab('potencia-estimada')">Potência Estimada</button>
-            </nav>
+      <div id="statusMsg"></div>
+      
+      <div id="progressArea">
+        <h3 style="color: #38bdf8;">A processar o seu histórico...</h3>
+        <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
+        <p id="progressText" style="color: #94a3b8;">A preparar ambiente (aguarde)...</p>
+      </div>
 
-            <div id="sync-progress" class="sync-banner" style="display: none;"></div>
-
-            <!-- Conteúdo das Abas -->
-            <section id="tab-atividades" class="tab-content active">
-                <div class="table-responsive">
-                    <table class="activities-table">
-                        <thead>
-                            <tr>
-                                <th>DATA</th>
-                                <th>NOME</th>
-                                <th>DISTÂNCIA</th>
-                                <th>POTÊNCIA (MÉD / NP)</th>
-                                <th>PERFIL</th>
-                                <th>AÇÃO</th>
-                            </tr>
-                        </thead>
-                        <tbody id="activities-tbody"></tbody>
-                    </table>
-                </div>
-
-                <div class="bottom-actions">
-                    <label for="strava-zip-input" class="btn btn-secondary">+ Importar / Recalcular ZIP do Strava</label>
-                    <input type="file" id="strava-zip-input" accept=".zip,.fit" style="display: none;" onchange="handleFileUpload(event)">
-                    <button class="btn btn-danger" onclick="clearLocalDatabase()">Limpar Banco Local</button>
-                </div>
-            </section>
-
-            <section id="tab-ftp" class="tab-content" style="display: none;">
-                <div class="chart-header">
-                    <h3>Evolução do FTP Estimado (W)</h3>
-                    <p>Estimativa baseada nos melhores esforços de 20 minutos (95%) e Potência Normalizada em treinos estruturados/intensos.</p>
-                </div>
-                <div class="chart-wrapper"><canvas id="chart-ftp"></canvas></div>
-            </section>
-
-            <section id="tab-assinatura" class="tab-content" style="display: none;">
-                <div class="chart-header">
-                    <h3>Assinatura Cardíaca (Relação Watts / BPM)</h3>
-                    <p>Eficiência aeróbica (Fator de Eficiência = NP / FC Média) ao longo das sessões.</p>
-                </div>
-                <div class="chart-wrapper"><canvas id="chart-assinatura"></canvas></div>
-            </section>
-
-            <section id="tab-zonas-potencia" class="tab-content" style="display: none;">
-                <div class="chart-header">
-                    <h3>Distribuição de Tempo em Zonas de Potência (Coggan Z1-Z7)</h3>
-                    <p>Percentual e horas acumuladas em cada zona de potência.</p>
-                </div>
-                <div class="chart-wrapper"><canvas id="chart-zonas-potencia"></canvas></div>
-            </section>
-
-            <section id="tab-zonas-fc" class="tab-content" style="display: none;">
-                <div class="chart-header">
-                    <h3>Distribuição de Tempo em Zonas de Frequência Cardíaca (Z1-Z5)</h3>
-                    <p>Calculado com base na sua FC Máxima configurada no topo do painel.</p>
-                </div>
-                <div class="chart-wrapper"><canvas id="chart-zonas-fc"></canvas></div>
-            </section>
-
-            <section id="tab-drift" class="tab-content" style="display: none;">
-                <div class="chart-header">
-                    <h3>Evolução do Desacoplamento Aeróbico (Cardiac Drift %)</h3>
-                    <p>Comparação da relação Potência/FC entre a primeira e a segunda metade do treino (valores abaixo de 5% indicam sólida base aeróbica).</p>
-                </div>
-                <div class="chart-wrapper"><canvas id="chart-drift"></canvas></div>
-            </section>
-
-            <section id="tab-vi" class="tab-content" style="display: none;">
-                <div class="chart-header">
-                    <h3>Índice de Variabilidade (VI = NP / Potência Média)</h3>
-                    <p>Pontos sem linhas conectando: VI até 1.08 indica pedal constante/estruturado; acima de 1.08 indica pedal livre/oscilante.</p>
-                </div>
-                <div class="chart-wrapper"><canvas id="chart-vi"></canvas></div>
-            </section>
-
-            <section id="tab-estrutura" class="tab-content" style="display: none;">
-                <div class="chart-header">
-                    <h3>Volume Semanal/Mensal: Treinos Estruturados vs. Livres (Horas)</h3>
-                    <p>Comparativo de carga horária dedicada a treinos constantes (VI &le; 1.08) versus pedais livres.</p>
-                </div>
-                <div class="chart-wrapper"><canvas id="chart-estrutura"></canvas></div>
-            </section>
-
-            <section id="tab-potencia-estimada" class="tab-content" style="display: none;">
-                <div class="chart-header">
-                    <h3>Laboratório de Potência Estimada (Modelo Físico + Fisiológico)</h3>
-                    <p>Calibração de peso (ciclista + bike), CdA, Crr e comparativo entre Potência Real (medidor) e Potência Estimada (Equação de Martin + Aceleração + FC).</p>
-                </div>
-                <div class="power-config-bar">
-                    <div class="hr-input-group">
-                        <label for="rider-weight">Peso Ciclista (kg):</label>
-                        <input type="number" id="rider-weight" value="75" step="0.5" onchange="saveRiderPhysics()">
-                    </div>
-                    <div class="hr-input-group">
-                        <label for="bike-weight">Peso Bike/Equip (kg):</label>
-                        <input type="number" id="bike-weight" value="9.0" step="0.5" onchange="saveRiderPhysics()">
-                    </div>
-                    <div class="hr-input-group">
-                        <label for="rider-cda">CdA (m²):</label>
-                        <input type="number" id="rider-cda" value="0.32" step="0.01" onchange="saveRiderPhysics()">
-                    </div>
-                    <div class="hr-input-group">
-                        <label for="rider-crr">Crr:</label>
-                        <input type="number" id="rider-crr" value="0.005" step="0.001" onchange="saveRiderPhysics()">
-                    </div>
-                    <button class="btn btn-primary" onclick="recalculateEstimatedPowerAll()">Recalcular Potência Estimada</button>
-                </div>
-                <div class="chart-wrapper"><canvas id="chart-potencia-estimada"></canvas></div>
-            </section>
-        </main>
-    </div>
-
-    <!-- Modal de Detalhes da Atividade -->
-    <div id="activity-modal" class="modal-overlay" style="display: none;" onclick="closeModal(event)">
-        <div class="modal-card" onclick="event.stopPropagation()">
-            <div class="modal-header">
-                <h2 id="modal-title">Detalhes da Pedalada</h2>
-                <button class="btn-close" onclick="closeModal()">&times;</button>
-            </div>
-            <div id="modal-kpi-grid" class="kpi-grid"></div>
-            <div class="chart-wrapper modal-chart"><canvas id="chart-modal-streams"></canvas></div>
+      <div id="summaryArea">
+        <div class="nav-tabs">
+          <button class="tab-btn active" onclick="switchDashboardTab('tableTab', this)">As Suas Pedaladas</button>
+          <button class="tab-btn" onclick="switchDashboardTab('ftpTab', this)">Evolução de FTP</button>
+          <button class="tab-btn" onclick="switchDashboardTab('zonesTab', this)">Assinatura Cardíaca</button>
+          <button class="tab-btn" onclick="switchDashboardTab('pwrTimeTab', this)">Tempo/Zona (Potência)</button>
+          <button class="tab-btn" onclick="switchDashboardTab('hrTimeTab', this)">Tempo/Zona (FC)</button>
+          <button class="tab-btn" onclick="switchDashboardTab('driftChartTab', this)">Evolução do Drift</button>
+          <button class="tab-btn" style="border-color: #8b5cf6;" onclick="switchDashboardTab('viChartTab', this)">Índice de Variabilidade (VI)</button>
+          <button class="tab-btn" style="border-color: #8b5cf6;" onclick="switchDashboardTab('structureVolTab', this)">Volume de Estrutura</button>
         </div>
-    </div>
 
-    <!-- Scripts Modulares -->
-    <script src="chart-theme.js"></script>
-    <script src="physics-power.js"></script>
-    <script src="tab-atividades.js"></script>
-    <script src="tab-ftp.js"></script>
-    <script src="tab-assinatura.js"></script>
-    <script src="tab-zonas.js"></script>
-    <script src="tab-drift.js"></script>
-    <script src="tab-vi.js"></script>
-    <script src="tab-estrutura.js"></script>
-    <script src="tab-potencia.js"></script>
-    <script src="app.js"></script>
+        <div id="tableTab" style="display: block;">
+          <table class="summary-table">
+            <thead><tr><th>Data</th><th>Nome</th><th>Distância</th><th>Potência (Méd / NP)</th><th>Perfil</th><th>Ação</th></tr></thead>
+            <tbody id="summaryBody"></tbody>
+          </table>
+        </div>
+
+        <div id="ftpTab" style="display: none;">
+          <div class="section-header"><h3>Evolução do FTP (Janela Móvel 42 Dias + Retenção de Base)</h3></div>
+          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Calculado apenas em atividades ≥ 20 min (95% da MMP20), com decaimento fisiológico suave em períodos sem testes máximos.</p>
+          <canvas id="ftpCanvas"></canvas>
+        </div>
+
+        <div id="zonesTab" style="display: none;">
+          <div class="section-header"><h3>FC Média por Zona Dinâmica de Potência</h3></div>
+          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Pareamento segundo a segundo entre Watts (relativos ao FTP vigente) e Frequência Cardíaca correspondente.</p>
+          <canvas id="zonesCanvas"></canvas>
+        </div>
+
+        <div id="pwrTimeTab" style="display: none;" class="dynamic-tab">
+          <div class="section-header">
+            <h3>Tempo por Zona de Potência (Dinâmica)</h3>
+            <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
+              <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
+            </select>
+          </div>
+          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Zonas recalculadas baseadas no seu FTP vigente. Eixo vertical = Horas Absolutas.</p>
+          <div class="legend-container">
+            <div class="legend-item"><div class="legend-box" style="background:#94a3b8;"></div>Z1 (menos de 55%)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#38bdf8;"></div>Z2 (56-75%)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#22c55e;"></div>Z3 (76-90%)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#eab308;"></div>Z4 (91-105%)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#f97316;"></div>Z5 (106-120%)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#ef4444;"></div>Z6 (acima de 120%)</div>
+          </div>
+          <canvas id="pwrTimeCanvas" style="height: 400px; margin-top: 10px;"></canvas>
+        </div>
+
+        <div id="hrTimeTab" style="display: none;" class="dynamic-tab">
+          <div class="section-header">
+            <h3>Tempo por Zona Cardíaca</h3>
+            <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
+              <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
+            </select>
+          </div>
+          <p id="hrZoneSubtitle" style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Zonas baseadas na FC Máxima configurada no topo. Eixo vertical = Horas Absolutas.</p>
+          <div class="legend-container">
+            <div class="legend-item"><div class="legend-box" style="background:#94a3b8;"></div>Z1 (menos de 60%)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#38bdf8;"></div>Z2 (60-70%)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#22c55e;"></div>Z3 (70-80%)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#eab308;"></div>Z4 (80-90%)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#ef4444;"></div>Z5 (acima de 90%)</div>
+          </div>
+          <canvas id="hrTimeCanvas" style="height: 400px; margin-top: 10px;"></canvas>
+        </div>
+
+        <div id="driftChartTab" style="display: none;" class="dynamic-tab">
+          <div class="section-header">
+            <h3>Evolução do Cardiac Drift (Desacoplamento Aeróbico)</h3>
+            <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
+              <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
+            </select>
+          </div>
+          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Apenas treinos contínuos elegíveis (duração ≥ 30 min e VI ≤ 1.12, excluindo aquecimento). Ideal: verde (≤ 5%).</p>
+          <canvas id="driftCanvas" style="height: 400px; margin-top: 10px;"></canvas>
+        </div>
+
+        <div id="viChartTab" style="display: none;" class="dynamic-tab">
+          <div class="section-header">
+            <h3 style="color: #a78bfa;">Média do Índice de Variabilidade (VI)</h3>
+            <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
+              <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
+            </select>
+          </div>
+          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">VI = Potência Normalizada (NP) / Potência Média (incluindo zeros em movimento). Faixa verde (1.00 a 1.10) = Ritmo constante.</p>
+          <canvas id="viCanvas" style="height: 400px; margin-top: 10px;"></canvas>
+        </div>
+
+        <div id="structureVolTab" style="display: none;" class="dynamic-tab">
+          <div class="section-header">
+            <h3 style="color: #a78bfa;">Horas de Treino: Estruturado vs Livre</h3>
+            <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
+              <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
+            </select>
+          </div>
+          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Distribuição de horas no período. Verde = Treino estruturado (VI ≤ 1.10). Cinza = Pedalada livre/variável (VI > 1.10).</p>
+          <div class="legend-container">
+            <div class="legend-item"><div class="legend-box" style="background:#22c55e;"></div>Estruturado/Ritmo (VI ≤ 1.10)</div>
+            <div class="legend-item"><div class="legend-box" style="background:#64748b;"></div>Livre/Estocástico (VI > 1.10)</div>
+          </div>
+          <canvas id="structureVolCanvas" style="height: 400px; margin-top: 10px;"></canvas>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 30px; border-top: 1px solid #334155; padding-top: 15px;">
+          <button class="btn" style="background:#334155;" onclick="document.getElementById('zipInput').click()">+ Importar / Recalcular ZIP do Strava</button>
+          <button class="btn btn-danger" onclick="clearLocalDatabase()">Limpar Banco Local</button>
+        </div>
+      </div>
+
+      <div id="detailArea">
+        <button class="btn" onclick="showSummary()" style="margin-bottom: 20px; background: #475569;">&larr; Voltar ao Histórico</button>
+        <h2 id="actTitle" style="color: #38bdf8; margin-bottom: 20px; text-align: center;"></h2>
+        
+        <div class="stat-grid">
+          <div class="stat-box" style="border-left-color: #8b5cf6;"><div class="stat-title">Potência Normalizada (NP)</div><div class="stat-val" id="npVal">--</div></div>
+          <div class="stat-box" style="border-left-color: #8b5cf6;"><div class="stat-title">Índ. Variabilidade (VI)</div><div class="stat-val" id="viVal">--</div></div>
+          <div class="stat-box" style="border-left-color: #8b5cf6; grid-column: span 2;"><div class="stat-title">Diagnóstico de Estrutura (Blocos ≥ 5 min)</div><div class="stat-val" id="structureVal" style="font-size: 0.95rem; font-weight: normal; line-height: 1.4;">--</div></div>
+        </div>
+
+        <div class="stat-grid">
+          <div class="stat-box"><div class="stat-title">Tempo Total</div><div class="stat-val" id="totalTime">--</div></div>
+          <div class="stat-box"><div class="stat-title">Distância Total</div><div class="stat-val" id="totalDist">--</div></div>
+          <div class="stat-box"><div class="stat-title">Velocidade Média (Mov)</div><div class="stat-val" id="avgSpeed">--</div></div>
+          <div class="stat-box"><div class="stat-title">Potência Média (Mov)</div><div class="stat-val" id="avgPwr">--</div></div>
+          <div class="stat-box"><div class="stat-title">FC Média (Mov)</div><div class="stat-val" id="avgHr">--</div></div>
+          <div class="stat-box"><div class="stat-title">Cadência Média (Mov)</div><div class="stat-val" id="avgCad">--</div></div>
+          <div class="stat-box" style="border-left-color: #22c55e;"><div class="stat-title">Cardiac Drift (Pa:Hr)</div><div class="stat-val" id="driftVal">--</div></div>
+        </div>
+        <div class="stat-box" style="border-left-color: #38bdf8; margin-bottom: 15px;"><div class="stat-title">Maior Bloco 20 Minutos (MMP20)</div><div class="stat-val" id="mmp20Val">--</div></div>
+        <div class="stat-box" style="border-left-color: #38bdf8;"><div class="stat-title">Top 4 Maiores Períodos de Potência (4 Minutos)</div><div class="stat-val" id="top4Mins" style="font-size: 0.95rem; font-weight: normal;">--</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Módulos Separados (Código 100% preservado do index original) -->
+  <script src="chart-theme.js"></script>
+  <script src="tab-atividades.js"></script>
+  <script src="tab-ftp.js"></script>
+  <script src="tab-assinatura.js"></script>
+  <script src="tab-zonas.js"></script>
+  <script src="tab-drift.js"></script>
+  <script src="tab-vi.js"></script>
+  <script src="tab-estrutura.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

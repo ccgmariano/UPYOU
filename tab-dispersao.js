@@ -1,4 +1,4 @@
-// Módulo Corrigido: Dispersão Avançada com Fatiamento Real por Janela de Tempo e Alta Precisão (1W / 1BPM)
+// Módulo de Dispersão Avançada: Resolução de 1W / 1BPM, Micro-Pontos (1.5px) e Janelas Reais (1m, 5m, 10m, 15m, 60m)
 let dispAllBlocks = [];
 let dispUniquePeriods = [];
 let dispCurrentSliderIndex = 0;
@@ -22,49 +22,36 @@ function processDispersaoData() {
 
   dispAllBlocks = [];
   const periodMap = new Set();
+  let hasLegacyOnly = false;
 
   dbActivities.forEach(act => {
     if (!act.dateObj || !act.metrics) return;
     const pKey = getPeriodKey(act.dateObj, agrupamento);
 
-    // Fatiamento sequencial exato segundo a segundo usando movingSamples
-    if (act.metrics.movingSamples && act.metrics.movingSamples.length > 0) {
-      const samples = act.metrics.movingSamples;
-      let windowSecs = 0;
-      let sumPwr = 0, sumHr = 0, count = 0;
-
-      for (let i = 0; i < samples.length; i++) {
-        const s = samples[i];
-        // Ignora pausas reais (potência e FC zeradas ou muito baixas)
-        if (s.power <= 5 || s.hr <= 40) continue;
-
-        sumPwr += s.power;
-        sumHr += s.hr;
-        count++;
-        windowSecs += (s.dt || 1);
-
-        // Quando atinge o tamanho exato da janela parametrizada (1min, 5min, 10min, 15min, 60min)
-        if (windowSecs >= janelaSecs || i === samples.length - 1) {
-          if (count > 5) {
-            const avgP = Math.round(sumPwr / count); // Precisão de 1 Watt
-            const avgH = Math.round(sumHr / count); // Precisão de 1 BPM
-            if (avgP > 30 && avgH > 50 && avgH < 220) {
-              dispAllBlocks.push({ x: avgP, y: avgH, periodKey: pKey, date: act.dateObj });
-              periodMap.add(pKey);
-            }
-          }
-          windowSecs = 0; sumPwr = 0; sumHr = 0; count = 0;
+    // 1. Lê as janelas exatas (1W e 1BPM) pré-calculadas no app.js para o intervalo selecionado
+    if (act.metrics.dispWindows && act.metrics.dispWindows[janelaSecs]) {
+      const pts = act.metrics.dispWindows[janelaSecs];
+      for (let i = 0; i < pts.length; i++) {
+        const p = pts[i][0];
+        const h = pts[i][1];
+        if (p >= 40 && h >= 50 && h <= 225) {
+          dispAllBlocks.push({ x: p, y: h, periodKey: pKey });
+          periodMap.add(pKey);
         }
       }
     } else if (act.metrics.pwrHrPairs) {
-      // Fallback caso venha do Garmin Cloud resumido
+      // Caso o banco local ainda tenha atividades antigas do ZIP do Strava sem dispWindows
+      hasLegacyOnly = true;
       for (const pStr in act.metrics.pwrHrPairs) {
         const p = parseInt(pStr, 10);
         const pair = act.metrics.pwrHrPairs[pStr];
-        if (p > 30 && pair && pair.secs > 0) {
+        if (p >= 40 && pair && pair.secs >= janelaSecs) {
+          const numBlocos = Math.floor(pair.secs / janelaSecs);
           const avgHr = Math.round(pair.sumHr / pair.secs);
-          if (avgHr > 50 && avgHr < 220) {
-            dispAllBlocks.push({ x: p, y: avgHr, periodKey: pKey, date: act.dateObj });
+          if (avgHr >= 50 && avgHr <= 225) {
+            for (let k = 0; k < numBlocos; k++) {
+              dispAllBlocks.push({ x: p, y: avgHr, periodKey: pKey });
+            }
             periodMap.add(pKey);
           }
         }
@@ -77,31 +64,33 @@ function processDispersaoData() {
   
   if (dispUniquePeriods.length === 0) {
     if (slider) { slider.min = 0; slider.max = 0; slider.value = 0; }
-    renderDispersaoChart();
+    renderDispersaoChart(hasLegacyOnly);
     return;
   }
 
   if (slider) {
     slider.min = 0;
     slider.max = Math.max(0, dispUniquePeriods.length - 1);
-    dispCurrentSliderIndex = dispUniquePeriods.length - 1; // Posiciona por defeito no período mais recente
+    dispCurrentSliderIndex = dispUniquePeriods.length - 1;
     slider.value = dispCurrentSliderIndex;
   }
 
-  renderDispersaoChart();
+  renderDispersaoChart(hasLegacyOnly);
 }
 
-function renderDispersaoChart() {
+function renderDispersaoChart(hasLegacyOnly = false) {
   const canvas = document.getElementById('dispersaoCanvas');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  const w = canvas.offsetWidth || 900, h = 400; canvas.width = w; canvas.height = h; ctx.clearRect(0, 0, w, h);
+  const w = canvas.offsetWidth || 900, h = 400;
+  canvas.width = w; canvas.height = h;
+  ctx.clearRect(0, 0, w, h);
 
   const qtdPeriodos = parseInt(document.getElementById('dspQtdPeriodos')?.value || '3', 10);
   
   if (dispUniquePeriods.length === 0 || dispAllBlocks.length === 0) {
-    ctx.fillStyle = '#94a3b8'; ctx.font = '14px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText('Nenhum dado encontrado com os parâmetros selecionados.', w / 2, h / 2);
+    ctx.fillStyle = '#94a3b8'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('Nenhum ponto para este intervalo. Se usa ZIP do Strava, clique em "+ Importar / Recalcular ZIP" abaixo para gerar janelas de 1W.', w / 2, h / 2);
     return;
   }
 
@@ -111,62 +100,79 @@ function renderDispersaoChart() {
 
   const sliderLabel = document.getElementById('dspSliderLabel');
   if (sliderLabel) {
-    sliderLabel.innerText = `Janela Ativa: ${activePeriods[0]} até ${activePeriods[activePeriods.length - 1]} (${activePeriods.length} períodos)`;
+    const activeCount = dispAllBlocks.filter(pt => activePeriods.includes(pt.periodKey)).length;
+    sliderLabel.innerText = `Janela Ativa: ${activePeriods[0]} até ${activePeriods[activePeriods.length - 1]} (${activePeriods.length} períodos | ${activeCount} pontos)`;
   }
 
-  const minX = 80, maxX = 320;
-  const minY = 105, maxY = 185;
+  // Escala de 1W em 1W (Eixo X) e 1BPM em 1BPM (Eixo Y)
+  const minX = 60, maxX = 340;
+  const minY = 95, maxY = 190;
 
-  const padL = 50, padR = 20, padT = 20, padB = 40;
+  const padL = 50, padR = 20, padT = 25, padB = 40;
   const drawW = w - padL - padR, drawH = h - padT - padB;
 
-  const getX = (p) => padL + ((Math.min(Math.max(p, minX), maxX) - minX) / (maxX - minX)) * drawW;
-  const getY = (hr) => padT + drawH - ((Math.min(Math.max(hr, minY), maxY) - minY) / (maxY - minY)) * drawH;
+  const getX = (p) => padL + ((p - minX) / (maxX - minX)) * drawW;
+  const getY = (hr) => padT + drawH - ((hr - minY) / (maxY - minY)) * drawH;
 
-  // Grid e Eixos (Intervalo de batimentos real a cada 10/15 bpm, mas precisão de 1 bpm nos pontos)
+  // Grid e Eixos
   ctx.strokeStyle = '#334155'; ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif';
   ctx.textAlign = 'right';
-  for (let hr = minY; hr <= maxY; hr += 15) {
+  for (let hr = 100; hr <= maxY; hr += 15) {
     const y = getY(hr);
     ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
     ctx.fillText(`${hr} bpm`, padL - 8, y + 3);
   }
 
   ctx.textAlign = 'center';
-  for (let p = minX; p <= maxX; p += 40) {
+  for (let p = 60; p <= maxX; p += 40) {
     const x = getX(p);
     ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, h - padB); ctx.stroke();
     ctx.fillText(`${p}W`, x, h - padB + 15);
   }
 
-  // 1. Resto do Histórico (Fundo - cinza translúcido, pontos delicados raio 1.5)
-  dispAllBlocks.filter(pt => !activePeriods.includes(pt.periodKey)).forEach(pt => {
-    ctx.beginPath(); ctx.arc(getX(pt.x), getY(pt.y), 1.5, 0, 2 * Math.PI);
-    ctx.fillStyle = 'rgba(100, 116, 139, 0.2)';
-    ctx.fill();
-  });
+  // 1. Pontos do Histórico (Fundo - micro-pontos de 1.5x1.5 px, ~10x menor em área que o círculo anterior)
+  ctx.fillStyle = 'rgba(148, 163, 184, 0.22)';
+  const bgPoints = [];
+  const activePoints = [];
 
-  // 2. Janela Ativa (Destaque em azul vivo, pontos delicados raio 2)
-  const activePoints = dispAllBlocks.filter(pt => activePeriods.includes(pt.periodKey));
-  activePoints.forEach(pt => {
-    ctx.beginPath(); ctx.arc(getX(pt.x), getY(pt.y), 2, 0, 2 * Math.PI);
-    ctx.fillStyle = 'rgba(56, 189, 248, 0.65)';
-    ctx.fill();
-  });
+  for (let i = 0; i < dispAllBlocks.length; i++) {
+    const pt = dispAllBlocks[i];
+    if (pt.x < minX || pt.x > maxX || pt.y < minY || pt.y > maxY) continue;
+    if (activePeriods.includes(pt.periodKey)) {
+      activePoints.push(pt);
+    } else {
+      bgPoints.push(pt);
+      ctx.fillRect(getX(pt.x) - 0.75, getY(pt.y) - 0.75, 1.5, 1.5);
+    }
+  }
+
+  // 2. Pontos da Janela Ativa (Destaque - micro-pontos de 2x2 px)
+  ctx.fillStyle = 'rgba(56, 189, 248, 0.85)';
+  for (let i = 0; i < activePoints.length; i++) {
+    const pt = activePoints[i];
+    ctx.fillRect(getX(pt.x) - 1, getY(pt.y) - 1, 2, 2);
+  }
 
   function drawTrend(points, color, width, isDash) {
     if (points.length < 2) return;
     let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0, n = points.length;
-    points.forEach(pt => {
+    for (let i = 0; i < n; i++) {
+      const pt = points[i];
       sumX += pt.x; sumY += pt.y;
       sumXY += (pt.x * pt.y); sumXX += (pt.x * pt.x);
-    });
-    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+    }
+    const denom = (n * sumXX - sumX * sumX);
+    if (denom === 0) return;
+    const slope = (n * sumXY - sumX * sumY) / denom;
     const intercept = (sumY - slope * sumX) / n;
 
     const x1 = minX, y1 = slope * x1 + intercept;
     const x2 = maxX, y2 = slope * x2 + intercept;
 
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(padL, padT, drawW, drawH);
+    ctx.clip();
     ctx.beginPath();
     ctx.moveTo(getX(x1), getY(y1));
     ctx.lineTo(getX(x2), getY(y2));
@@ -174,25 +180,26 @@ function renderDispersaoChart() {
     ctx.lineWidth = width;
     if (isDash) ctx.setLineDash([4, 4]);
     ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.restore();
   }
 
-  // Linha de tendência Histórica Geral (Tracejada)
-  const bgPoints = dispAllBlocks.filter(pt => !activePeriods.includes(pt.periodKey));
   if (bgPoints.length > 5) drawTrend(bgPoints, '#94a3b8', 1.5, true);
-
-  // Linha de tendência da Janela Ativa (Destaque Sólido Verde)
-  if (activePoints.length > 3) drawTrend(activePoints, '#22c55e', 2.8, false);
+  if (activePoints.length > 3) drawTrend(activePoints, '#22c55e', 2.2, false);
 
   // Legenda no Canvas
   ctx.fillStyle = '#f8fafc'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'left';
-  ctx.fillText(`Tendência Janela Ativa (${activePeriods[0]} ... ${activePeriods[activePeriods.length - 1]}): Verde`, padL + 10, padT + 15);
+  ctx.fillText(`Tendência Janela Ativa (${activePeriods[0]} ... ${activePeriods[activePeriods.length - 1]}): Verde (${activePoints.length} pts)`, padL + 10, padT + 15);
   ctx.fillStyle = '#94a3b8';
-  ctx.fillText(`Tendência Histórica Geral: Tracejada Cinza`, padL + 10, padT + 32);
-};
+  ctx.fillText(`Tendência Histórica Geral: Tracejada Cinza (${bgPoints.length} pts)`, padL + 10, padT + 30);
+
+  if (hasLegacyOnly) {
+    ctx.fillStyle = '#eab308'; ctx.font = '11px sans-serif';
+    ctx.fillText(`⚠ Dados antigos em 5W detetados: clique em "+ Importar / Recalcular ZIP do Strava" para habilitar 1W exato.`, padL + 10, h - padB - 8);
+  }
+}
 
 window.updateDispersaoChart = function() {
   if (typeof dbActivities !== 'undefined' && dbActivities.length > 0) {
-    renderDispersaoChart();
+    processDispersaoData();
   }
 };

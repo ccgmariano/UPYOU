@@ -1,4 +1,4 @@
-// Aba 3: Assinatura Cardíaca pareada segundo a segundo por Zona Dinâmica de Potência
+// Aba 3: Assinatura Cardíaca pareada segundo a segundo nas 7 Zonas de Potência de Andrew Coggan
 function renderDynamicZones() {
   const zonesData = {
     Z1: { minP: 0.20, maxP: 0.55, sumHrSec: 0, totSec: 0, color: '#94a3b8', n: 'Z1 (<55%)' },
@@ -6,7 +6,8 @@ function renderDynamicZones() {
     Z3: { minP: 0.75, maxP: 0.90, sumHrSec: 0, totSec: 0, color: '#22c55e', n: 'Z3 (76-90%)' },
     Z4: { minP: 0.90, maxP: 1.05, sumHrSec: 0, totSec: 0, color: '#eab308', n: 'Z4 (91-105%)' },
     Z5: { minP: 1.05, maxP: 1.20, sumHrSec: 0, totSec: 0, color: '#f97316', n: 'Z5 (106-120%)' },
-    Z6: { minP: 1.20, maxP: 2.50, sumHrSec: 0, totSec: 0, color: '#ef4444', n: 'Z6 (>120%)' }
+    Z6: { minP: 1.20, maxP: 1.50, sumHrSec: 0, totSec: 0, color: '#ef4444', n: 'Z6 (121-150%)' },
+    Z7: { minP: 1.50, maxP: 3.50, sumHrSec: 0, totSec: 0, color: '#a855f7', n: 'Z7 (>150%)' }
   };
 
   dbActivities.forEach(act => {
@@ -59,11 +60,11 @@ function renderDynamicZones() {
 
   const canvas = document.getElementById('zonesCanvas'); const ctx = canvas.getContext('2d');
   const w = canvas.offsetWidth || 900, h = 350, pad = 40; canvas.width = w; canvas.height = h; ctx.clearRect(0, 0, w, h);
-  const zoneKeys = Object.keys(zonesData); const barWidth = (w - pad * 2) / zoneKeys.length - 15;
+  const zoneKeys = Object.keys(zonesData); const barWidth = (w - pad * 2) / zoneKeys.length - 12;
 
   zoneKeys.forEach((key, idx) => {
-    const z = zonesData[key], avgHr = z.totSec > 60 ? Math.round(z.sumHrSec / z.totSec) : 0;
-    const x = pad + idx * (barWidth + 15) + 10;
+    const z = zonesData[key], avgHr = z.totSec > 30 ? Math.round(z.sumHrSec / z.totSec) : 0;
+    const x = pad + idx * (barWidth + 12) + 6;
     const barH = avgHr > 0 ? Math.max(10, ((avgHr - 80) / 115) * (h - pad * 2)) : 5;
     const y = h - pad - barH;
     ctx.fillStyle = z.color; ctx.fillRect(x, y, barWidth, barH);

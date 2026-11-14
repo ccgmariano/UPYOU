@@ -88,6 +88,7 @@
           <button class="tab-btn" onclick="switchDashboardTab('driftChartTab', this)">Evolução do Drift</button>
           <button class="tab-btn" style="border-color: #8b5cf6;" onclick="switchDashboardTab('viChartTab', this)">Índice de Variabilidade (VI)</button>
           <button class="tab-btn" style="border-color: #8b5cf6;" onclick="switchDashboardTab('structureVolTab', this)">Volume de Estrutura</button>
+          <button class="tab-btn tab-green" onclick="switchDashboardTab('eficienciaTab', this)">Estudo de Eficiência (Pa:Hr)</button>
         </div>
 
         <div id="tableTab" style="display: block;">
@@ -184,6 +185,29 @@
           <canvas id="structureVolCanvas" style="height: 400px; margin-top: 10px;"></canvas>
         </div>
 
+        <!-- Nova Aba: Estudo de Eficiência -->
+        <div id="eficienciaTab" style="display: none;" class="dynamic-tab">
+          <div class="section-header">
+            <h3>Estudo de Eficiência Cardíaca (FC Média por Faixa de Watts ao Longo do Tempo)</h3>
+            <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
+              <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
+            </select>
+          </div>
+          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0; line-height: 1.45;">Acompanhe a queda da Frequência Cardíaca para uma mesma faixa de potência ao longo dos meses. Selecione abaixo as zonas de Coggan que deseja exibir na tela (as barras ao fundo mostram o volume acumulado em minutos):</p>
+          
+          <div style="display: flex; gap: 15px; flex-wrap: wrap; background: #0f172a; padding: 10px 15px; border-radius: 6px; border: 1px solid #334155; margin: 15px 0; align-items: center;">
+            <span style="font-size: 0.82rem; font-weight: bold; color: #38bdf8;">Exibir Zonas:</span>
+            <label style="font-size: 0.82rem; cursor: pointer; color: #38bdf8;"><input type="checkbox" id="chk-z2" value="Z2" checked onchange="updateEficienciaChart()"> Z2 (56-75%)</label>
+            <label style="font-size: 0.82rem; cursor: pointer; color: #22c55e;"><input type="checkbox" id="chk-z3" value="Z3" checked onchange="updateEficienciaChart()"> Z3 (76-90%)</label>
+            <label style="font-size: 0.82rem; cursor: pointer; color: #eab308;"><input type="checkbox" id="chk-z4" value="Z4" checked onchange="updateEficienciaChart()"> Z4 (91-105%)</label>
+            <label style="font-size: 0.82rem; cursor: pointer; color: #f97316;"><input type="checkbox" id="chk-z5" value="Z5" onchange="updateEficienciaChart()"> Z5 (106-120%)</label>
+            <label style="font-size: 0.82rem; cursor: pointer; color: #ef4444;"><input type="checkbox" id="chk-z6" value="Z6" onchange="updateEficienciaChart()"> Z6 (121-150%)</label>
+            <label style="font-size: 0.82rem; cursor: pointer; color: #a855f7;"><input type="checkbox" id="chk-z7" value="Z7" onchange="updateEficienciaChart()"> Z7 (&gt;150%)</label>
+          </div>
+
+          <canvas id="eficienciaCanvas" style="height: 400px; margin-top: 10px;"></canvas>
+        </div>
+
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 30px; border-top: 1px solid #334155; padding-top: 15px;">
           <button class="btn" style="background:#334155;" onclick="document.getElementById('zipInput').click()">+ Importar / Recalcular ZIP do Strava</button>
           <button class="btn btn-danger" onclick="clearLocalDatabase()">Limpar Banco Local</button>
@@ -224,6 +248,7 @@
   <script src="tab-drift.js"></script>
   <script src="tab-vi.js"></script>
   <script src="tab-estrutura.js"></script>
+  <script src="tab-eficiencia.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

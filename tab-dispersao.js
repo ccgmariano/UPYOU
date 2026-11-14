@@ -1,4 +1,4 @@
-// Módulo de Dispersão Avançada: Resolução de 1W / 1BPM, Micro-Pontos (1.5px) e Janelas Reais (1m, 5m, 10m, 15m, 60m)
+// Módulo de Dispersão Avançada: Comparação Direta de N Períodos com Gradiente Cronológico
 let dispAllBlocks = [];
 let dispUniquePeriods = [];
 let dispCurrentSliderIndex = 0;
@@ -22,13 +22,11 @@ function processDispersaoData() {
 
   dispAllBlocks = [];
   const periodMap = new Set();
-  let hasLegacyOnly = false;
 
   dbActivities.forEach(act => {
     if (!act.dateObj || !act.metrics) return;
     const pKey = getPeriodKey(act.dateObj, agrupamento);
 
-    // 1. Lê as janelas exatas (1W e 1BPM) pré-calculadas no app.js para o intervalo selecionado
     if (act.metrics.dispWindows && act.metrics.dispWindows[janelaSecs]) {
       const pts = act.metrics.dispWindows[janelaSecs];
       for (let i = 0; i < pts.length; i++) {
@@ -40,8 +38,6 @@ function processDispersaoData() {
         }
       }
     } else if (act.metrics.pwrHrPairs) {
-      // Caso o banco local ainda tenha atividades antigas do ZIP do Strava sem dispWindows
-      hasLegacyOnly = true;
       for (const pStr in act.metrics.pwrHrPairs) {
         const p = parseInt(pStr, 10);
         const pair = act.metrics.pwrHrPairs[pStr];
@@ -64,7 +60,7 @@ function processDispersaoData() {
   
   if (dispUniquePeriods.length === 0) {
     if (slider) { slider.min = 0; slider.max = 0; slider.value = 0; }
-    renderDispersaoChart(hasLegacyOnly);
+    renderDispersaoChart();
     return;
   }
 
@@ -75,22 +71,34 @@ function processDispersaoData() {
     slider.value = dispCurrentSliderIndex;
   }
 
-  renderDispersaoChart(hasLegacyOnly);
+  renderDispersaoChart();
 }
 
-function renderDispersaoChart(hasLegacyOnly = false) {
+// Gera cor cronológica: do Roxo/Azul (mais antigo da janela) ao Verde/Amarelo (mais recente da janela)
+function getPeriodColor(idx, total, alpha = 1) {
+  if (total <= 1) return `hsla(142, 76%, 50%, ${alpha})`;
+  const ratio = idx / (total - 1); // 0 = mais antigo, 1 = mais recente
+  // Hue: 265 (roxo) -> 195 (ciano) -> 135 (verde) -> 55 (amarelo vivo)
+  const hue = Math.round(265 - ratio * 200);
+  const light = Math.round(52 + ratio * 8);
+  return `hsla(${hue}, 85%, ${light}%, ${alpha})`;
+}
+
+function renderDispersaoChart() {
   const canvas = document.getElementById('dispersaoCanvas');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  const w = canvas.offsetWidth || 900, h = 400;
+  const w = canvas.offsetWidth || 900, h = 420;
   canvas.width = w; canvas.height = h;
   ctx.clearRect(0, 0, w, h);
 
   const qtdPeriodos = parseInt(document.getElementById('dspQtdPeriodos')?.value || '3', 10);
+  const legendBox = document.getElementById('dspLegendContainer');
   
   if (dispUniquePeriods.length === 0 || dispAllBlocks.length === 0) {
+    if (legendBox) legendBox.innerHTML = '';
     ctx.fillStyle = '#94a3b8'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText('Nenhum ponto para este intervalo. Se usa ZIP do Strava, clique em "+ Importar / Recalcular ZIP" abaixo para gerar janelas de 1W.', w / 2, h / 2);
+    ctx.fillText('Nenhum ponto encontrado para este intervalo.', w / 2, h / 2);
     return;
   }
 
@@ -98,17 +106,30 @@ function renderDispersaoChart(hasLegacyOnly = false) {
   const startIndex = Math.max(0, endIndex - qtdPeriodos + 1);
   const activePeriods = dispUniquePeriods.slice(startIndex, endIndex + 1);
 
-  const sliderLabel = document.getElementById('dspSliderLabel');
-  if (sliderLabel) {
-    const activeCount = dispAllBlocks.filter(pt => activePeriods.includes(pt.periodKey)).length;
-    sliderLabel.innerText = `Janela Ativa: ${activePeriods[0]} até ${activePeriods[activePeriods.length - 1]} (${activePeriods.length} períodos | ${activeCount} pontos)`;
-  }
+  // Agrupa os pontos exclusivamente dos períodos selecionados na janela
+  const periodGroups = {};
+  activePeriods.forEach(p => periodGroups[p] = []);
 
-  // Escala de 1W em 1W (Eixo X) e 1BPM em 1BPM (Eixo Y)
   const minX = 60, maxX = 340;
   const minY = 95, maxY = 190;
 
-  const padL = 50, padR = 20, padT = 25, padB = 40;
+  let totalActivePts = 0;
+  for (let i = 0; i < dispAllBlocks.length; i++) {
+    const pt = dispAllBlocks[i];
+    if (periodGroups[pt.periodKey] !== undefined) {
+      if (pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY) {
+        periodGroups[pt.periodKey].push(pt);
+        totalActivePts++;
+      }
+    }
+  }
+
+  const sliderLabel = document.getElementById('dspSliderLabel');
+  if (sliderLabel) {
+    sliderLabel.innerText = `Janela Ativa: ${activePeriods[0]} até ${activePeriods[activePeriods.length - 1]} (${activePeriods.length} períodos | ${totalActivePts} pontos)`;
+  }
+
+  const padL = 50, padR = 20, padT = 20, padB = 40;
   const drawW = w - padL - padR, drawH = h - padT - padB;
 
   const getX = (p) => padL + ((p - minX) / (maxX - minX)) * drawW;
@@ -130,71 +151,78 @@ function renderDispersaoChart(hasLegacyOnly = false) {
     ctx.fillText(`${p}W`, x, h - padB + 15);
   }
 
-  // 1. Pontos do Histórico (Fundo - micro-pontos de 1.5x1.5 px, ~10x menor em área que o círculo anterior)
-  ctx.fillStyle = 'rgba(148, 163, 184, 0.22)';
-  const bgPoints = [];
-  const activePoints = [];
+  // 1. Desenha os micro-pontos de cada período (do mais antigo para o mais recente)
+  activePeriods.forEach((pKey, idx) => {
+    const pts = periodGroups[pKey];
+    const isLatest = (idx === activePeriods.length - 1);
+    const ptAlpha = activePeriods.length > 8 ? 0.45 : 0.7;
+    ctx.fillStyle = getPeriodColor(idx, activePeriods.length, isLatest ? 0.9 : ptAlpha);
+    const sz = isLatest ? 2.2 : 1.7;
+    const half = sz / 2;
 
-  for (let i = 0; i < dispAllBlocks.length; i++) {
-    const pt = dispAllBlocks[i];
-    if (pt.x < minX || pt.x > maxX || pt.y < minY || pt.y > maxY) continue;
-    if (activePeriods.includes(pt.periodKey)) {
-      activePoints.push(pt);
-    } else {
-      bgPoints.push(pt);
-      ctx.fillRect(getX(pt.x) - 0.75, getY(pt.y) - 0.75, 1.5, 1.5);
+    for (let i = 0; i < pts.length; i++) {
+      ctx.fillRect(getX(pts[i].x) - half, getY(pts[i].y) - half, sz, sz);
     }
-  }
+  });
 
-  // 2. Pontos da Janela Ativa (Destaque - micro-pontos de 2x2 px)
-  ctx.fillStyle = 'rgba(56, 189, 248, 0.85)';
-  for (let i = 0; i < activePoints.length; i++) {
-    const pt = activePoints[i];
-    ctx.fillRect(getX(pt.x) - 1, getY(pt.y) - 1, 2, 2);
-  }
+  // 2. Calcula e desenha a linha de tendência individual de cada período + monta legenda
+  let legendHtml = '';
 
-  function drawTrend(points, color, width, isDash) {
-    if (points.length < 2) return;
-    let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0, n = points.length;
-    for (let i = 0; i < n; i++) {
-      const pt = points[i];
-      sumX += pt.x; sumY += pt.y;
-      sumXY += (pt.x * pt.y); sumXX += (pt.x * pt.x);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(padL, padT, drawW, drawH);
+  ctx.clip();
+
+  activePeriods.forEach((pKey, idx) => {
+    const pts = periodGroups[pKey];
+    const isLatest = (idx === activePeriods.length - 1);
+    const solidColor = getPeriodColor(idx, activePeriods.length, 1);
+    const lineColor = getPeriodColor(idx, activePeriods.length, isLatest ? 1 : 0.85);
+
+    let hrAt200W = '--';
+
+    if (pts.length >= 3) {
+      let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0, n = pts.length;
+      for (let i = 0; i < n; i++) {
+        sumX += pts[i].x; sumY += pts[i].y;
+        sumXY += (pts[i].x * pts[i].y); sumXX += (pts[i].x * pts[i].x);
+      }
+      const denom = (n * sumXX - sumX * sumX);
+      if (denom !== 0) {
+        const slope = (n * sumXY - sumX * sumY) / denom;
+        const intercept = (sumY - slope * sumX) / n;
+
+        hrAt200W = Math.round(slope * 200 + intercept) + ' bpm';
+
+        const x1 = minX, y1 = slope * x1 + intercept;
+        const x2 = maxX, y2 = slope * x2 + intercept;
+
+        ctx.beginPath();
+        ctx.moveTo(getX(x1), getY(y1));
+        ctx.lineTo(getX(x2), getY(y2));
+        ctx.strokeStyle = lineColor;
+        // O período mais recente da janela ganha linha sólida mais grossa; anteriores ficam tracejados suaves
+        ctx.lineWidth = isLatest ? 2.8 : 1.6;
+        if (!isLatest && activePeriods.length > 3) {
+          ctx.setLineDash([5, 3]);
+        } else {
+          ctx.setLineDash([]);
+        }
+        ctx.stroke();
+      }
     }
-    const denom = (n * sumXX - sumX * sumX);
-    if (denom === 0) return;
-    const slope = (n * sumXY - sumX * sumY) / denom;
-    const intercept = (sumY - slope * sumX) / n;
 
-    const x1 = minX, y1 = slope * x1 + intercept;
-    const x2 = maxX, y2 = slope * x2 + intercept;
+    legendHtml += `
+      <div style="display: inline-flex; align-items: center; gap: 6px; background: #1e293b; padding: 4px 9px; border-radius: 4px; border-left: 3px solid ${solidColor}; font-size: 0.76rem; color: ${isLatest ? '#f8fafc' : '#cbd5e1'}; font-weight: ${isLatest ? 'bold' : 'normal'};">
+        <span>${pKey}</span>
+        <span style="color: #94a3b8; font-size: 0.72rem;">(${pts.length} pts | 200W: <strong style="color:${solidColor}">${hrAt200W}</strong>)</span>
+      </div>`;
+  });
 
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(padL, padT, drawW, drawH);
-    ctx.clip();
-    ctx.beginPath();
-    ctx.moveTo(getX(x1), getY(y1));
-    ctx.lineTo(getX(x2), getY(y2));
-    ctx.strokeStyle = color;
-    ctx.lineWidth = width;
-    if (isDash) ctx.setLineDash([4, 4]);
-    ctx.stroke();
-    ctx.restore();
-  }
+  ctx.restore();
 
-  if (bgPoints.length > 5) drawTrend(bgPoints, '#94a3b8', 1.5, true);
-  if (activePoints.length > 3) drawTrend(activePoints, '#22c55e', 2.2, false);
-
-  // Legenda no Canvas
-  ctx.fillStyle = '#f8fafc'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'left';
-  ctx.fillText(`Tendência Janela Ativa (${activePeriods[0]} ... ${activePeriods[activePeriods.length - 1]}): Verde (${activePoints.length} pts)`, padL + 10, padT + 15);
-  ctx.fillStyle = '#94a3b8';
-  ctx.fillText(`Tendência Histórica Geral: Tracejada Cinza (${bgPoints.length} pts)`, padL + 10, padT + 30);
-
-  if (hasLegacyOnly) {
-    ctx.fillStyle = '#eab308'; ctx.font = '11px sans-serif';
-    ctx.fillText(`⚠ Dados antigos em 5W detetados: clique em "+ Importar / Recalcular ZIP do Strava" para habilitar 1W exato.`, padL + 10, h - padB - 8);
+  if (legendBox) {
+    legendBox.innerHTML = legendHtml;
   }
 }
 

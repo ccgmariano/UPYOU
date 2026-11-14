@@ -1,4 +1,4 @@
-// Módulo Otimizado: Dispersão Avançada (Watt vs. BPM) com Coleta Direta de Blocos e Slider Temporal
+// Módulo Definitivo: Dispersão Avançada (Watt vs. BPM) baseado em pwrHrPairs
 let dispAllBlocks = [];
 let dispUniquePeriods = [];
 let dispCurrentSliderIndex = 0;
@@ -27,42 +27,18 @@ function processDispersaoData() {
     if (!act.dateObj || !act.metrics) return;
     const pKey = getPeriodKey(act.dateObj, agrupamento);
 
-    // Estratégia 1: Aproveita os pwrHrPairs calculados (que já filtram os primeiros 5 min de inércia)
-    if (act.metrics.pwrHrPairs) {
-      for (const pStr in act.metrics.pwrHrPairs) {
+    // Coleta diretamente dos pares de potência e FC processados na atividade
+    const pairs = act.metrics.pwrHrPairs;
+    if (pairs && typeof pairs === 'object') {
+      for (const pStr in pairs) {
         const p = parseInt(pStr, 10);
-        const pair = act.metrics.pwrHrPairs[pStr];
-        if (p > 50 && pair && pair.secs >= Math.min(janelaSecs, 120)) { // Flexibiliza o tempo mínimo para garantir dados
+        const pair = pairs[pStr];
+        if (p > 40 && pair && pair.secs > 0) {
           const avgHr = Math.round(pair.sumHr / pair.secs);
-          if (avgHr > 60 && avgHr < 220) {
+          if (avgHr > 50 && avgHr < 230) {
             dispAllBlocks.push({ x: p, y: avgHr, periodKey: pKey, date: act.dateObj });
             periodMap.add(pKey);
           }
-        }
-      }
-    }
-
-    // Estratégia 2: Varre movingSamples caso existam amostras segundo a segundo
-    if (act.metrics.movingSamples && act.metrics.movingSamples.length > 0) {
-      const samples = act.metrics.movingSamples;
-      let windowSecs = 0, sumPwr = 0, sumHr = 0, count = 0;
-
-      for (let i = 0; i < samples.length; i++) {
-        const s = samples[i];
-        if (s.power <= 20 || s.hr <= 60) continue;
-        sumPwr += s.power;
-        sumHr += s.hr;
-        count++;
-        windowSecs += s.dt || 1;
-
-        if (windowSecs >= janelaSecs) {
-          const avgP = Math.round(sumPwr / count);
-          const avgH = Math.round(sumHr / count);
-          if (avgP > 50 && avgH > 60 && avgH < 220) {
-            dispAllBlocks.push({ x: avgP, y: avgH, periodKey: pKey, date: act.dateObj });
-            periodMap.add(pKey);
-          }
-          windowSecs = 0; sumPwr = 0; sumHr = 0; count = 0;
         }
       }
     }
@@ -80,7 +56,7 @@ function processDispersaoData() {
   if (slider) {
     slider.min = 0;
     slider.max = Math.max(0, dispUniquePeriods.length - 1);
-    dispCurrentSliderIndex = dispUniquePeriods.length - 1; // Posiciona por defeito no período mais recente
+    dispCurrentSliderIndex = dispUniquePeriods.length - 1; // Posiciona no período mais recente
     slider.value = dispCurrentSliderIndex;
   }
 
@@ -97,7 +73,7 @@ function renderDispersaoChart() {
   
   if (dispUniquePeriods.length === 0 || dispAllBlocks.length === 0) {
     ctx.fillStyle = '#94a3b8'; ctx.font = '14px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText('Nenhum bloco encontrado. Verifique se o histórico possui dados de potência e FC.', w / 2, h / 2);
+    ctx.fillText('Nenhum dado de potência/FC encontrado. Importe ou sincronize as atividades.', w / 2, h / 2);
     return;
   }
 
@@ -146,7 +122,7 @@ function renderDispersaoChart() {
   const activePoints = dispAllBlocks.filter(pt => activePeriods.includes(pt.periodKey));
   activePoints.forEach(pt => {
     ctx.beginPath(); ctx.arc(getX(pt.x), getY(pt.y), 4.5, 0, 2 * Math.PI);
-    ctx.fillStyle = 'rgba(56, 189, 248, 0.7)';
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.75)';
     ctx.fill();
   });
 

@@ -8,14 +8,15 @@ const DB_NAME = "UpYouDB";
 const STORE_NAME = "activitiesStore";
 const GARMIN_API_URL = "https://garmin-webhook-731921508137.us-central1.run.app";
 
-// Restaura sessão se o utilizador voltar do redirecionamento da Garmin
+// Restaura sessão permanentemente (localStorage) até que o utilizador clique em Sair
 window.addEventListener('DOMContentLoaded', () => {
-  const savedUser = sessionStorage.getItem('upyou_user');
+  const savedUser = localStorage.getItem('upyou_user') || sessionStorage.getItem('upyou_user');
   if (savedUser) {
     try {
       const parsed = JSON.parse(savedUser);
       currentUserId = parsed.id;
       currentUserName = parsed.name;
+      localStorage.setItem('upyou_user', JSON.stringify({ id: currentUserId, name: currentUserName }));
       loadUserPreferences();
       document.getElementById('loginScreen').style.display = 'none';
       document.getElementById('mainApp').style.display = 'flex';
@@ -62,7 +63,7 @@ function handleCredentialResponse(response) {
   
   currentUserId = payload.sub;
   currentUserName = payload.given_name || payload.name;
-  sessionStorage.setItem('upyou_user', JSON.stringify({ id: currentUserId, name: currentUserName }));
+  localStorage.setItem('upyou_user', JSON.stringify({ id: currentUserId, name: currentUserName }));
 
   loadUserPreferences();
   document.getElementById('loginScreen').style.display = 'none';
@@ -75,7 +76,11 @@ function handleCredentialResponse(response) {
 function logout() {
   currentUserId = null;
   dbActivities = [];
+  localStorage.removeItem('upyou_user');
   sessionStorage.removeItem('upyou_user');
+  if (window.google && google.accounts && google.accounts.id) {
+    google.accounts.id.disableAutoSelect();
+  }
   location.href = location.pathname; 
 }
 
@@ -105,10 +110,10 @@ async function checkGarminConnectionStatus() {
   }
 }
 
-// --- BANCO DE DADOS LOCAL (Compatível com v2 e mesmo caso o navegador tenha aberto v3) ---
+// --- BANCO DE DADOS LOCAL (Compatível com v2 e v3) ---
 function initDB() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME); // Sem forçar versão menor para abrir tanto v2 quanto v3 sem VersionError
+    const request = indexedDB.open(DB_NAME);
     request.onupgradeneeded = (e) => {
       const db = e.target.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME, { keyPath: "id" });

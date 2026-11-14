@@ -22,7 +22,6 @@
     <div class="logo-title">UPYOU</div>
     <div class="logo-sub">Inteligência de Treino & Sincronização Garmin / Strava</div>
     
-    <!-- Configuração do Botão Google -->
     <div id="g_id_onload"
          data-client_id="731921508137-alvl8q48tpsvhp02531v1el2naia457g.apps.googleusercontent.com"
          data-context="signin"
@@ -43,7 +42,7 @@
     </div>
   </div>
 
-  <!-- APLICAÇÃO PRINCIPAL (Escondida até ao Login) -->
+  <!-- APLICAÇÃO PRINCIPAL -->
   <div id="mainApp" style="display: none;">
     
     <div class="user-header">
@@ -209,12 +208,12 @@
           <canvas id="eficienciaCanvas" style="height: 400px; margin-top: 10px;"></canvas>
         </div>
 
-        <!-- Nova Aba: Dispersão Avançada (Watt vs BPM) com Parametrizações e Slider Temporal -->
+        <!-- Dispersão Avançada (Watt vs BPM) -->
         <div id="dispersaoTab" style="display: none;" class="dynamic-tab">
           <div class="section-header">
             <h3 style="color: #a78bfa;">Estudo de Dispersão Avançada (Watt vs. BPM)</h3>
           </div>
-          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0; line-height: 1.45;">Analise a nuvem de pontos exata de potência versus frequência cardíaca. Parametrize a granularidade, o tamanho do bloco estável, a quantidade de períodos exibidos e use o controle deslizante abaixo para viajar no tempo.</p>
+          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0; line-height: 1.45;">Analise a nuvem de pontos exata (resolução de 1W e 1BPM). Parametrize o agrupamento, o intervalo de cada ponto, a quantidade de períodos (2 a 24) e use o controle deslizante abaixo para percorrer o histórico.</p>
           
           <div style="display: flex; gap: 15px; flex-wrap: wrap; background: #0f172a; padding: 12px 15px; border-radius: 6px; border: 1px solid #334155; margin: 15px 0; align-items: center;">
             <label style="font-size: 0.82rem; color: #cbd5e1;">Agrupamento: 
@@ -239,15 +238,19 @@
 
             <label style="font-size: 0.82rem; color: #cbd5e1;">Qtd. Períodos na Tela: 
               <select class="custom-select" id="dspQtdPeriodos" onchange="onDispParamChange()" style="padding: 4px 8px; margin-left: 5px;">
-                <option value="2">2</option><option value="3" selected>3</option><option value="6">6</option>
-                <option value="12">12</option><option value="18">18</option><option value="24">24</option>
+                <option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="5">5</option>
+                <option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option>
+                <option value="10">10</option><option value="11">11</option><option value="12">12</option><option value="13">13</option>
+                <option value="14">14</option><option value="15">15</option><option value="16">16</option><option value="17">17</option>
+                <option value="18">18</option><option value="19">19</option><option value="20">20</option><option value="21">21</option>
+                <option value="22">22</option><option value="23">23</option><option value="24">24</option>
               </select>
             </label>
           </div>
 
           <canvas id="dispersaoCanvas" style="height: 400px; margin-top: 10px;"></canvas>
 
-          <!-- Slider de Deslocamento Temporal (Máquina do Tempo) -->
+          <!-- Slider de Deslocamento Temporal -->
           <div style="margin-top: 15px; background: #0f172a; padding: 12px 15px; border-radius: 6px; border: 1px solid #334155;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
               <span style="font-size: 0.82rem; font-weight: bold; color: #38bdf8;" id="dspSliderLabel">Janela Ativa: --</span>

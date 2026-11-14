@@ -88,7 +88,8 @@
           <button class="tab-btn" onclick="switchDashboardTab('driftChartTab', this)">Evolução do Drift</button>
           <button class="tab-btn" style="border-color: #8b5cf6;" onclick="switchDashboardTab('viChartTab', this)">Índice de Variabilidade (VI)</button>
           <button class="tab-btn" style="border-color: #8b5cf6;" onclick="switchDashboardTab('structureVolTab', this)">Volume de Estrutura</button>
-          <button class="tab-btn tab-green" onclick="switchDashboardTab('eficienciaTab', this)">Estudo de Eficiência (Pa:Hr)</button>
+          <button class="tab-btn" onclick="switchDashboardTab('eficienciaTab', this)">Estudo de Eficiência (Pa:Hr)</button>
+          <button class="tab-btn tab-green" onclick="switchDashboardTab('dispersaoTab', this)">Dispersão Avançada</button>
         </div>
 
         <div id="tableTab" style="display: block;">
@@ -185,7 +186,7 @@
           <canvas id="structureVolCanvas" style="height: 400px; margin-top: 10px;"></canvas>
         </div>
 
-        <!-- Nova Aba: Estudo de Eficiência -->
+        <!-- Estudo de Eficiência -->
         <div id="eficienciaTab" style="display: none;" class="dynamic-tab">
           <div class="section-header">
             <h3>Estudo de Eficiência Cardíaca (FC Média por Faixa de Watts ao Longo do Tempo)</h3>
@@ -206,6 +207,54 @@
           </div>
 
           <canvas id="eficienciaCanvas" style="height: 400px; margin-top: 10px;"></canvas>
+        </div>
+
+        <!-- Nova Aba: Dispersão Avançada (Watt vs BPM) com Parametrizações e Slider Temporal -->
+        <div id="dispersaoTab" style="display: none;" class="dynamic-tab">
+          <div class="section-header">
+            <h3 style="color: #a78bfa;">Estudo de Dispersão Avançada (Watt vs. BPM)</h3>
+          </div>
+          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0; line-height: 1.45;">Analise a nuvem de pontos exata de potência versus frequência cardíaca. Parametrize a granularidade, o tamanho do bloco estável, a quantidade de períodos exibidos e use o controle deslizante abaixo para viajar no tempo.</p>
+          
+          <div style="display: flex; gap: 15px; flex-wrap: wrap; background: #0f172a; padding: 12px 15px; border-radius: 6px; border: 1px solid #334155; margin: 15px 0; align-items: center;">
+            <label style="font-size: 0.82rem; color: #cbd5e1;">Agrupamento: 
+              <select class="custom-select" id="dspAgrupamento" onchange="onDispParamChange()" style="padding: 4px 8px; margin-left: 5px;">
+                <option value="quinzena">Quinzenal</option>
+                <option value="mes" selected>Mensal</option>
+                <option value="trimestre">Trimestral</option>
+                <option value="semestre">Semestral</option>
+                <option value="ano">Anual</option>
+              </select>
+            </label>
+
+            <label style="font-size: 0.82rem; color: #cbd5e1;">Intervalo do Ponto: 
+              <select class="custom-select" id="dspJanelaPonto" onchange="onDispParamChange()" style="padding: 4px 8px; margin-left: 5px;">
+                <option value="60">1 minuto</option>
+                <option value="300">5 minutos</option>
+                <option value="600" selected>10 minutos</option>
+                <option value="900">15 minutos</option>
+                <option value="3600">60 minutos</option>
+              </select>
+            </label>
+
+            <label style="font-size: 0.82rem; color: #cbd5e1;">Qtd. Períodos na Tela: 
+              <select class="custom-select" id="dspQtdPeriodos" onchange="onDispParamChange()" style="padding: 4px 8px; margin-left: 5px;">
+                <option value="2">2</option><option value="3" selected>3</option><option value="6">6</option>
+                <option value="12">12</option><option value="18">18</option><option value="24">24</option>
+              </select>
+            </label>
+          </div>
+
+          <canvas id="dispersaoCanvas" style="height: 400px; margin-top: 10px;"></canvas>
+
+          <!-- Slider de Deslocamento Temporal (Máquina do Tempo) -->
+          <div style="margin-top: 15px; background: #0f172a; padding: 12px 15px; border-radius: 6px; border: 1px solid #334155;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span style="font-size: 0.82rem; font-weight: bold; color: #38bdf8;" id="dspSliderLabel">Janela Ativa: --</span>
+              <span style="font-size: 0.78rem; color: #94a3b8;">Arraste para navegar no tempo &larr; &rarr;</span>
+            </div>
+            <input type="range" id="dspTimeSlider" min="0" max="0" value="0" step="1" oninput="onDispSliderInput(this.value)" style="width: 100%; accent-color: #38bdf8; cursor: pointer;">
+          </div>
         </div>
 
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 30px; border-top: 1px solid #334155; padding-top: 15px;">
@@ -249,6 +298,7 @@
   <script src="tab-vi.js"></script>
   <script src="tab-estrutura.js"></script>
   <script src="tab-eficiencia.js"></script>
+  <script src="tab-dispersao.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

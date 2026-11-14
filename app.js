@@ -110,7 +110,7 @@ async function checkGarminConnectionStatus() {
   }
 }
 
-// --- BANCO DE DADOS LOCAL (Compatível com v2 e v3) ---
+// --- BANCO DE DADOS LOCAL ---
 function initDB() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME);
@@ -319,12 +319,19 @@ function parseGarminJsonToActivity(data, fallbackId) {
 
 window.switchDashboardTab = function(tabId, el) {
   document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-  ['tableTab', 'ftpTab', 'zonesTab', 'pwrTimeTab', 'hrTimeTab', 'driftChartTab', 'viChartTab', 'structureVolTab'].forEach(id => {
-    document.getElementById(id).style.display = 'none';
+  ['tableTab', 'ftpTab', 'zonesTab', 'pwrTimeTab', 'hrTimeTab', 'driftChartTab', 'viChartTab', 'structureVolTab', 'eficienciaTab', 'dispersaoTab'].forEach(id => {
+    const sec = document.getElementById(id);
+    if (sec) sec.style.display = 'none';
   });
   el.classList.add('active');
-  document.getElementById(tabId).style.display = 'block';
-  if (document.getElementById(tabId).classList.contains('dynamic-tab')) updateDynamicCharts();
+  const targetSec = document.getElementById(tabId);
+  if (targetSec) targetSec.style.display = 'block';
+  
+  if (tabId === 'dispersaoTab') {
+    if (typeof initDispersaoTab === 'function') initDispersaoTab();
+  } else if (targetSec && targetSec.classList.contains('dynamic-tab')) {
+    updateDynamicCharts();
+  }
   if (tabId === 'ftpTab' || tabId === 'zonesTab') processGlobalMetrics();
 };
 
@@ -422,7 +429,6 @@ function parseStravaDate(str) {
   return isNaN(d.getTime()) ? new Date() : d;
 }
 
-// Leitura nativa de ficheiros FIT com suporte à velocidade oficial do sensor/GPS
 function parseFitNative(u8) {
   const view = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
   let offset = view.getUint8(0);
@@ -488,7 +494,7 @@ function parseFitNative(u8) {
               rec.speed = 0;
             }
           }
-          if (rec.speed > 130) rec.speed = 0; // Filtra spikes de GPS
+          if (rec.speed > 130) rec.speed = 0;
           if (lat !== 0 && lon !== 0) { prevLat = lat; prevLon = lon; }
           prevTime = rec.timestamp;
           prevDist = rec.distance;
@@ -503,12 +509,10 @@ function parseFitNative(u8) {
   return records;
 }
 
-// Cálculo fisiológico completo com delta de tempo real (dt) e pareamento Potência-FC
 function calculateMetrics(records) {
   if (!records || records.length === 0) return null;
   records.sort((a, b) => a.timestamp - b.timestamp);
 
-  // Remove timestamps duplicados
   const uniqueRecs = [];
   for (let i = 0; i < records.length; i++) {
     if (i === 0 || records[i].timestamp > records[i - 1].timestamp) {
@@ -522,7 +526,6 @@ function calculateMetrics(records) {
   const totalSecs = Math.max(1, endT - startT);
   const maxDist = uniqueRecs.reduce((max, r) => r.distance > max ? r.distance : max, 0);
 
-  // Verifica se o treino é outdoor (com deslocamento) ou rolo indoor
   const hasSpeedData = uniqueRecs.some(r => r.speed >= 3);
 
   let movingSecs = 0;
@@ -532,22 +535,19 @@ function calculateMetrics(records) {
 
   const pwrHist = {};
   const hrHist = {};
-  const pwrHrPairs = {}; // Guarda { [wattBucket]: { sumHr, secs } } para Assinatura Cardíaca exata
-
+  const pwrHrPairs = {};
   const movingSamples = [];
 
   for (let i = 0; i < uniqueRecs.length; i++) {
     const r = uniqueRecs[i];
-    // Calcula a duração real desta amostra (corrige Smart Recording do Garmin Edge)
     let dt = (i < uniqueRecs.length - 1) ? (uniqueRecs[i + 1].timestamp - r.timestamp) : 1;
     if (dt <= 0) dt = 1;
-    if (dt > 10) dt = 1; // Pausa de gravação / paragem no semáforo não infla zonas
+    if (dt > 10) dt = 1;
 
     const isMoving = hasSpeedData ? (r.speed >= 3) : (r.power > 0 || r.cad > 0 || r.hr > 90);
     if (!isMoving) continue;
 
     movingSecs += dt;
-    // Inclui os zeros em movimento (roda livre na descida/curva) na Potência Média!
     sumPwrDt += (r.power || 0) * dt;
     sumSpeedDt += (r.speed || 0) * dt;
 
@@ -566,7 +566,6 @@ function calculateMetrics(records) {
       pwrHist[pBucket] = (pwrHist[pBucket] || 0) + dt;
     }
 
-    // Assinatura Cardíaca: pareia Potência e FC segundo a segundo após os primeiros 5 min de inércia cardíaca
     const elapsed = r.timestamp - startT;
     if (r.power > 20 && r.hr >= 60 && r.hr < 225 && (elapsed >= 300 || totalSecs < 600)) {
       if (!pwrHrPairs[pBucket]) pwrHrPairs[pBucket] = { sumHr: 0, secs: 0 };
@@ -574,7 +573,7 @@ function calculateMetrics(records) {
       pwrHrPairs[pBucket].secs += dt;
     }
 
-    movingSamples.push({ elapsed, power: r.power || 0, hr: r.hr || 0, dt });
+    movingSamples.push({ elapsed, power: r.power || 0, hr: r.hr || 0, dt, timestamp: r.timestamp });
   }
 
   if (movingSecs === 0) return null;
@@ -584,7 +583,6 @@ function calculateMetrics(records) {
   const avgCad = cadSecs > 0 ? Math.round(sumCadDt / cadSecs) : 0;
   const avgSpeed = (sumSpeedDt / movingSecs).toFixed(1);
 
-  // Linha do tempo contínua de 1s interpolando Smart Recording (até 8s) e zerando pausas (>8s)
   let timeline = [];
   for (let i = 0; i < uniqueRecs.length - 1; i++) {
     const curr = uniqueRecs[i];
@@ -592,12 +590,11 @@ function calculateMetrics(records) {
     const fillPwr = gap <= 8 ? (curr.power || 0) : 0;
     for (let s = 0; s < gap; s++) {
       timeline.push(fillPwr);
-      if (timeline.length > 54000) break; // Limite de segurança de 15h
+      if (timeline.length > 54000) break;
     }
   }
   timeline.push(uniqueRecs[uniqueRecs.length - 1].power || 0);
 
-  // Potência Normalizada (NP)
   let np = avgPwr;
   if (timeline.length >= 30) {
     let rolling30 = [], sumPwr = 0;
@@ -613,7 +610,6 @@ function calculateMetrics(records) {
   }
   const vi = avgPwr > 0 ? parseFloat((np / avgPwr).toFixed(2)) : 0;
 
-  // Deteção informativa de blocos (>= 5 min com Coeficiente de Variação < 15%)
   let blocksCount = 0;
   let skipUntil = 0;
   for (let i = 0; i <= timeline.length - 300; i += 15) {
@@ -632,7 +628,6 @@ function calculateMetrics(records) {
     }
   }
 
-  // Top 4 esforços de 4 minutos (240s)
   let top4 = [];
   const windowSize = 240;
   if (timeline.length >= windowSize) {
@@ -653,7 +648,6 @@ function calculateMetrics(records) {
     }
   }
 
-  // MMP20: Exige pelo menos 20 minutos (1200s) reais de atividade!
   let mmp20 = 0;
   if (timeline.length >= 1200) {
     let sum = 0;
@@ -666,7 +660,6 @@ function calculateMetrics(records) {
     mmp20 = Math.round(max20m);
   }
 
-  // Cardiac Drift (Pa:Hr): Calculado após os primeiros 5 min de aquecimento
   let drift = null;
   const steadySamples = movingSamples.filter(s => s.elapsed >= 300 && s.hr > 60 && s.power > 20);
   const steadySecs = steadySamples.reduce((a, s) => a + s.dt, 0);
@@ -689,17 +682,15 @@ function calculateMetrics(records) {
     if (ef1 > 0 && ef2 > 0) drift = ((ef1 - ef2) / ef1) * 100;
   }
 
-  // Elegibilidade fisiológica do Drift para o gráfico de evolução (mín. 30 min em movimento e ritmo constante VI <= 1.12)
   const driftEligible = (movingSecs >= 1800 && vi > 0 && vi <= 1.12 && drift !== null && Math.abs(drift) <= 25);
 
   return {
     totalSecs, movingSecs, distKm: (maxDist / 1000).toFixed(2),
     avgPwr, avgHr, avgCad, avgSpeed, top4, drift, driftEligible, mmp20,
-    pwrHist, hrHist, pwrHrPairs, np, vi, blocksCount
+    pwrHist, hrHist, pwrHrPairs, np, vi, blocksCount, movingSamples
   };
 }
 
-// Evolução de FTP com retenção fisiológica (evita quedas abruptas quando não há testes máximos de 20m)
 function processGlobalMetrics() {
   dbActivities.sort((a, b) => a.dateObj - b.dateObj); 
   const daysWindow = 42;
@@ -743,6 +734,7 @@ function updateDynamicCharts() {
   renderDriftChart();
   renderViChart();
   renderStructureVolChart();
+  if (typeof updateDispersaoChart === 'function') updateDispersaoChart();
 }
 
 function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) { const R = 6371; const dLat = (lat2 - lat1) * (Math.PI/180), dLon = (lon2 - lon1) * (Math.PI/180); const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * (Math.PI/180)) * Math.cos(lat2 * (Math.PI/180)) * Math.sin(dLon/2) * Math.sin(dLon/2); return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))); }

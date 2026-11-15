@@ -213,11 +213,13 @@
           <div class="section-header">
             <h3 style="color: #a78bfa;">Estudo de Dispersão Avançada (Watt vs. BPM)</h3>
           </div>
-          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0; line-height: 1.45;">Compare diretamente os períodos selecionados (gradiente cronológico do roxo/azul mais antigo ao verde/amarelo mais recente, com linha de tendência própria e estimativa de FC a 200W para cada período).</p>
+          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0; line-height: 1.45;">Compare diretamente os períodos selecionados (resolução de 1W e 1BPM, com linha de tendência própria para cada período e controle deslizante histórico).</p>
           
           <div style="display: flex; gap: 15px; flex-wrap: wrap; background: #0f172a; padding: 12px 15px; border-radius: 6px; border: 1px solid #334155; margin: 15px 0; align-items: center;">
             <label style="font-size: 0.82rem; color: #cbd5e1;">Agrupamento: 
               <select class="custom-select" id="dspAgrupamento" onchange="onDispParamChange()" style="padding: 4px 8px; margin-left: 5px;">
+                <option value="dia">Diário</option>
+                <option value="semana">Semanal</option>
                 <option value="quinzena">Quinzenal</option>
                 <option value="mes" selected>Mensal</option>
                 <option value="trimestre">Trimestral</option>
@@ -228,29 +230,29 @@
 
             <label style="font-size: 0.82rem; color: #cbd5e1;">Intervalo do Ponto: 
               <select class="custom-select" id="dspJanelaPonto" onchange="onDispParamChange()" style="padding: 4px 8px; margin-left: 5px;">
+                <option value="5">5 segundos</option>
                 <option value="15">15 segundos</option>
                 <option value="60">1 minuto</option>
-                <option value="300">5 minutos</option>
-                 <option value="600" selected>10 minutos</option>
-  <option value="900">15 minutos</option>
-  <option value="3600">60 minutos</option>
+                <option value="300" selected>5 minutos</option>
+                <option value="600">10 minutos</option>
+                <option value="900">15 minutos</option>
+                <option value="3600">60 minutos</option>
               </select>
             </label>
 
             <label style="font-size: 0.82rem; color: #cbd5e1;">Qtd. Períodos na Tela: 
               <select class="custom-select" id="dspQtdPeriodos" onchange="onDispParamChange()" style="padding: 4px 8px; margin-left: 5px;">
-                <option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="5">5</option>
-                <option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option>
-                <option value="10">10</option><option value="11">11</option><option value="12">12</option><option value="13">13</option>
-                <option value="14">14</option><option value="15">15</option><option value="16">16</option><option value="17">17</option>
-                <option value="18">18</option><option value="19">19</option><option value="20">20</option><option value="21">21</option>
-                <option value="22">22</option><option value="23">23</option><option value="24">24</option>
+                <option value="1">1</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option>
+                <option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option>
+                <option value="9">9</option><option value="10">10</option><option value="11">11</option><option value="12">12</option>
+                <option value="13">13</option><option value="14">14</option><option value="15">15</option><option value="16">16</option>
+                <option value="17">17</option><option value="18">18</option><option value="19">19</option><option value="20">20</option>
+                <option value="21">21</option><option value="22">22</option><option value="23">23</option><option value="24">24</option>
               </select>
             </label>
           </div>
 
-          <!-- Legenda Dinâmica dos Períodos Comparados -->
-          <div id="dspLegendContainer" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px;"></div>
+          <div id="dspLegendContainer" style="display: none;"></div>
 
           <canvas id="dispersaoCanvas" style="height: 420px; margin-top: 5px;"></canvas>
 

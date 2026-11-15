@@ -1,9 +1,8 @@
-// Módulo de Dispersão Avançada: Cores de Alto Contraste e Legenda Interna no Canto Superior Esquerdo
+// Módulo de Dispersão Avançada: 1 a 24 Períodos, Intervalos de 5s a 60m, Agrupamento Diário a Anual
 let dispAllBlocks = [];
 let dispUniquePeriods = [];
 let dispCurrentSliderIndex = 0;
 
-// Paleta de alto contraste para diferenciar claramente cada período
 const DISTINCT_COLORS = [
   [56, 189, 248],   // Azul Claro (Sky)
   [249, 115, 22],   // Laranja Vivo
@@ -34,7 +33,7 @@ window.onDispSliderInput = function(val) {
 
 function processDispersaoData() {
   const agrupamento = document.getElementById('dspAgrupamento')?.value || 'mes';
-  const janelaSecs = parseInt(document.getElementById('dspJanelaPonto')?.value || '600', 10);
+  const janelaSecs = parseInt(document.getElementById('dspJanelaPonto')?.value || '300', 10);
 
   dispAllBlocks = [];
   const periodMap = new Set();
@@ -51,21 +50,6 @@ function processDispersaoData() {
         if (p >= 40 && h >= 50 && h <= 225) {
           dispAllBlocks.push({ x: p, y: h, periodKey: pKey });
           periodMap.add(pKey);
-        }
-      }
-    } else if (act.metrics.pwrHrPairs) {
-      for (const pStr in act.metrics.pwrHrPairs) {
-        const p = parseInt(pStr, 10);
-        const pair = act.metrics.pwrHrPairs[pStr];
-        if (p >= 40 && pair && pair.secs >= janelaSecs) {
-          const numBlocos = Math.floor(pair.secs / janelaSecs);
-          const avgHr = Math.round(pair.sumHr / pair.secs);
-          if (avgHr >= 50 && avgHr <= 225) {
-            for (let k = 0; k < numBlocos; k++) {
-              dispAllBlocks.push({ x: p, y: avgHr, periodKey: pKey });
-            }
-            periodMap.add(pKey);
-          }
         }
       }
     }
@@ -90,10 +74,9 @@ function processDispersaoData() {
   renderDispersaoChart();
 }
 
-// Retorna cor de alto contraste; o período mais recente da janela é sempre Verde Limão (#22c55e)
 function getDistinctPeriodColor(idx, total, alpha = 1) {
   if (idx === total - 1) {
-    return `rgba(34, 197, 94, ${alpha})`; // Verde destaque para o último período da janela
+    return `rgba(34, 197, 94, ${alpha})`; // Verde destaque para o período único ou mais recente da janela
   }
   const rgb = DISTINCT_COLORS[idx % DISTINCT_COLORS.length];
   return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha})`;
@@ -107,7 +90,6 @@ function renderDispersaoChart() {
   canvas.width = w; canvas.height = h;
   ctx.clearRect(0, 0, w, h);
 
-  // Limpa eventual container HTML externo se existir
   const legendBox = document.getElementById('dspLegendContainer');
   if (legendBox) legendBox.innerHTML = '';
 
@@ -115,7 +97,7 @@ function renderDispersaoChart() {
   
   if (dispUniquePeriods.length === 0 || dispAllBlocks.length === 0) {
     ctx.fillStyle = '#94a3b8'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText('Nenhum ponto encontrado para este intervalo.', w / 2, h / 2);
+    ctx.fillText('Nenhum ponto encontrado. Para habilitar 5 segundos no histórico Strava, clique em "+ Importar / Recalcular ZIP do Strava".', w / 2, h / 2);
     return;
   }
 
@@ -142,7 +124,11 @@ function renderDispersaoChart() {
 
   const sliderLabel = document.getElementById('dspSliderLabel');
   if (sliderLabel) {
-    sliderLabel.innerText = `Janela Ativa: ${activePeriods[0]} até ${activePeriods[activePeriods.length - 1]} (${activePeriods.length} períodos | ${totalActivePts} pontos)`;
+    if (activePeriods.length === 1) {
+      sliderLabel.innerText = `Período Ativo: ${activePeriods[0]} (1 período | ${totalActivePts} pontos)`;
+    } else {
+      sliderLabel.innerText = `Janela Ativa: ${activePeriods[0]} até ${activePeriods[activePeriods.length - 1]} (${activePeriods.length} períodos | ${totalActivePts} pontos)`;
+    }
   }
 
   const padL = 50, padR = 20, padT = 20, padB = 40;
@@ -167,7 +153,7 @@ function renderDispersaoChart() {
     ctx.fillText(`${p}W`, x, h - padB + 15);
   }
 
-  // 1. Desenha os micro-pontos de cada período com cores contrastantes
+  // 1. Desenha os micro-pontos de cada período
   activePeriods.forEach((pKey, idx) => {
     const pts = periodGroups[pKey];
     const isLatest = (idx === activePeriods.length - 1);
@@ -222,16 +208,15 @@ function renderDispersaoChart() {
   });
   ctx.restore();
 
-  // 3. Legenda Discreta no Canto Superior Esquerdo do Canvas (organizada em colunas se houver muitos períodos)
+  // 3. Legenda Discreta no Canto Superior Esquerdo do Canvas
   const maxRowsPerCol = 8;
   const numCols = Math.ceil(activePeriods.length / maxRowsPerCol);
-  const colWidth = 148;
+  const colWidth = 152;
   const rowHeight = 15;
   const rowsInBox = Math.min(activePeriods.length, maxRowsPerCol);
   const boxW = numCols * colWidth + 10;
   const boxH = rowsInBox * rowHeight + 10;
 
-  // Fundo escuro translúcido discreto atrás da legenda para garantir leitura
   ctx.fillStyle = 'rgba(15, 23, 42, 0.82)';
   ctx.strokeStyle = '#334155';
   ctx.lineWidth = 1;
@@ -249,7 +234,6 @@ function renderDispersaoChart() {
     const lx = padL + 15 + col * colWidth;
     const ly = padT + 19 + row * rowHeight;
 
-    // Traço colorido identificador
     ctx.strokeStyle = solidColor;
     ctx.lineWidth = isLatest ? 2.8 : 2;
     if (!isLatest) ctx.setLineDash([3, 2]); else ctx.setLineDash([]);
@@ -259,7 +243,6 @@ function renderDispersaoChart() {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Texto do período + número de pontos
     ctx.fillStyle = isLatest ? '#f8fafc' : '#cbd5e1';
     ctx.font = isLatest ? 'bold 10.5px sans-serif' : '10.5px sans-serif';
     ctx.fillText(`${pKey} (${ptsCount} pts)`, lx + 21, ly);

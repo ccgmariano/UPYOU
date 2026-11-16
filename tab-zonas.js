@@ -1,22 +1,13 @@
-// Abas 4 e 5: Tempo por Zona de Potência (Coggan Z1-Z7) e Tempo por Zona Cardíaca (Coggan Z1-Z5 via LTHR estimada)
+// Abas 4 e 5: Tempo por Zona de Potência (Coggan Z1-Z7) e Tempo por Zona Cardíaca (Coggan Z1-Z5 via LTHR de Janela Móvel 42 Dias - 100% MHR20)
+
 window.getEstimatedLthr = function() {
-  let sumHr = 0, totSec = 0;
-  if (typeof dbActivities !== 'undefined') {
-    dbActivities.forEach(act => {
-      if (!act.metrics || !act.currentFtp || !act.metrics.pwrHrPairs) return;
-      for (const pStr in act.metrics.pwrHrPairs) {
-        const ratio = parseInt(pStr, 10) / act.currentFtp;
-        if (ratio > 0.90 && ratio <= 1.05) {
-          sumHr += act.metrics.pwrHrPairs[pStr].sumHr;
-          totSec += act.metrics.pwrHrPairs[pStr].secs;
-        }
-      }
-    });
-  }
   const maxHr = typeof userMaxHr !== 'undefined' ? userMaxHr : 187;
-  if (totSec > 300) {
-    const z4Hr = Math.round(sumHr / totSec);
-    if (z4Hr >= Math.round(maxHr * 0.78) && z4Hr <= Math.round(maxHr * 0.96)) return z4Hr;
+  if (typeof dbActivities !== 'undefined' && dbActivities.length > 0) {
+    for (let i = dbActivities.length - 1; i >= 0; i--) {
+      if (dbActivities[i].currentLthr && dbActivities[i].currentLthr >= 130) {
+        return dbActivities[i].currentLthr;
+      }
+    }
   }
   return Math.round(maxHr * 0.90);
 };
@@ -24,18 +15,17 @@ window.getEstimatedLthr = function() {
 function renderStackedZonesChart(type) {
   const period = document.querySelector('.time-filter').value;
   const canvas = document.getElementById(type === 'pwr' ? 'pwrTimeCanvas' : 'hrTimeCanvas');
+  if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  const w = canvas.offsetWidth || 900, h = 400; canvas.width = w; canvas.height = h; ctx.clearRect(0, 0, w, h);
+  const w = canvas.offsetWidth || 900, h = 400;
+  canvas.width = w; canvas.height = h;
+  ctx.clearRect(0, 0, w, h);
 
-  const lthr = window.getEstimatedLthr();
-  const z1Lim = Math.round(lthr * 0.68);
-  const z2Lim = Math.round(lthr * 0.83);
-  const z3Lim = Math.round(lthr * 0.94);
-  const z4Lim = Math.round(lthr * 1.05);
+  const latestLthr = window.getEstimatedLthr();
 
   const sub = document.getElementById('hrZoneSubtitle');
   if (sub) {
-    sub.innerText = `Alinhado a Andrew Coggan via LTHR estimada (${lthr} bpm a partir da FC Máx de ${userMaxHr} bpm). Eixo vertical = Horas Absolutas.`;
+    sub.innerText = `Alinhado a Andrew Coggan via LTHR Dinâmica (Janela 42d 100% MMP20-FC | Atual: ${latestLthr} bpm | FC Máx: ${userMaxHr} bpm). Eixo vertical = Horas Absolutas.`;
   }
 
   const groups = {};
@@ -57,6 +47,12 @@ function renderStackedZonesChart(type) {
         groups[key].total += sec;
       }
     } else {
+      const actLthr = act.currentLthr || latestLthr;
+      const z1Lim = Math.round(actLthr * 0.68);
+      const z2Lim = Math.round(actLthr * 0.83);
+      const z3Lim = Math.round(actLthr * 0.94);
+      const z4Lim = Math.round(actLthr * 1.05);
+
       for (let hrStr in act.metrics.hrHist) {
         const sec = act.metrics.hrHist[hrStr], hr = parseInt(hrStr, 10);
         if (hr <= z1Lim) groups[key].Z1 += sec;
@@ -69,18 +65,24 @@ function renderStackedZonesChart(type) {
     }
   });
 
-  const sortedKeys = Object.keys(groups).sort(); if (sortedKeys.length === 0) return;
-  let maxTotalSec = 0; sortedKeys.forEach(k => { if (groups[k].total > maxTotalSec) maxTotalSec = groups[k].total; });
+  const sortedKeys = Object.keys(groups).sort();
+  if (sortedKeys.length === 0) return;
+  let maxTotalSec = 0;
+  sortedKeys.forEach(k => { if (groups[k].total > maxTotalSec) maxTotalSec = groups[k].total; });
   if (maxTotalSec === 0) return;
+
   const padL = 50, padR = 20, padT = 20, padB = 40;
   const drawW = w - padL - padR, drawH = h - padT - padB;
   const barW = Math.max(8, (drawW / sortedKeys.length) - 4);
   const maxHours = maxTotalSec / 3600;
-  let step = maxHours > 100 ? 20 : (maxHours > 50 ? 10 : (maxHours > 20 ? 5 : (maxHours > 5 ? 2 : 1))); if (step === 0) step = 1;
+  let step = maxHours > 100 ? 20 : (maxHours > 50 ? 10 : (maxHours > 20 ? 5 : (maxHours > 5 ? 2 : 1)));
+  if (step === 0) step = 1;
 
   ctx.strokeStyle = '#334155'; ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
   for (let i = 0; i <= maxHours; i += step) {
-    const y = padT + drawH - (i / maxHours) * drawH; ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke(); ctx.fillText(`${i}h`, padL - 5, y + 3);
+    const y = padT + drawH - (i / maxHours) * drawH;
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+    ctx.fillText(`${i}h`, padL - 5, y + 3);
   }
 
   const colors = type === 'pwr'
@@ -91,14 +93,19 @@ function renderStackedZonesChart(type) {
   sortedKeys.forEach((k, idx) => {
     const g = groups[k], x = padL + idx * (drawW / sortedKeys.length) + (drawW / sortedKeys.length - barW) / 2;
     let currentY = padT + drawH;
-    if (sortedKeys.length < 35 || idx % Math.ceil(sortedKeys.length/20) === 0) { ctx.fillStyle = '#94a3b8'; ctx.textAlign = 'center'; ctx.fillText(k, x + barW/2, h - 15); }
+    if (sortedKeys.length < 35 || idx % Math.ceil(sortedKeys.length / 20) === 0) {
+      ctx.fillStyle = '#94a3b8'; ctx.textAlign = 'center'; ctx.fillText(k, x + barW / 2, h - 15);
+    }
 
     const zones = type === 'pwr' ? ['Z1','Z2','Z3','Z4','Z5','Z6','Z7'] : ['Z1','Z2','Z3','Z4','Z5'];
     let barData = { key: k, total: g.total, zones: {} };
     zones.forEach(z => {
       if (g[z] > 0) {
-        const zoneH = (g[z] / 3600) / maxHours * drawH; ctx.fillStyle = colors[z]; ctx.fillRect(x, currentY - zoneH, barW, zoneH);
-        currentY -= zoneH; barData.zones[z] = { hours: (g[z]/3600).toFixed(1), pct: ((g[z]/g.total)*100).toFixed(1) + '%' };
+        const zoneH = (g[z] / 3600) / maxHours * drawH;
+        ctx.fillStyle = colors[z];
+        ctx.fillRect(x, currentY - zoneH, barW, zoneH);
+        currentY -= zoneH;
+        barData.zones[z] = { hours: (g[z] / 3600).toFixed(1), pct: ((g[z] / g.total) * 100).toFixed(1) + '%' };
       }
     });
     canvas.chartHitboxes.push({ x, y: padT, w: barW, h: drawH, data: barData, type: 'zone' });

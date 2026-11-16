@@ -1,4 +1,4 @@
-// Núcleo Principal (IndexedDB UpYouDB, Leitor Nativo FIT/ZIP Strava, Sincronização Garmin e Janelas de Dispersão 5s a 60m em 1W/1BPM)
+// Núcleo Principal (IndexedDB UpYouDB, Leitor Nativo FIT/ZIP Strava, Sincronização Garmin, Janelas de Dispersão 5s-60m e LTHR Móvel 42d)
 let dbActivities = [];
 let currentUserId = null;
 let currentUserName = "";
@@ -40,14 +40,21 @@ window.updateUserMaxHr = function(val) {
   if (parsed >= 120 && parsed <= 230) {
     userMaxHr = parsed;
     if (currentUserId) localStorage.setItem(`upyou_maxhr_${currentUserId}`, userMaxHr);
-    updateHrSubtitle();
-    if (dbActivities.length > 0) updateDynamicCharts();
+    if (dbActivities.length > 0) {
+      processGlobalMetrics();
+      updateDynamicCharts();
+    } else {
+      updateHrSubtitle();
+    }
   }
 };
 
 function updateHrSubtitle() {
   const sub = document.getElementById('hrZoneSubtitle');
-  if (sub) sub.innerText = `Zonas baseadas na sua FC Máxima configurada (${userMaxHr} bpm). Eixo vertical = Horas Absolutas.`;
+  if (sub) {
+    const lthr = typeof window.getEstimatedLthr === 'function' ? window.getEstimatedLthr() : Math.round(userMaxHr * 0.90);
+    sub.innerText = `Alinhado a Andrew Coggan via LTHR Dinâmica (Janela 42d 100% MMP20-FC | Atual: ${lthr} bpm | FC Máx: ${userMaxHr} bpm). Eixo vertical = Horas Absolutas.`;
+  }
 }
 
 // --- SISTEMA DE LOGIN GOOGLE ---
@@ -198,8 +205,9 @@ async function syncWithGarminCloud() {
     for (const item of cloudList) {
       if (!item.id || item.id === 'dados') continue;
       const existingIdx = dbActivities.findIndex(a => String(a.garminId) === String(item.id));
-      const hasFullDisp = existingIdx !== -1 && dbActivities[existingIdx].metrics && dbActivities[existingIdx].metrics.dispWindows && dbActivities[existingIdx].metrics.dispWindows[5] !== undefined;
-      if (existingIdx === -1 || !dbActivities[existingIdx].metrics.pwrHrPairs || !hasFullDisp) {
+      const m = existingIdx !== -1 ? dbActivities[existingIdx].metrics : null;
+      const hasFullDisp = m && m.dispWindows && m.dispWindows[5] !== undefined && m.mhr20 !== undefined;
+      if (existingIdx === -1 || !m || !m.pwrHrPairs || !hasFullDisp) {
         const detailRes = await fetch(`${GARMIN_API_URL}?google_id=${encodeURIComponent(currentUserId)}&id=${encodeURIComponent(item.id)}`);
         if (detailRes.ok) {
           const garminJson = await detailRes.json();
@@ -292,7 +300,9 @@ function parseGarminJsonToActivity(data, fallbackId) {
     const avgCad = Math.round(summary.averageBikeCadenceInRoundsPerMinute || 0);
     metrics = {
       totalSecs, movingSecs: totalSecs, distKm, avgPwr, avgHr, avgCad, avgSpeed,
-      top4: [], drift: null, driftEligible: false, mmp20: totalSecs >= 1200 ? avgPwr : 0,
+      top4: [], drift: null, driftEligible: false,
+      mmp20: totalSecs >= 1200 ? avgPwr : 0,
+      mhr20: totalSecs >= 1200 ? avgHr : 0,
       pwrHist: {}, hrHist: {}, pwrHrPairs: {}, dispWindows: { 5: [], 15: [], 60: [], 300: [], 600: [], 900: [], 3600: [] },
       np: avgPwr, vi: avgPwr > 0 ? 1.0 : 0, blocksCount: 0
     };
@@ -609,16 +619,21 @@ function calculateMetrics(records) {
   const avgSpeed = (sumSpeedDt / movingSecs).toFixed(1);
 
   let timeline = [];
+  let hrTimeline = [];
   for (let i = 0; i < uniqueRecs.length - 1; i++) {
     const curr = uniqueRecs[i];
     const gap = uniqueRecs[i + 1].timestamp - curr.timestamp;
     const fillPwr = gap <= 8 ? (curr.power || 0) : 0;
+    const fillHr = (gap <= 12 && curr.hr > 45 && curr.hr < 230) ? curr.hr : 0;
     for (let s = 0; s < gap; s++) {
       timeline.push(fillPwr);
+      hrTimeline.push(fillHr);
       if (timeline.length > 54000) break;
     }
   }
-  timeline.push(uniqueRecs[uniqueRecs.length - 1].power || 0);
+  const lastRec = uniqueRecs[uniqueRecs.length - 1];
+  timeline.push(lastRec.power || 0);
+  hrTimeline.push((lastRec.hr > 45 && lastRec.hr < 230) ? lastRec.hr : 0);
 
   let np = avgPwr;
   if (timeline.length >= 30) {
@@ -685,6 +700,25 @@ function calculateMetrics(records) {
     mmp20 = Math.round(max20m);
   }
 
+  // Maior FC média contínua de 20 minutos (mhr20 - exige pelo menos 90% das amostras válidas na janela de 1200s)
+  let mhr20 = 0;
+  if (hrTimeline.length >= 1200) {
+    let sumH = 0, validH = 0;
+    for (let i = 0; i < 1200; i++) {
+      if (hrTimeline[i] > 0) { sumH += hrTimeline[i]; validH++; }
+    }
+    let maxHr20 = validH >= 1080 ? (sumH / validH) : 0;
+    for (let i = 1200; i < hrTimeline.length; i++) {
+      if (hrTimeline[i - 1200] > 0) { sumH -= hrTimeline[i - 1200]; validH--; }
+      if (hrTimeline[i] > 0) { sumH += hrTimeline[i]; validH++; }
+      if (validH >= 1080) {
+        const avg20 = sumH / validH;
+        if (avg20 > maxHr20) maxHr20 = avg20;
+      }
+    }
+    mhr20 = Math.round(maxHr20);
+  }
+
   let drift = null;
   const steadySamples = movingSamples.filter(s => s.elapsed >= 300 && s.hr > 60 && s.power > 20);
   const steadySecs = steadySamples.reduce((a, s) => a + s.dt, 0);
@@ -711,9 +745,43 @@ function calculateMetrics(records) {
 
   return {
     totalSecs, movingSecs, distKm: (maxDist / 1000).toFixed(2),
-    avgPwr, avgHr, avgCad, avgSpeed, top4, drift, driftEligible, mmp20,
+    avgPwr, avgHr, avgCad, avgSpeed, top4, drift, driftEligible, mmp20, mhr20,
     pwrHist, hrHist, pwrHrPairs, dispWindows, np, vi, blocksCount
   };
+}
+
+// Extrai o melhor bloco contínuo de 20min de FC de uma atividade (usa mhr20 nativo ou reconstrói a partir de dispWindows se vier de cache antigo)
+function getActivityBest20MinHr(act) {
+  if (!act || !act.metrics) return 0;
+  const m = act.metrics;
+  if (m.mhr20 && m.mhr20 >= 135) return m.mhr20;
+
+  if ((m.totalSecs || 0) < 1200 && (m.movingSecs || 0) < 1200) return 0;
+
+  // Fallback instantâneo para atividades que já estão no banco local com dispWindows (sem precisar reimportar o ZIP)
+  if (m.dispWindows) {
+    if (m.dispWindows[300] && m.dispWindows[300].length >= 4) {
+      const arr = m.dispWindows[300];
+      let best = 0;
+      for (let i = 0; i <= arr.length - 4; i++) {
+        const avg4 = (arr[i][1] + arr[i+1][1] + arr[i+2][1] + arr[i+3][1]) / 4;
+        if (avg4 > best) best = avg4;
+      }
+      if (best >= 135) return Math.round(best);
+    }
+    if (m.dispWindows[60] && m.dispWindows[60].length >= 20) {
+      const arr = m.dispWindows[60];
+      let sum = 0;
+      for (let i = 0; i < 20; i++) sum += arr[i][1];
+      let best = sum / 20;
+      for (let i = 20; i < arr.length; i++) {
+        sum = sum - arr[i - 20][1] + arr[i][1];
+        if (sum / 20 > best) best = sum / 20;
+      }
+      if (best >= 135) return Math.round(best);
+    }
+  }
+  return 0;
 }
 
 function processGlobalMetrics() {
@@ -722,32 +790,52 @@ function processGlobalMetrics() {
   let ftpHistory = [];
 
   let firstValidMmp20 = 0;
+  let firstValidMhr20 = 0;
   for (const a of dbActivities) {
-    if (a.metrics && a.metrics.mmp20 >= 100) { firstValidMmp20 = a.metrics.mmp20; break; }
+    if (!firstValidMmp20 && a.metrics && a.metrics.mmp20 >= 100) firstValidMmp20 = a.metrics.mmp20;
+    const h20 = getActivityBest20MinHr(a);
+    if (!firstValidMhr20 && h20 >= 140) firstValidMhr20 = h20;
+    if (firstValidMmp20 && firstValidMhr20) break;
   }
+
   let rollingFtp = firstValidMmp20 > 0 ? Math.round(firstValidMmp20 * 0.95) : 200;
+  let rollingLthr = firstValidMhr20 > 0 ? Math.round(firstValidMhr20) : Math.round(userMaxHr * 0.89);
 
   for (let i = 0; i < dbActivities.length; i++) {
     const curr = dbActivities[i];
     const minDate = new Date(curr.dateObj.getTime() - (daysWindow * 86400000));
     const windowActs = dbActivities.filter(a => a.dateObj >= minDate && a.dateObj <= curr.dateObj);
     
+    // 1. FTP Móvel (95% da MMP20 nos últimos 42 dias)
     const validMmps = windowActs
       .filter(a => a.metrics && (a.metrics.totalSecs >= 1200 || !a.metrics.movingSecs) && a.metrics.mmp20 >= 100)
       .map(a => a.metrics.mmp20);
 
     const windowBestFtp = validMmps.length > 0 ? Math.round(Math.max(...validMmps) * 0.95) : 0;
 
+    // 2. LTHR Móvel (100% da maior média contínua de 20 minutos de FC nos últimos 42 dias)
+    const validMhrs = windowActs
+      .map(a => getActivityBest20MinHr(a))
+      .filter(h => h >= 140 && h <= Math.round(userMaxHr * 0.98));
+
+    const windowBestLthr = validMhrs.length > 0 ? Math.round(Math.max(...validMhrs)) : 0;
+
     if (i > 0) {
       const daysDiff = Math.max(0, (curr.dateObj - dbActivities[i - 1].dateObj) / 86400000);
-      const decayedPrev = Math.round(rollingFtp * Math.pow(0.9993, daysDiff));
-      rollingFtp = Math.max(windowBestFtp, decayedPrev, 120);
-    } else if (windowBestFtp > 0) {
-      rollingFtp = windowBestFtp;
+      const decayedPrevFtp = Math.round(rollingFtp * Math.pow(0.9993, daysDiff));
+      rollingFtp = Math.max(windowBestFtp, decayedPrevFtp, 120);
+
+      // Retenção fisiológica da LTHR (decaimento suave até o piso de 84% da FC Máx em hiatos longos)
+      const decayedPrevLthr = Math.round(rollingLthr * Math.pow(0.9998, daysDiff));
+      rollingLthr = Math.max(windowBestLthr, decayedPrevLthr, Math.round(userMaxHr * 0.84));
+    } else {
+      if (windowBestFtp > 0) rollingFtp = windowBestFtp;
+      if (windowBestLthr > 0) rollingLthr = windowBestLthr;
     }
     
     curr.currentFtp = rollingFtp;
-    ftpHistory.push({ date: curr.dateObj, ftp: rollingFtp });
+    curr.currentLthr = rollingLthr;
+    ftpHistory.push({ date: curr.dateObj, ftp: rollingFtp, lthr: rollingLthr });
   }
   renderFtpChart(ftpHistory);
   renderDynamicZones();

@@ -320,7 +320,7 @@ function parseGarminJsonToActivity(data, fallbackId) {
 
 window.switchDashboardTab = function(tabId, el) {
   document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-  ['tableTab', 'ftpTab', 'zonesTab', 'pwrTimeTab', 'hrTimeTab', 'driftChartTab', 'viChartTab', 'structureVolTab', 'eficienciaTab', 'dispersaoTab'].forEach(id => {
+  ['tableTab', 'ftpTab', 'zonesTab', 'pwrTimeTab', 'hrTimeTab', 'driftChartTab', 'viChartTab', 'structureVolTab', 'eficienciaTab', 'dispersaoTab', 'isoPotenciaTab'].forEach(id => {
     const sec = document.getElementById(id);
     if (sec) sec.style.display = 'none';
   });
@@ -330,6 +330,8 @@ window.switchDashboardTab = function(tabId, el) {
   
   if (tabId === 'dispersaoTab') {
     if (typeof initDispersaoTab === 'function') initDispersaoTab();
+  } else if (tabId === 'isoPotenciaTab') {
+    if (typeof initIsoPotenciaTab === 'function') initIsoPotenciaTab();
   } else if (targetSec && targetSec.classList.contains('dynamic-tab')) {
     updateDynamicCharts();
   }
@@ -590,8 +592,8 @@ function calculateMetrics(records) {
         sHr += s.hr * s.dt;
         accDt += s.dt;
         if (accDt >= wSize) {
-          const avgP = Math.round(sPwr / accDt); // Precisão de 1 Watt
-          const avgH = Math.round(sHr / accDt);  // Precisão de 1 BPM
+          const avgP = Math.round(sPwr / accDt);
+          const avgH = Math.round(sHr / accDt);
           if (avgP >= 40 && avgH >= 50 && avgH <= 225) {
             dispWindows[wSize].push([avgP, avgH]);
           }
@@ -759,6 +761,7 @@ function updateDynamicCharts() {
   renderStructureVolChart();
   if (typeof renderEficienciaChart === 'function') renderEficienciaChart();
   if (typeof updateDispersaoChart === 'function') updateDispersaoChart();
+  if (typeof renderIsoPotenciaChart === 'function') renderIsoPotenciaChart();
 }
 
 function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) { const R = 6371; const dLat = (lat2 - lat1) * (Math.PI/180), dLon = (lon2 - lon1) * (Math.PI/180); const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * (Math.PI/180)) * Math.cos(lat2 * (Math.PI/180)) * Math.sin(dLon/2) * Math.sin(dLon/2); return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))); }

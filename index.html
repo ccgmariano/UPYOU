@@ -89,6 +89,7 @@
           <button class="tab-btn" style="border-color: #8b5cf6;" onclick="switchDashboardTab('structureVolTab', this)">Volume de Estrutura</button>
           <button class="tab-btn" onclick="switchDashboardTab('eficienciaTab', this)">Estudo de Eficiência (Pa:Hr)</button>
           <button class="tab-btn tab-green" onclick="switchDashboardTab('dispersaoTab', this)">Dispersão Avançada</button>
+          <button class="tab-btn" style="border-color: #06b6d4; color: #38bdf8;" onclick="switchDashboardTab('isoPotenciaTab', this)">Evolução Iso-Potência</button>
         </div>
 
         <div id="tableTab" style="display: block;">
@@ -266,6 +267,62 @@
           </div>
         </div>
 
+        <!-- NOVA ABA: Evolução Histórica Iso-Potência (Conceito 1) -->
+        <div id="isoPotenciaTab" style="display: none;" class="dynamic-tab">
+          <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <h3 style="color: #38bdf8; margin: 0;">Evolução Histórica de Desempenho (Custo Cardíaco Fixo)</h3>
+            <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+              <label style="font-size: 0.8rem; color: #cbd5e1;">Agrupamento:
+                <select class="custom-select" id="isoAgrupamento" onchange="renderIsoPotenciaChart()" style="padding: 4px 8px; margin-left: 4px;">
+                  <option value="quinzena">Quinzenal</option>
+                  <option value="mes">Mensal</option>
+                  <option value="trimestre" selected>Trimestral</option>
+                  <option value="semestre">Semestral</option>
+                  <option value="ano">Anual</option>
+                </select>
+              </label>
+              <label style="font-size: 0.8rem; color: #cbd5e1;">Amostra da Regressão:
+                <select class="custom-select" id="isoJanelaPonto" onchange="renderIsoPotenciaChart()" style="padding: 4px 8px; margin-left: 4px;">
+                  <option value="5">5 segundos</option>
+                  <option value="15" selected>15 segundos</option>
+                  <option value="60">1 minuto</option>
+                  <option value="300">5 minutos</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 6px; line-height: 1.45;">Evolução da Frequência Cardíaca estimada pela regressão linear de cada período para <strong>3 potências fixas personalizáveis</strong> (barras verticais ao fundo = volume acumulado em horas no período).</p>
+
+          <!-- Barra de Legenda Centralizada com as 3 Caixas de Potência (mesmo local do Conceito 1) -->
+          <div style="display: flex; justify-content: center; align-items: center; gap: 28px; flex-wrap: wrap; background: #0f172a; padding: 10px 18px; border-radius: 6px; border: 1px solid #334155; margin: 12px 0 8px 0;">
+            
+            <div style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; color: #f8fafc; font-weight: 600;">
+              <span style="width: 11px; height: 11px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 8px #22c55e; display: inline-block;"></span>
+              <span>FC @</span>
+              <input type="number" id="isoPwr1" value="160" min="60" max="400" step="5" onchange="renderIsoPotenciaChart()" style="width: 58px; background: #1e293b; color: #22c55e; border: 1px solid #334155; border-radius: 4px; padding: 3px 6px; font-weight: bold; text-align: center;">
+              <span>W</span>
+            </div>
+
+            <div style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; color: #f8fafc; font-weight: 600;">
+              <span style="width: 11px; height: 11px; border-radius: 50%; background: #06b6d4; box-shadow: 0 0 8px #06b6d4; display: inline-block;"></span>
+              <span>FC @</span>
+              <input type="number" id="isoPwr2" value="200" min="60" max="400" step="5" onchange="renderIsoPotenciaChart()" style="width: 58px; background: #1e293b; color: #06b6d4; border: 1px solid #334155; border-radius: 4px; padding: 3px 6px; font-weight: bold; text-align: center;">
+              <span>W</span>
+            </div>
+
+            <div style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; color: #f8fafc; font-weight: 600;">
+              <span style="width: 11px; height: 11px; border-radius: 50%; background: #eab308; box-shadow: 0 0 8px #eab308; display: inline-block;"></span>
+              <span>FC @</span>
+              <input type="number" id="isoPwr3" value="240" min="60" max="400" step="5" onchange="renderIsoPotenciaChart()" style="width: 58px; background: #1e293b; color: #eab308; border: 1px solid #334155; border-radius: 4px; padding: 3px 6px; font-weight: bold; text-align: center;">
+              <span>W</span>
+            </div>
+
+          </div>
+
+          <canvas id="isoPotenciaCanvas" style="height: 420px; margin-top: 5px;"></canvas>
+        </div>
+
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 30px; border-top: 1px solid #334155; padding-top: 15px;">
           <button class="btn" style="background:#334155;" onclick="document.getElementById('zipInput').click()">+ Importar / Recalcular ZIP do Strava</button>
           <button class="btn btn-danger" onclick="clearLocalDatabase()">Limpar Banco Local</button>
@@ -308,6 +365,7 @@
   <script src="tab-estrutura.js"></script>
   <script src="tab-eficiencia.js"></script>
   <script src="tab-dispersao.js"></script>
+  <script src="tab-isopotencia.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

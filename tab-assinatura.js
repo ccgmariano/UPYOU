@@ -1,4 +1,4 @@
-// Aba 3: Assinatura Cardíaca Estabilizada por Zona Dinâmica de Potência (Coggan Z1-Z7) com Filtro de Janela Temporal e Linha de LTHR
+// Aba 3: Assinatura Cardíaca Estabilizada por Zona Dinâmica de Potência (Coggan Z1-Z7) com Filtro, LTHR e Design Moderno
 
 function ensureAssinaturaControls() {
   const canvas = document.getElementById('zonesCanvas');
@@ -6,12 +6,13 @@ function ensureAssinaturaControls() {
 
   const bar = document.createElement('div');
   bar.id = 'assinaturaControlsBar';
-  bar.style.cssText = 'display: flex; gap: 15px; flex-wrap: wrap; background: #0f172a; padding: 10px 15px; border-radius: 6px; border: 1px solid #334155; margin: 12px 0; align-items: center; justify-content: space-between;';
+  // Estilo Dark Slate UI alinhado ao Conceito 1 (Iso-Potência)
+  bar.style.cssText = 'display: flex; gap: 15px; flex-wrap: wrap; background: #0f172a; padding: 12px 18px; border-radius: 6px; border: 1px solid #334155; margin: 12px 0; align-items: center; justify-content: space-between;';
 
   bar.innerHTML = `
     <div style="display: flex; gap: 15px; flex-wrap: wrap; align-items: center;">
       <label style="font-size: 0.82rem; color: #cbd5e1;">Período Analisado:
-        <select class="custom-select" id="assPeriodoSelect" onchange="renderDynamicZones()" style="padding: 4px 8px; margin-left: 5px;">
+        <select class="custom-select" id="assPeriodoSelect" onchange="renderDynamicZones()" style="padding: 4px 8px; margin-left: 5px; background: #1e293b; color: #f8fafc; border: 1px solid #334155; border-radius: 4px;">
           <option value="42" selected>Últimos 42 Dias (Forma Atual)</option>
           <option value="90">Últimos 90 Dias</option>
           <option value="180">Últimos 6 Meses</option>
@@ -21,7 +22,7 @@ function ensureAssinaturaControls() {
       </label>
 
       <label style="font-size: 0.82rem; color: #cbd5e1;">Estabilização (Z1–Z5):
-        <select class="custom-select" id="assJanelaSelect" onchange="renderDynamicZones()" style="padding: 4px 8px; margin-left: 5px;">
+        <select class="custom-select" id="assJanelaSelect" onchange="renderDynamicZones()" style="padding: 4px 8px; margin-left: 5px; background: #1e293b; color: #f8fafc; border: 1px solid #334155; border-radius: 4px;">
           <option value="300">Blocos de 5 min (Sem Inércia)</option>
           <option value="60" selected>Blocos de 1 min (Equilibrado)</option>
           <option value="15">Blocos de 15 seg (Alta Densidade)</option>
@@ -42,7 +43,8 @@ function renderDynamicZones() {
   const canvas = document.getElementById('zonesCanvas');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  const w = canvas.offsetWidth || 900, h = 370, padL = 45, padR = 25, padT = 35, padB = 52;
+  // Ajuste do padB (base) para 68 para caber as 3 linhas de rótulos perfeitamente
+  const w = canvas.offsetWidth || 900, h = 380, padL = 45, padR = 25, padT = 35, padB = 68;
   canvas.width = w; canvas.height = h;
   ctx.clearRect(0, 0, w, h);
 
@@ -51,12 +53,10 @@ function renderDynamicZones() {
   const periodoVal = document.getElementById('assPeriodoSelect')?.value || '42';
   const janelaSecs = parseInt(document.getElementById('assJanelaSelect')?.value || '60', 10);
 
-  // Determina a data mais recente do banco para filtrar a janela
   const latestDate = dbActivities[dbActivities.length - 1].dateObj || new Date();
   const cutoffTime = periodoVal === 'all' ? 0 : (latestDate.getTime() - parseInt(periodoVal, 10) * 86400000);
 
   let filteredActs = dbActivities.filter(a => a.dateObj && a.dateObj.getTime() >= cutoffTime && a.metrics && a.currentFtp);
-  // Se nos últimos 42 dias houver poucas atividades, expande automaticamente para as últimas 10 atividades com potência
   if (filteredActs.length === 0) {
     filteredActs = dbActivities.filter(a => a.metrics && a.currentFtp).slice(-10);
   }
@@ -79,7 +79,6 @@ function renderDynamicZones() {
     const ftp = act.currentFtp;
     if (!m || !ftp) return;
 
-    // 1. Usa blocos estabilizados (dispWindows) se selecionados e disponíveis
     if (janelaSecs > 1 && m.dispWindows && m.dispWindows[janelaSecs] && m.dispWindows[janelaSecs].length > 0) {
       const pts = m.dispWindows[janelaSecs];
       for (let i = 0; i < pts.length; i++) {
@@ -95,8 +94,6 @@ function renderDynamicZones() {
         }
       }
 
-      // Para Z6 e Z7 (esforços anaeróbicos que duram de 5s a 15s e raramente fecham bloco de 1 ou 5 min),
-      // complementa com a janela de 15s ou 5s se a zona tiver ficado vazia nos blocos longos
       if (janelaSecs >= 60) {
         const shortWin = (m.dispWindows[15] && m.dispWindows[15].length > 0) ? m.dispWindows[15] : (m.dispWindows[5] || []);
         for (let i = 0; i < shortWin.length; i++) {
@@ -110,7 +107,6 @@ function renderDynamicZones() {
         }
       }
     } else if (m.pwrHrPairs && Object.keys(m.pwrHrPairs).length > 0) {
-      // Fallback ou modo Segundo a Segundo (1s)
       for (const pStr in m.pwrHrPairs) {
         const p = parseInt(pStr, 10);
         const pair = m.pwrHrPairs[pStr];
@@ -128,7 +124,6 @@ function renderDynamicZones() {
     }
   });
 
-  // Se em janelas curtas (ex: 42 dias) o ciclista não fez tiros em Z6 ou Z7, projeta pela regressão/progressão fisiológica ou mantém vazio
   const zoneKeys = Object.keys(zonesData);
   const avgHrs = {};
   zoneKeys.forEach(k => {
@@ -147,7 +142,7 @@ function renderDynamicZones() {
 
   const getY = (hr) => padT + drawH - ((hr - minScaleHr) / (maxScaleHr - minScaleHr)) * drawH;
 
-  // Grade Horizontal de BPM
+  // Grade Horizontal
   ctx.strokeStyle = '#1e293b'; ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
   for (let hr = 110; hr <= maxScaleHr; hr += 15) {
     const y = getY(hr);
@@ -155,7 +150,6 @@ function renderDynamicZones() {
     ctx.fillText(`${hr} bpm`, padL - 6, y + 3);
   }
 
-  // Desenha as Barras das 7 Zonas
   const barWidth = (drawW / zoneKeys.length) - 16;
 
   zoneKeys.forEach((key, idx) => {
@@ -167,24 +161,29 @@ function renderDynamicZones() {
       const y = Math.max(padT, getY(avgHr));
       const barH = Math.max(8, (padT + drawH) - y);
 
+      // Efeito Visual Moderno (Glow Neon no topo e translucidez)
+      ctx.globalAlpha = 0.85;
       ctx.fillStyle = z.color;
       ctx.fillRect(x, y, barWidth, barH);
+      ctx.globalAlpha = 1.0;
 
-      // Valor de BPM no topo da barra
+      ctx.shadowColor = z.color;
+      ctx.shadowBlur = 10;
+      ctx.fillRect(x, y, barWidth, 3);
+      ctx.shadowBlur = 0;
+
       ctx.fillStyle = '#f8fafc';
       ctx.font = 'bold 12.5px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(`${avgHr} bpm`, x + barWidth / 2, y - 8);
+      ctx.fillText(`${avgHr} bpm`, x + barWidth / 2, y - 10);
 
-      // Tempo acumulado na zona (discreto dentro da base da barra)
       const mins = Math.round(z.totWeight / 60);
       if (barH > 22 && mins > 0) {
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
         ctx.font = 'bold 10px sans-serif';
         ctx.fillText(mins >= 60 ? `${(mins / 60).toFixed(1)}h` : `${mins}m`, x + barWidth / 2, padT + drawH - 6);
       }
     } else {
-      // Zona sem estímulo registrado no período
       ctx.strokeStyle = '#334155';
       ctx.setLineDash([3, 3]);
       ctx.strokeRect(x, padT + drawH - 25, barWidth, 25);
@@ -195,21 +194,35 @@ function renderDynamicZones() {
       ctx.fillText('s/ amostra', x + barWidth / 2, padT + drawH - 10);
     }
 
-    // Rótulo da Zona + Faixa de Watts vigente no Eixo X
+    // Rótulo Principal da Zona
     ctx.fillStyle = '#cbd5e1';
     ctx.font = 'bold 11px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(z.n, x + barWidth / 2, padT + drawH + 16);
+    ctx.fillText(z.n, x + barWidth / 2, padT + drawH + 18);
 
+    // 1ª Faixa Esperada (Watts - Baseada no FTP atual)
     const wMin = Math.round(z.minP * latestFtp);
     const wMax = Math.round(z.maxP * latestFtp);
     const wLabel = key === 'Z1' ? `< ${wMax}W` : (key === 'Z7' ? `> ${wMin}W` : `${wMin}–${wMax}W`);
-    ctx.fillStyle = '#64748b';
+    ctx.fillStyle = '#94a3b8';
     ctx.font = '10px sans-serif';
-    ctx.fillText(wLabel, x + barWidth / 2, padT + drawH + 30);
+    ctx.fillText(wLabel, x + barWidth / 2, padT + drawH + 34);
+
+    // 2ª Faixa Esperada (BPM - Limites de Coggan baseados na LTHR atual)
+    let bpmLabel = '';
+    if (key === 'Z1') bpmLabel = `< ${Math.round(latestLthr * 0.68)} bpm`;
+    else if (key === 'Z2') bpmLabel = `${Math.round(latestLthr * 0.69)}–${Math.round(latestLthr * 0.83)} bpm`;
+    else if (key === 'Z3') bpmLabel = `${Math.round(latestLthr * 0.84)}–${Math.round(latestLthr * 0.94)} bpm`;
+    else if (key === 'Z4') bpmLabel = `${Math.round(latestLthr * 0.95)}–${Math.round(latestLthr * 1.05)} bpm`;
+    else if (key === 'Z5') bpmLabel = `> ${Math.round(latestLthr * 1.05)} bpm`;
+    else bpmLabel = 'N/A'; // Z6 e Z7 não possuem steady-state cardíaco
+
+    ctx.fillStyle = '#64748b';
+    ctx.font = '9.5px sans-serif';
+    ctx.fillText(bpmLabel, x + barWidth / 2, padT + drawH + 48);
   });
 
-  // Linha de Referência Horizontal do LTHR Dinâmico (42d)
+  // Linha de LTHR
   if (latestLthr >= minScaleHr && latestLthr <= maxScaleHr) {
     const yLthr = getY(latestLthr);
     ctx.save();

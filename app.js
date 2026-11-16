@@ -853,3 +853,44 @@ function updateDynamicCharts() {
 }
 
 function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) { const R = 6371; const dLat = (lat2 - lat1) * (Math.PI/180), dLon = (lon2 - lon1) * (Math.PI/180); const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * (Math.PI/180)) * Math.cos(lat2 * (Math.PI/180)) * Math.sin(dLon/2) * Math.sin(dLon/2); return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))); }
+
+// --- VERIFICADOR AUTOMÁTICO DE ATUALIZAÇÕES DO GITHUB ---
+function checkForUpdates() {
+  // Consulta a API pública do GitHub pegando o último commit da branch main
+  const repoUrl = 'https://api.github.com/repos/ccgmariano/UPYOU/commits/main';
+  fetch(repoUrl)
+    .then(res => res.json())
+    .then(data => {
+      if (data && data.sha) {
+        const localSha = localStorage.getItem('upyou_version_sha');
+        if (localSha && localSha !== data.sha) {
+          showUpdateBanner();
+        } else if (!localSha) {
+          // Grava a versão atual no acesso inicial silenciosamente
+          localStorage.setItem('upyou_version_sha', data.sha);
+        }
+      }
+    })
+    .catch(e => console.warn('Falha silenciosa ao checar atualizações do GitHub:', e));
+}
+
+function showUpdateBanner() {
+  if (document.getElementById('updateBanner')) return;
+  const banner = document.createElement('div');
+  banner.id = 'updateBanner';
+  banner.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; background: #2563eb; color: #fff; text-align: center; padding: 12px; z-index: 9999; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; gap: 20px; font-family: sans-serif;';
+  banner.innerHTML = `
+    <span>🚀 <strong>Nova versão detectada!</strong> O código no GitHub foi atualizado. Pressione <kbd style="background: #1e40af; padding: 2px 6px; border-radius: 4px;">Ctrl + F5</kbd> ou clique no botão para aplicar.</span>
+    <button onclick="forceAppUpdate()" style="background: #0f172a; color: #38bdf8; border: 1px solid #38bdf8; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-weight: bold; transition: 0.2s;">Atualizar Agora</button>
+  `;
+  document.body.appendChild(banner);
+}
+
+window.forceAppUpdate = function() {
+  localStorage.removeItem('upyou_version_sha'); // Limpa o SHA para forçar a nova gravação no carregamento
+  window.location.href = window.location.pathname + '?v=' + new Date().getTime(); // Recarrega furando o cache
+};
+
+// Dispara a checagem 3 segundos após o carregamento da página, e depois repete a cada 3 minutos
+setTimeout(checkForUpdates, 3000);
+setInterval(checkForUpdates, 180000);

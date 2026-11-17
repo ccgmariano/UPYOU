@@ -45,14 +45,49 @@
   <!-- APLICAÇÃO PRINCIPAL -->
   <div id="mainApp" style="display: none;">
     
-    <div class="user-header">
+    <div class="user-header" style="flex-wrap: wrap; gap: 10px;">
       <div class="user-greeting" id="userGreeting">Olá, Ciclista</div>
-      <div class="header-actions">
+      <div class="header-actions" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+        
+        <div class="hr-config-box" title="Tipo de bicicleta principal para cálculo aerodinâmico (CdA) e resistência de rolagem (Crr)">
+          <span>Bike:</span>
+          <select id="bikeTypeSelect" onchange="updatePowerEngineParams()" style="background: #0f172a; color: #38bdf8; border: 1px solid #334155; border-radius: 4px; padding: 2px 6px; font-weight: bold; cursor: pointer;">
+            <option value="road" selected>Road</option>
+            <option value="mtb">MTB</option>
+          </select>
+        </div>
+
+        <div class="hr-config-box" title="Peso Total do Conjunto (Ciclista + Bicicleta + Equipamentos/Água)">
+          <span>Peso Conjunto:</span>
+          <input type="number" id="totalWeightInput" value="82" min="45" max="160" step="0.5" onchange="updatePowerEngineParams()" style="width: 52px;">
+          <span>kg</span>
+        </div>
+
+        <div class="hr-config-box" title="Altura do Ciclista em centímetros">
+          <span>Altura:</span>
+          <input type="number" id="userHeightInput" value="175" min="130" max="220" step="1" onchange="updatePowerEngineParams()" style="width: 52px;">
+          <span>cm</span>
+        </div>
+
+        <button id="btnFrontalArea" onclick="openFrontalAreaModal()" style="background: #1e293b; color: #38bdf8; border: 1px solid #38bdf8; border-radius: 6px; padding: 5px 10px; font-size: 0.78rem; font-weight: bold; cursor: pointer;" title="Calcular Área Frontal por Foto ou usar Fórmula Antropométrica Padrão">
+          📐 Área: <span id="headerAreaBadge">0.41 m² (Padrão)</span>
+        </button>
+
+        <div class="hr-config-box" style="border-color: #eab308;" title="Fonte Global de Potência usada em todos os gráficos e métricas do painel">
+          <span style="color: #eab308; font-weight: bold;">Potência:</span>
+          <select id="powerSourceSelect" onchange="updatePowerSourceMode(this.value)" style="background: #0f172a; color: #f8fafc; border: 1px solid #475569; border-radius: 4px; padding: 2px 6px; font-weight: bold; cursor: pointer;">
+            <option value="hybrid" selected>Híbrido (Real + Estimada)</option>
+            <option value="real">Apenas Real (Sensor)</option>
+            <option value="simulated">100% Simulada (Motor Físico)</option>
+          </select>
+        </div>
+
         <div class="hr-config-box" title="A sua Frequência Cardíaca Máxima (o Limiar LTHR de Coggan é estimado automaticamente nos bastidores)">
           <span>FC Máx:</span>
           <input type="number" id="maxHrInput" value="187" min="120" max="230" onchange="updateUserMaxHr(this.value)">
           <span>bpm</span>
         </div>
+
         <span id="garminConnectedBadge" class="badge-connected" style="display: none;">✓ Garmin Vinculado</span>
         <button id="btnConnectGarmin" class="btn-connect-garmin" onclick="connectGarminAccount()">Conectar Garmin</button>
         <button class="btn-sync" onclick="syncWithGarminCloud()">↻ Sincronizar Garmin</button>
@@ -356,6 +391,7 @@
 
   <!-- Módulos Separados -->
   <script src="chart-theme.js"></script>
+  <script src="power-engine.js"></script>
   <script src="tab-atividades.js"></script>
   <script src="tab-ftp.js"></script>
   <script src="tab-assinatura.js"></script>

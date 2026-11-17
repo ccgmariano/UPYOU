@@ -1,4 +1,4 @@
-// Núcleo Principal (IndexedDB UpYouDB, Leitor Nativo FIT/ZIP Strava, Sincronização Garmin, Janelas de Dispersão 5s-60m e LTHR Móvel 42d)
+// Núcleo Principal (IndexedDB UpYouDB, Leitor Nativo FIT/ZIP com Altimetria, Vento Histórico ERA5, Motor Físico Duplo e Verificador GitHub)
 let dbActivities = [];
 let currentUserId = null;
 let currentUserName = "";
@@ -17,6 +17,7 @@ window.addEventListener('DOMContentLoaded', () => {
       currentUserName = parsed.name;
       localStorage.setItem('upyou_user', JSON.stringify({ id: currentUserId, name: currentUserName }));
       loadUserPreferences();
+      if (typeof loadPowerEnginePreferences === 'function') loadPowerEnginePreferences();
       document.getElementById('loginScreen').style.display = 'none';
       document.getElementById('mainApp').style.display = 'flex';
       document.getElementById('userGreeting').innerText = `Olá, ${currentUserName}`;
@@ -72,6 +73,7 @@ function handleCredentialResponse(response) {
   localStorage.setItem('upyou_user', JSON.stringify({ id: currentUserId, name: currentUserName }));
 
   loadUserPreferences();
+  if (typeof loadPowerEnginePreferences === 'function') loadPowerEnginePreferences();
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('mainApp').style.display = 'flex';
   document.getElementById('userGreeting').innerText = `Olá, ${currentUserName}`;
@@ -182,6 +184,7 @@ async function initializeAppForUser() {
     dbActivities = savedData;
     dbActivities.forEach(a => a.dateObj = new Date(a.dateObj));
     document.getElementById('uploadArea').style.display = 'none';
+    if (typeof window.applyGlobalPowerSource === 'function') window.applyGlobalPowerSource();
     processGlobalMetrics();
     renderSummaryTable();
     updateDynamicCharts();
@@ -194,7 +197,7 @@ async function syncWithGarminCloud() {
   if (!currentUserId) return;
   const msgEl = document.getElementById('statusMsg');
   msgEl.style.color = '#38bdf8';
-  msgEl.innerText = 'A sincronizar atividades com a nuvem Garmin...';
+  msgEl.innerText = 'A sincronizar atividades e telemetria física com a nuvem Garmin...';
 
   try {
     const res = await fetch(`${GARMIN_API_URL}?google_id=${encodeURIComponent(currentUserId)}`);
@@ -205,13 +208,16 @@ async function syncWithGarminCloud() {
     for (const item of cloudList) {
       if (!item.id || item.id === 'dados') continue;
       const existingIdx = dbActivities.findIndex(a => String(a.garminId) === String(item.id));
-      const m = existingIdx !== -1 ? dbActivities[existingIdx].metrics : null;
+      const existingAct = existingIdx !== -1 ? dbActivities[existingIdx] : null;
+      const m = existingAct ? (existingAct.realMetrics || existingAct.metrics) : null;
       const hasFullDisp = m && m.dispWindows && m.dispWindows[5] !== undefined && m.mhr20 !== undefined;
-      if (existingIdx === -1 || !m || !m.pwrHrPairs || !hasFullDisp) {
+      const hasSimEngine = existingAct && existingAct.estMetrics && existingAct.estMetrics.simParams;
+
+      if (existingIdx === -1 || !m || !m.pwrHrPairs || !hasFullDisp || !hasSimEngine) {
         const detailRes = await fetch(`${GARMIN_API_URL}?google_id=${encodeURIComponent(currentUserId)}&id=${encodeURIComponent(item.id)}`);
         if (detailRes.ok) {
           const garminJson = await detailRes.json();
-          const parsedAct = parseGarminJsonToActivity(garminJson, item.id);
+          const parsedAct = await parseGarminJsonToActivity(garminJson, item.id);
           if (parsedAct) {
             if (existingIdx !== -1) {
               dbActivities[existingIdx] = parsedAct;
@@ -240,6 +246,7 @@ async function syncWithGarminCloud() {
     }
 
     if (dbActivities.length > 0) {
+      if (typeof window.applyGlobalPowerSource === 'function') window.applyGlobalPowerSource();
       await saveToDB(dbActivities);
       document.getElementById('uploadArea').style.display = 'none';
       processGlobalMetrics();
@@ -257,7 +264,47 @@ async function syncWithGarminCloud() {
   setTimeout(() => { if (msgEl.innerText.includes('sincronizada') || msgEl.innerText.includes('atualizado') || msgEl.innerText.includes('vinculada')) msgEl.innerText = ''; }, 4000);
 }
 
-function parseGarminJsonToActivity(data, fallbackId) {
+async function buildDualMetricsFromRecords(records, dateObj) {
+  if (!records || records.length === 0) return { realMetrics: null, estMetrics: null };
+
+  const hasRealPower = records.some(r => r.power > 15);
+  const realMetrics = hasRealPower ? calculateMetrics(records) : null;
+
+  // Coordenada média para consulta do vento histórico ERA5 (Open-Meteo)
+  let sumLat = 0, sumLon = 0, gpsCnt = 0;
+  for (let i = 0; i < records.length; i += 10) {
+    if (records[i].lat && records[i].lon) {
+      sumLat += records[i].lat;
+      sumLon += records[i].lon;
+      gpsCnt++;
+    }
+  }
+
+  let weatherHourly = null;
+  if (gpsCnt > 0 && typeof window.fetchHistoricalWeatherForActivity === 'function') {
+    weatherHourly = await window.fetchHistoricalWeatherForActivity(sumLat / gpsCnt, sumLon / gpsCnt, dateObj);
+  }
+
+  let estMetrics = null;
+  if (typeof window.simulatePowerOnRecords === 'function') {
+    const simRecords = window.simulatePowerOnRecords(records, weatherHourly, dateObj);
+    estMetrics = calculateMetrics(simRecords);
+    if (estMetrics) {
+      estMetrics.isEstimated = true;
+      const cfg = window.userPowerConfig || { totalWeightKg: 82, cda: 0.361, crr: 0.0045 };
+      estMetrics.simParams = {
+        totalWeightKg: cfg.totalWeightKg,
+        cda: cfg.cda,
+        crr: cfg.crr,
+        weatherUsed: Boolean(weatherHourly)
+      };
+    }
+  }
+
+  return { realMetrics, estMetrics };
+}
+
+async function parseGarminJsonToActivity(data, fallbackId) {
   let summary = null;
   let samples = [];
 
@@ -279,26 +326,47 @@ function parseGarminJsonToActivity(data, fallbackId) {
 
   let records = [];
   if (samples.length > 0) {
-    records = samples.map(s => ({
-      timestamp: s.startTimeInSeconds || 0,
-      power: s.powerInWatts !== undefined ? s.powerInWatts : 0,
-      hr: s.heartRate || 0,
-      cad: s.bikeCadenceInRPM || 0,
-      speed: (s.speedMetersPerSecond || 0) * 3.6,
-      distance: s.totalDistanceInMeters || 0
-    })).filter(r => r.timestamp > 0);
+    let prevLat = null, prevLon = null, lastBearing = null;
+    for (let i = 0; i < samples.length; i++) {
+      const s = samples[i];
+      const ts = s.startTimeInSeconds || 0;
+      if (ts <= 0) continue;
+      const lat = s.latitudeInDegree || 0;
+      const lon = s.longitudeInDegree || 0;
+      if (lat !== 0 && lon !== 0 && prevLat !== null && (lat !== prevLat || lon !== prevLon)) {
+        if (typeof window.calculateBearingDeg === 'function') {
+          lastBearing = window.calculateBearingDeg(prevLat, prevLon, lat, lon);
+        }
+      }
+      if (lat !== 0 && lon !== 0) { prevLat = lat; prevLon = lon; }
+
+      records.push({
+        timestamp: ts,
+        power: s.powerInWatts !== undefined ? s.powerInWatts : 0,
+        hr: s.heartRate || 0,
+        cad: s.bikeCadenceInRPM || 0,
+        hasCadSensor: s.bikeCadenceInRPM !== undefined,
+        speed: (s.speedMetersPerSecond || 0) * 3.6,
+        distance: s.totalDistanceInMeters || 0,
+        altitude: s.elevationInMeters !== undefined ? s.elevationInMeters : null,
+        lat,
+        lon,
+        bearing: lastBearing
+      });
+    }
   }
 
-  let metrics = calculateMetrics(records);
+  const { realMetrics, estMetrics } = await buildDualMetricsFromRecords(records, dateObj);
+  let activeMetrics = realMetrics || estMetrics;
 
-  if (!metrics && summary) {
+  if (!activeMetrics && summary) {
     const totalSecs = summary.durationInSeconds || 0;
     const distKm = ((summary.distanceInMeters || 0) / 1000).toFixed(2);
     const avgSpeed = ((summary.averageSpeedInMetersPerSecond || 0) * 3.6).toFixed(1);
     const avgPwr = Math.round(summary.averagePowerInWatts || 0);
     const avgHr = Math.round(summary.averageHeartRateInBeatsPerMinute || 0);
     const avgCad = Math.round(summary.averageBikeCadenceInRoundsPerMinute || 0);
-    metrics = {
+    activeMetrics = {
       totalSecs, movingSecs: totalSecs, distKm, avgPwr, avgHr, avgCad, avgSpeed,
       top4: [], drift: null, driftEligible: false,
       mmp20: totalSecs >= 1200 ? avgPwr : 0,
@@ -308,21 +376,26 @@ function parseGarminJsonToActivity(data, fallbackId) {
     };
   }
 
-  if (!metrics) return null;
+  if (!activeMetrics) return null;
 
-  if (parseFloat(metrics.distKm) === 0 && summary.distanceInMeters) {
-    metrics.distKm = (summary.distanceInMeters / 1000).toFixed(2);
-  }
-  if (metrics.totalSecs === 0 && summary.durationInSeconds) {
-    metrics.totalSecs = summary.durationInSeconds;
-  }
+  [realMetrics, estMetrics, activeMetrics].forEach(m => {
+    if (!m) return;
+    if (parseFloat(m.distKm) === 0 && summary.distanceInMeters) {
+      m.distKm = (summary.distanceInMeters / 1000).toFixed(2);
+    }
+    if (m.totalSecs === 0 && summary.durationInSeconds) {
+      m.totalSecs = summary.durationInSeconds;
+    }
+  });
 
   return {
     garminId: String(actId),
     date: dateStr,
     name: actName,
     file: `garmin_${actId}.json`,
-    metrics,
+    metrics: activeMetrics,
+    realMetrics,
+    estMetrics,
     dateObj,
     source: 'garmin'
   };
@@ -400,7 +473,7 @@ document.getElementById('zipInput').addEventListener('change', async (event) => 
 
       for (let i = 0; i < queue.length; i++) {
         const task = queue[i];
-        progressText.innerText = `A processar fisiologia e janelas de dispersão: atividade ${i + 1} de ${queue.length}...`;
+        progressText.innerText = `A processar fisiologia, altimetria e vento histórico (ERA5): ${i + 1} de ${queue.length}...`;
         progressFill.style.width = `${((i + 1) / queue.length) * 100}%`;
 
         let zipEntry = null;
@@ -412,14 +485,19 @@ document.getElementById('zipInput').addEventListener('change', async (event) => 
             let decompressed = rawData;
             if (task.file.toLowerCase().endsWith('.gz')) decompressed = pako.inflate(rawData);
             const records = parseFitNative(decompressed);
-            const metrics = calculateMetrics(records);
-            if (metrics) dbActivities.push({ ...task, metrics, dateObj: parseStravaDate(task.date) });
+            const dateObj = parseStravaDate(task.date);
+            const { realMetrics, estMetrics } = await buildDualMetricsFromRecords(records, dateObj);
+            const activeMetrics = realMetrics || estMetrics;
+            if (activeMetrics) {
+              dbActivities.push({ ...task, metrics: activeMetrics, realMetrics, estMetrics, dateObj });
+            }
           } catch (e) { console.warn(`Aviso: ${task.file}`); }
         }
-        if(i % 5 === 0) await new Promise(r => setTimeout(r, 1)); 
+        if (i % 5 === 0) await new Promise(r => setTimeout(r, 1)); 
       }
 
       document.getElementById('progressArea').style.display = 'none';
+      if (typeof window.applyGlobalPowerSource === 'function') window.applyGlobalPowerSource();
       processGlobalMetrics();
       
       await saveToDB(dbActivities);
@@ -437,18 +515,19 @@ function parseStravaDate(str) {
   if (!str) return new Date();
   const months = { 'jan': 0, 'fev': 1, 'mar': 2, 'abr': 3, 'mai': 4, 'jun': 5, 'jul': 6, 'ago': 7, 'set': 8, 'out': 9, 'nov': 10, 'dez': 11 };
   const parts = str.match(/(\d{1,2})\s+de\s+([a-zç]{3})[^\s]*\s+de\s+(\d{4})/i);
-  if (parts) return new Date(parseInt(parts[3]), months[parts[2].toLowerCase()] || 0, parseInt(parts[1]));
+  if (parts) return new Date(parseInt(parts[3]), months[parts[2].toLowerCase()] || 0, parseInt(parts[1]), 11, 0, 0);
   const d = new Date(str);
   return isNaN(d.getTime()) ? new Date() : d;
 }
 
+// Leitor Nativo FIT atualizado com Altimetria (field 2 e field 78) e Rumo GPS (bearing)
 function parseFitNative(u8) {
   const view = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
   let offset = view.getUint8(0);
   const endOffset = offset + view.getUint32(4, true);
   const localDefinitions = {};
   const records = [];
-  let prevLat = null, prevLon = null, prevTime = null, prevDist = null;
+  let prevLat = null, prevLon = null, prevTime = null, prevDist = null, lastBearing = null;
 
   while (offset < endOffset && offset < u8.length) {
     const header = view.getUint8(offset++);
@@ -468,27 +547,38 @@ function parseFitNative(u8) {
       } else {
         const def = localDefinitions[localNum];
         if (!def) break;
-        let rec = { timestamp: 0, power: 0, hr: 0, cad: 0, speed: -1, distance: 0 };
+        let rec = { timestamp: 0, power: 0, hr: 0, cad: 0, hasCadSensor: false, speed: -1, distance: 0, altitude: null, lat: 0, lon: 0, bearing: null };
         let isRec = def.globalNum === 20;
         let lat = 0, lon = 0;
 
         for (const f of def.fields) {
           let val = 0;
-          if (f.size === 1) val = view.getUint8(offset);
-          else if (f.size === 2) val = view.getUint16(offset, def.le);
-          else if (f.size === 4) val = view.getUint32(offset, def.le);
+          let signedVal = 0;
+          if (f.size === 1) { val = view.getUint8(offset); signedVal = view.getInt8(offset); }
+          else if (f.size === 2) { val = view.getUint16(offset, def.le); signedVal = view.getInt16(offset, def.le); }
+          else if (f.size === 4) { val = view.getUint32(offset, def.le); signedVal = view.getInt32(offset, def.le); }
           offset += f.size;
 
           if (isRec) {
             if (f.num === 253) rec.timestamp = val;
             else if (f.num === 7) rec.power = (val !== 0xFFFF && val < 3000) ? val : 0;
             else if (f.num === 3) rec.hr = (val !== 0xFF && val < 240) ? val : 0;
-            else if (f.num === 4) rec.cad = (val !== 0xFF && val < 200) ? val : 0;
+            else if (f.num === 4) {
+              if (val !== 0xFF && val < 200) { rec.cad = val; rec.hasCadSensor = true; }
+            }
             else if (f.num === 5) rec.distance = (val !== 0xFFFFFFFF) ? val / 100 : 0;
             else if (f.num === 6) { if (val !== 0xFFFF) rec.speed = (val / 1000) * 3.6; }
             else if (f.num === 134) { if (val !== 0xFFFFFFFF) rec.speed = (val / 1000) * 3.6; }
-            else if (f.num === 0) lat = (val !== 0x7FFFFFFF) ? val * (180 / Math.pow(2, 31)) : 0;
-            else if (f.num === 1) lon = (val !== 0x7FFFFFFF) ? val * (180 / Math.pow(2, 31)) : 0;
+            else if (f.num === 2) {
+              // Altitude padrão FIT: scale 5, offset 500m
+              if (val !== 0xFFFF) rec.altitude = (val / 5) - 500;
+            }
+            else if (f.num === 78) {
+              // Enhanced Altitude FIT: scale 5, offset 500m
+              if (val !== 0xFFFFFFFF) rec.altitude = (val / 5) - 500;
+            }
+            else if (f.num === 0) lat = (signedVal !== 0x7FFFFFFF && signedVal !== 0) ? signedVal * (180 / Math.pow(2, 31)) : 0;
+            else if (f.num === 1) lon = (signedVal !== 0x7FFFFFFF && signedVal !== 0) ? signedVal * (180 / Math.pow(2, 31)) : 0;
           }
         }
         if (isRec && rec.timestamp > 0) {
@@ -500,6 +590,7 @@ function parseFitNative(u8) {
               } else if (lat !== 0 && lon !== 0 && prevLat !== null) {
                 const distKm = getDistanceFromLatLonInKm(prevLat, prevLon, lat, lon);
                 rec.speed = distKm / (dt / 3600);
+                if (rec.distance === 0 && prevDist !== null) rec.distance = prevDist + distKm * 1000;
               } else {
                 rec.speed = 0;
               }
@@ -508,7 +599,17 @@ function parseFitNative(u8) {
             }
           }
           if (rec.speed > 130) rec.speed = 0;
-          if (lat !== 0 && lon !== 0) { prevLat = lat; prevLon = lon; }
+
+          if (lat !== 0 && lon !== 0) {
+            rec.lat = lat;
+            rec.lon = lon;
+            if (prevLat !== null && (lat !== prevLat || lon !== prevLon) && typeof window.calculateBearingDeg === 'function') {
+              lastBearing = window.calculateBearingDeg(prevLat, prevLon, lat, lon);
+            }
+            prevLat = lat;
+            prevLon = lon;
+          }
+          rec.bearing = lastBearing;
           prevTime = rec.timestamp;
           prevDist = rec.distance;
           records.push(rec);
@@ -591,7 +692,6 @@ function calculateMetrics(records) {
 
   if (movingSecs === 0) return null;
 
-  // Fatiamento exato em 1W e 1BPM para todas as 7 janelas de tempo (5s, 15s, 60s, 300s, 600s, 900s, 3600s)
   const dispWindows = { 5: [], 15: [], 60: [], 300: [], 600: [], 900: [], 3600: [] };
   [5, 15, 60, 300, 600, 900, 3600].forEach(wSize => {
     let accDt = 0, sPwr = 0, sHr = 0;
@@ -700,7 +800,6 @@ function calculateMetrics(records) {
     mmp20 = Math.round(max20m);
   }
 
-  // Maior FC média contínua de 20 minutos (mhr20 - exige pelo menos 90% das amostras válidas na janela de 1200s)
   let mhr20 = 0;
   if (hrTimeline.length >= 1200) {
     let sumH = 0, validH = 0;
@@ -750,7 +849,6 @@ function calculateMetrics(records) {
   };
 }
 
-// Extrai o melhor bloco contínuo de 20min de FC de uma atividade (usa mhr20 nativo ou reconstrói a partir de dispWindows se vier de cache antigo)
 function getActivityBest20MinHr(act) {
   if (!act || !act.metrics) return 0;
   const m = act.metrics;
@@ -758,7 +856,6 @@ function getActivityBest20MinHr(act) {
 
   if ((m.totalSecs || 0) < 1200 && (m.movingSecs || 0) < 1200) return 0;
 
-  // Fallback instantâneo para atividades que já estão no banco local com dispWindows (sem precisar reimportar o ZIP)
   if (m.dispWindows) {
     if (m.dispWindows[300] && m.dispWindows[300].length >= 4) {
       const arr = m.dispWindows[300];
@@ -785,6 +882,7 @@ function getActivityBest20MinHr(act) {
 }
 
 function processGlobalMetrics() {
+  if (typeof window.applyGlobalPowerSource === 'function') window.applyGlobalPowerSource();
   dbActivities.sort((a, b) => a.dateObj - b.dateObj); 
   const daysWindow = 42;
   let ftpHistory = [];
@@ -806,14 +904,12 @@ function processGlobalMetrics() {
     const minDate = new Date(curr.dateObj.getTime() - (daysWindow * 86400000));
     const windowActs = dbActivities.filter(a => a.dateObj >= minDate && a.dateObj <= curr.dateObj);
     
-    // 1. FTP Móvel (95% da MMP20 nos últimos 42 dias)
     const validMmps = windowActs
       .filter(a => a.metrics && (a.metrics.totalSecs >= 1200 || !a.metrics.movingSecs) && a.metrics.mmp20 >= 100)
       .map(a => a.metrics.mmp20);
 
     const windowBestFtp = validMmps.length > 0 ? Math.round(Math.max(...validMmps) * 0.95) : 0;
 
-    // 2. LTHR Móvel (100% da maior média contínua de 20 minutos de FC nos últimos 42 dias)
     const validMhrs = windowActs
       .map(a => getActivityBest20MinHr(a))
       .filter(h => h >= 140 && h <= Math.round(userMaxHr * 0.98));
@@ -825,7 +921,6 @@ function processGlobalMetrics() {
       const decayedPrevFtp = Math.round(rollingFtp * Math.pow(0.9993, daysDiff));
       rollingFtp = Math.max(windowBestFtp, decayedPrevFtp, 120);
 
-      // Retenção fisiológica da LTHR (decaimento suave até o piso de 84% da FC Máx em hiatos longos)
       const decayedPrevLthr = Math.round(rollingLthr * Math.pow(0.9998, daysDiff));
       rollingLthr = Math.max(windowBestLthr, decayedPrevLthr, Math.round(userMaxHr * 0.84));
     } else {
@@ -852,11 +947,15 @@ function updateDynamicCharts() {
   if (typeof renderIsoPotenciaChart === 'function') renderIsoPotenciaChart();
 }
 
-function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) { const R = 6371; const dLat = (lat2 - lat1) * (Math.PI/180), dLon = (lon2 - lon1) * (Math.PI/180); const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * (Math.PI/180)) * Math.cos(lat2 * (Math.PI/180)) * Math.sin(dLon/2) * Math.sin(dLon/2); return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))); }
+function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * (Math.PI / 180), dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
 
 // --- VERIFICADOR AUTOMÁTICO DE ATUALIZAÇÕES DO GITHUB ---
 function checkForUpdates() {
-  // Consulta a API pública do GitHub pegando o último commit da branch main
   const repoUrl = 'https://api.github.com/repos/ccgmariano/UPYOU/commits/main';
   fetch(repoUrl)
     .then(res => res.json())
@@ -866,7 +965,6 @@ function checkForUpdates() {
         if (localSha && localSha !== data.sha) {
           showUpdateBanner();
         } else if (!localSha) {
-          // Grava a versão atual no acesso inicial silenciosamente
           localStorage.setItem('upyou_version_sha', data.sha);
         }
       }
@@ -887,10 +985,9 @@ function showUpdateBanner() {
 }
 
 window.forceAppUpdate = function() {
-  localStorage.removeItem('upyou_version_sha'); // Limpa o SHA para forçar a nova gravação no carregamento
-  window.location.href = window.location.pathname + '?v=' + new Date().getTime(); // Recarrega furando o cache
+  localStorage.removeItem('upyou_version_sha');
+  window.location.href = window.location.pathname + '?v=' + new Date().getTime();
 };
 
-// Dispara a checagem 3 segundos após o carregamento da página, e depois repete a cada 3 minutos
 setTimeout(checkForUpdates, 3000);
 setInterval(checkForUpdates, 180000);

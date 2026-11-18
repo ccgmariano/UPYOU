@@ -116,6 +116,7 @@
         <div class="nav-tabs">
           <button class="tab-btn active" onclick="switchDashboardTab('tableTab', this)">As Suas Pedaladas</button>
           <button class="tab-btn" onclick="switchDashboardTab('ftpTab', this)">Evolução de FTP</button>
+          <button class="tab-btn" style="border-color: #f97316; color: #fb923c;" onclick="switchDashboardTab('curvaPotenciaTab', this)">Curva de Potência (MMP)</button>
           <button class="tab-btn" onclick="switchDashboardTab('zonesTab', this)">Assinatura Cardíaca</button>
           <button class="tab-btn" onclick="switchDashboardTab('pwrTimeTab', this)">Tempo/Zona (Potência)</button>
           <button class="tab-btn" onclick="switchDashboardTab('hrTimeTab', this)">Tempo/Zona (FC)</button>
@@ -133,12 +134,37 @@
             <thead><tr><th>Data</th><th>Nome</th><th>Distância</th><th>Potência (Méd / NP)</th><th>Perfil</th><th>Ação</th></tr></thead>
             <tbody id="summaryBody"></tbody>
           </table>
+          <div id="tablePaginationBox" style="text-align: center; margin-top: 14px;"></div>
         </div>
 
         <div id="ftpTab" style="display: none;">
           <div class="section-header"><h3>Evolução do FTP (Janela Móvel 42 Dias + Retenção de Base)</h3></div>
           <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Calculado apenas em atividades ≥ 20 min (95% da MMP20), com decaimento fisiológico suave em períodos sem testes máximos.</p>
           <canvas id="ftpCanvas"></canvas>
+        </div>
+
+        <!-- NOVA ABA: Curva de Potência (MMP 5s a 120min) Multi-Anos -->
+        <div id="curvaPotenciaTab" style="display: none;" class="dynamic-tab">
+          <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <h3 style="color: #fb923c; margin: 0;">Curva de Potência Máxima Média (MMP: 5s a 120 min)</h3>
+            <span style="font-size: 0.78rem; color: #94a3b8;">Selecione 1 ou múltiplos anos abaixo para comparar curvas sobrepostas</span>
+          </div>
+
+          <!-- Seletor Multi-Anos + Todo o Histórico -->
+          <div id="mmpYearSelector" style="display: flex; gap: 8px; flex-wrap: wrap; background: #0f172a; padding: 10px 14px; border-radius: 6px; border: 1px solid #334155; margin: 12px 0;"></div>
+
+          <canvas id="curvaPotenciaCanvas" style="height: 390px; margin-top: 5px;"></canvas>
+
+          <!-- 8 Cards Clicáveis de Melhores Marcas -->
+          <div style="margin-top: 18px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span style="font-size: 0.85rem; font-weight: bold; color: #f8fafc;">🏆 Melhores Marcas nos Períodos Selecionados (Clique num tempo para abrir o histórico completo):</span>
+            </div>
+            <div id="mmpBestCardsGrid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px;"></div>
+          </div>
+
+          <!-- Histórico Detalhado da Marca Clicada (Ordenado da Mais Recente para a Mais Antiga) -->
+          <div id="mmpHistoryContainer" style="margin-top: 18px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 14px;"></div>
         </div>
 
         <div id="zonesTab" style="display: none;">
@@ -303,7 +329,7 @@
           </div>
         </div>
 
-        <!-- Evolução Histórica Iso-Potência (Conceito 1) -->
+        <!-- Evolução Histórica Iso-Potência -->
         <div id="isoPotenciaTab" style="display: none;" class="dynamic-tab">
           <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
             <h3 style="color: #38bdf8; margin: 0;">Evolução Histórica de Desempenho (Custo Cardíaco Fixo)</h3>
@@ -358,7 +384,7 @@
           <canvas id="isoPotenciaCanvas" style="height: 420px; margin-top: 5px;"></canvas>
         </div>
 
-        <!-- NOVA ABA FASE 4: Telemetria Multi-Camadas & Auto-Calibração -->
+        <!-- Telemetria Multi-Camadas & Auto-Calibração -->
         <div id="telemetriaTab" style="display: none;" class="dynamic-tab">
           <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
             <h3 style="color: #facc15; margin: 0;">Analisador de Telemetria Multi-Camadas (15s por Km) & Auto-Calibração</h3>
@@ -376,15 +402,12 @@
             Compare visualmente <strong>Potência Real</strong> vs. <strong>Potência Estimada</strong> sobre o perfil altimétrico translúcido. Ligue ou desligue as camadas abaixo (a sua escolha fica salva automaticamente) e arraste o controle deslizante para navegar por todas as suas pedaladas.
           </p>
 
-          <!-- Botões de Camadas (Salvos no localStorage) -->
           <div id="telLayerButtons" style="display: flex; gap: 10px; flex-wrap: wrap; background: #0f172a; padding: 10px 15px; border-radius: 6px; border: 1px solid #334155; margin: 12px 0;"></div>
 
-          <!-- Painel de Divergência e Diagnóstico Físico da Pedalada -->
           <div id="telAuditCard" style="background: #0f172a; padding: 12px 16px; border-radius: 6px; border-left: 4px solid #eab308; border-top: 1px solid #1e293b; border-right: 1px solid #1e293b; border-bottom: 1px solid #1e293b; margin-bottom: 12px; font-size: 0.82rem; color: #cbd5e1;"></div>
 
           <canvas id="telemetriaCanvas" style="height: 430px; margin-top: 5px;"></canvas>
 
-          <!-- Slider Histórico de Pedaladas (Direita = Última Pedalada, Esquerda = Passado) -->
           <div style="margin-top: 15px; background: #0f172a; padding: 12px 15px; border-radius: 6px; border: 1px solid #334155;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
               <span style="font-size: 0.85rem; font-weight: bold; color: #facc15;" id="telSliderLabel">Pedalada Ativa: --</span>
@@ -430,6 +453,7 @@
   <script src="power-engine.js"></script>
   <script src="tab-atividades.js"></script>
   <script src="tab-ftp.js"></script>
+  <script src="tab-curvapotencia.js"></script>
   <script src="tab-assinatura.js"></script>
   <script src="tab-zonas.js"></script>
   <script src="tab-drift.js"></script>

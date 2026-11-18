@@ -1,4 +1,6 @@
-// Módulo da Aba "As Suas Pedaladas" (Tabela de Histórico, Detalhes e Exclusão Segura por Chave Única)
+// Módulo da Aba "As Suas Pedaladas" (Paginação Rápida para Alta Performance e Exclusão Segura por Chave Única)
+
+let tableVisibleLimit = 60;
 
 window.getActivityUniqueKey = function(act) {
   if (!act) return '';
@@ -11,6 +13,7 @@ window.getActivityUniqueKey = function(act) {
 window.renderSummaryTable = function() {
   const tbody = document.getElementById('summaryBody');
   const summaryArea = document.getElementById('summaryArea');
+  const pagBox = document.getElementById('tablePaginationBox');
   if (!tbody || !summaryArea) return;
 
   summaryArea.style.display = 'block';
@@ -18,13 +21,16 @@ window.renderSummaryTable = function() {
 
   if (typeof dbActivities === 'undefined' || dbActivities.length === 0) {
     tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#94a3b8; padding: 20px;">Nenhuma pedalada encontrada.</td></tr>';
+    if (pagBox) pagBox.innerHTML = '';
     return;
   }
 
-  // Ordena da mais recente para a mais antiga para exibição na tabela
   const sorted = [...dbActivities].sort((a, b) => (b.dateObj || 0) - (a.dateObj || 0));
+  const slice = sorted.slice(0, tableVisibleLimit);
 
-  sorted.forEach((act) => {
+  const fragment = document.createDocumentFragment();
+
+  slice.forEach((act) => {
     const m = act.metrics || {};
     const tr = document.createElement('tr');
     const uKey = window.getActivityUniqueKey(act);
@@ -65,8 +71,27 @@ window.renderSummaryTable = function() {
       </td>
     `;
 
-    tbody.appendChild(tr);
+    fragment.appendChild(tr);
   });
+
+  tbody.appendChild(fragment);
+
+  if (pagBox) {
+    if (sorted.length > tableVisibleLimit) {
+      pagBox.innerHTML = `
+        <span style="font-size: 0.8rem; color: #94a3b8; margin-right: 12px;">Exibindo ${slice.length} de ${sorted.length} pedaladas</span>
+        <button class="btn" style="background: #1e293b; border: 1px solid #38bdf8; color: #38bdf8; padding: 6px 14px; font-size: 0.8rem;" onclick="loadMoreTableRows(100)">+ Mostrar mais 100</button>
+        <button class="btn" style="background: #334155; color: #cbd5e1; padding: 6px 14px; font-size: 0.8rem; margin-left: 6px;" onclick="loadMoreTableRows(99999)">Mostrar Todas</button>
+      `;
+    } else {
+      pagBox.innerHTML = `<span style="font-size: 0.78rem; color: #64748b;">Total de ${sorted.length} pedaladas exibidas</span>`;
+    }
+  }
+};
+
+window.loadMoreTableRows = function(increment) {
+  tableVisibleLimit += increment;
+  window.renderSummaryTable();
 };
 
 window.showActivityDetailByKey = function(uKey) {

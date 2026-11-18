@@ -1,4 +1,4 @@
-// Aba Independente: Analisador de Telemetria Multi-Camadas (15s por Km) com Botões Passo a Passo (◀ / ▶) e Teclado
+// Aba Independente: Analisador de Telemetria Multi-Camadas (15s por Km) com Carregamento Sob Demanda (Lazy Load)
 
 const TEL_LAYERS_STORAGE_KEY = 'upyou_telemetry_layers_v1';
 
@@ -65,7 +65,6 @@ window.toggleTelemetryLayer = function(key) {
   renderTelemetriaChart();
 };
 
-// Injeta os botões ◀ Anterior e Próxima ▶ ao lado do Slider sem precisar editar o index.html
 function ensureTelStepButtons() {
   const slider = document.getElementById('telRideSlider');
   if (!slider || document.getElementById('telPrevBtn')) return;
@@ -122,7 +121,6 @@ function updateTelStepButtonsState() {
   nextBtn.style.cursor = atEnd ? 'not-allowed' : 'pointer';
 }
 
-// Atalho de teclado (Setas Esquerda e Direita) quando a aba Telemetria estiver visível
 if (!window._telKeyListenerAdded) {
   window._telKeyListenerAdded = true;
   window.addEventListener('keydown', (e) => {
@@ -211,7 +209,7 @@ window.onTelSliderInput = function(val) {
   renderTelemetriaChart();
 };
 
-window.renderTelemetriaChart = function() {
+window.renderTelemetriaChart = async function() {
   ensureTelStepButtons();
   const canvas = document.getElementById('telemetriaCanvas');
   if (!canvas) return;
@@ -231,6 +229,12 @@ window.renderTelemetriaChart = function() {
   updateTelStepButtonsState();
 
   const act = dbActivities[currentTelRideIndex];
+
+  // Carregamento sob demanda (Lazy Load) do IndexedDB apenas para a atividade aberta
+  if (!act.telemetry15s && typeof window.loadTelemetryForActivityOnDemand === 'function') {
+    await window.loadTelemetryForActivityOnDemand(act);
+  }
+
   const stream = getSanitizedStream(act);
   const isIndoor = stream.length > 0 && stream[0].indoor;
 
@@ -284,7 +288,6 @@ window.renderTelemetriaChart = function() {
   const getYSpd = (spd) => padT + drawH - (Math.max(0, Math.min(60, spd)) / 60) * drawH;
   const getYWind = (wnd) => (padT + drawH * 0.5) - (Math.max(-30, Math.min(30, wnd)) / 60) * drawH;
 
-  // Grade Horizontal
   ctx.strokeStyle = '#1e293b';
   ctx.lineWidth = 1;
   ctx.font = '10px sans-serif';
@@ -308,7 +311,6 @@ window.renderTelemetriaChart = function() {
     ctx.fillText(`${hrVal} bpm`, w - padR + 6, y + 3);
   }
 
-  // Grade Vertical em Km
   const kmStep = maxKm <= 15 ? 2 : (maxKm <= 40 ? 5 : (maxKm <= 90 ? 10 : 20));
   ctx.fillStyle = '#94a3b8';
   ctx.textAlign = 'center';
@@ -322,7 +324,6 @@ window.renderTelemetriaChart = function() {
     ctx.fillText(`${k} km`, x, padT + drawH + 18);
   }
 
-  // 1. Camada de Altimetria Real Translúcida ao Fundo
   if (telActiveLayers.alt && !isIndoor && validAltPts > 3 && (maxAlt - minAlt) >= 4) {
     ctx.save();
     const grad = ctx.createLinearGradient(0, padT + drawH * 0.35, 0, padT + drawH);
@@ -377,27 +378,18 @@ window.renderTelemetriaChart = function() {
     ctx.restore();
   };
 
-  // 2. Vento Frontal Relativo
   if (telActiveLayers.wind && !isIndoor) {
     drawMetricCurve(pt => pt.wind !== null ? getYWind(pt.wind) : null, '#a855f7', 1.5, true);
   }
-
-  // 3. Velocidade Real 15s (km/h)
   if (telActiveLayers.spd) {
     drawMetricCurve(pt => pt.spd !== null ? getYSpd(pt.spd) : null, '#38bdf8', 1.6, false);
   }
-
-  // 4. Batimentos Cardíacos (BPM)
   if (telActiveLayers.hr) {
     drawMetricCurve(pt => pt.hr > 40 ? getYHr(pt.hr) : null, '#ef4444', 1.6, false);
   }
-
-  // 5. Potência Real (Sensor)
   if (telActiveLayers.pReal && act.realMetrics && act.realMetrics.avgPwr > 15) {
     drawMetricCurve(pt => getYPwr(pt.pReal || 0), '#22c55e', 2.0, false);
   }
-
-  // 6. Potência Estimada (Motor Físico + Vento ERA5)
   if (telActiveLayers.pEst) {
     drawMetricCurve(pt => getYPwr(pt.pEst || 0), '#eab308', 2.0, false);
   }

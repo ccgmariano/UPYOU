@@ -1,4 +1,4 @@
-// Aba Independente: Analisador de Telemetria Multi-Camadas (15s por Km) com Altimetria Translúcida e Slider Histórico
+// Aba Independente: Analisador de Telemetria Multi-Camadas (15s por Km) com Detecção de Rolo em Tempo Real e Altimetria Destacada
 
 const TEL_LAYERS_STORAGE_KEY = 'upyou_telemetry_layers_v1';
 
@@ -14,7 +14,7 @@ let telActiveLayers = {
 let currentTelRideIndex = -1;
 
 const LAYER_META = [
-  { key: 'alt', label: '🏔️ Altimetria (m)', color: '#64748b' },
+  { key: 'alt', label: '🏔️ Altimetria (m)', color: '#94a3b8' },
   { key: 'pReal', label: '⚡ Potência Real (W)', color: '#22c55e' },
   { key: 'pEst', label: '🔮 Potência Estimada (W)', color: '#eab308' },
   { key: 'hr', label: '❤️ Batimentos (bpm)', color: '#ef4444' },
@@ -65,41 +65,56 @@ window.toggleTelemetryLayer = function(key) {
   renderTelemetriaChart();
 };
 
-// Reconstrói apenas Potência e FC de 15s (sem inventar ondas falsas de altimetria/velocidade) para atividades ainda não reimportadas
-function buildFallbackTelemetry15s(act) {
-  const rm = act.realMetrics;
-  const em = act.estMetrics || act.metrics;
-  const baseM = rm || em || act.metrics;
-  if (!baseM) return [];
+// Sanitiza e corrige em tempo real streams já salvas no banco (detecta Rolo com GPS indoor, remove picos falsos de GPS e suaviza vento)
+function getSanitizedStream(act) {
+  if (!Array.isArray(act.telemetry15s) || act.telemetry15s.length < 2) return [];
+  const raw = act.telemetry15s;
 
-  const totalDistKm = Math.max(1, parseFloat(baseM.distKm) || 25);
-  const realWin = (rm && rm.dispWindows && rm.dispWindows[15] && rm.dispWindows[15].length > 0) ? rm.dispWindows[15] : [];
-  const estWin = (em && em.dispWindows && em.dispWindows[15] && em.dispWindows[15].length > 0) ? em.dispWindows[15] : [];
-  const count = Math.max(realWin.length, estWin.length);
-  if (count === 0) return [];
+  let minAlt = Infinity, maxAlt = -Infinity, sumSpd = 0, sumPReal = 0;
+  raw.forEach(p => {
+    if (p.alt !== null && p.alt !== undefined) {
+      if (p.alt < minAlt) minAlt = p.alt;
+      if (p.alt > maxAlt) maxAlt = p.alt;
+    }
+    sumSpd += (p.spd || 0);
+    sumPReal += (p.pReal || 0);
+  });
 
-  const pts = [];
-  for (let i = 0; i < count; i++) {
-    const progress = i / Math.max(1, count - 1);
-    const km = parseFloat((progress * totalDistKm).toFixed(2));
-    const pReal = realWin[i] ? realWin[i][0] : 0;
-    const pEst = estWin[i] ? estWin[i][0] : 0;
-    const hr = realWin[i] ? realWin[i][1] : (estWin[i] ? estWin[i][1] : 0);
+  const avgSpd = sumSpd / raw.length;
+  const avgPReal = sumPReal / raw.length;
+  const altRange = isFinite(minAlt) ? (maxAlt - minAlt) : 0;
 
-    pts.push({
-      km,
-      sec: i * 15,
-      alt: null,
-      pReal,
-      pEst,
-      hr,
-      spd: null,
-      wind: null,
-      grade: 0,
-      isFallback: true
-    });
-  }
-  return pts;
+  // Detecta Rolo (Indoor) mesmo em atividades já importadas: variação de altitude ≤ 9m com velocidade baixa (<20 km/h) e potência alta (>130W)
+  const isIndoorDetected = Boolean(raw[0].indoor) || Boolean(act.estMetrics?.isIndoorTrainer) || (altRange <= 9 && avgSpd < 20.5 && avgPReal > 125);
+  const altOffset = (isFinite(minAlt) && minAlt < 0) ? (-minAlt + 4) : 0;
+
+  const clean = raw.map((pt, idx) => {
+    let pEst = pt.pEst || 0;
+    let wind = pt.wind || 0;
+    let alt = (pt.alt !== null && pt.alt !== undefined) ? (pt.alt + altOffset) : null;
+
+    if (isIndoorDetected) {
+      // No Rolo: zera vento fantasma de GPS indoor e iguala estimativa ao gabarito/FC
+      wind = 0;
+      pEst = pt.pReal > 0 ? pt.pReal : (pt.hr > 95 ? Math.round((pt.hr - 75) * 2.1) : pEst);
+    } else {
+      // Na Rua: Filtra spikes isolados de 15s (quando um ponto salta >85% acima dos vizinhos por falha de GPS)
+      if (idx > 0 && idx < raw.length - 1) {
+        const neighborAvg = ((raw[idx - 1].pEst || 0) + (raw[idx + 1].pEst || 0)) / 2;
+        if (pEst > 360 && pEst > neighborAvg * 1.65) {
+          pEst = Math.round(neighborAvg * 1.15);
+        }
+      }
+      // Suavização leve de 3 blocos no vento relativo para evitar serrilhado de GPS
+      if (idx > 0 && idx < raw.length - 1) {
+        wind = parseFloat((((raw[idx - 1].wind || 0) + wind * 2 + (raw[idx + 1].wind || 0)) / 4).toFixed(1));
+      }
+    }
+
+    return { ...pt, alt, pEst, wind, indoor: isIndoorDetected };
+  });
+
+  return clean;
 }
 
 window.initTelemetriaTab = function() {
@@ -143,17 +158,17 @@ window.renderTelemetriaChart = function() {
   }
 
   const act = dbActivities[currentTelRideIndex];
-  const hasRealStream = Array.isArray(act.telemetry15s) && act.telemetry15s.length > 1 && !act.telemetry15s[0].isFallback;
-  const stream = hasRealStream ? act.telemetry15s : buildFallbackTelemetry15s(act);
+  const stream = getSanitizedStream(act);
+  const isIndoor = stream.length > 0 && stream[0].indoor;
 
   const labelEl = document.getElementById('telSliderLabel');
   if (labelEl) {
     const distTxt = (act.metrics && act.metrics.distKm) ? `${act.metrics.distKm} km` : '';
-    const indoorTag = (act.estMetrics && act.estMetrics.isIndoorTrainer) ? ' [ROLO / INDOOR]' : '';
-    labelEl.innerText = `[#${currentTelRideIndex + 1}/${dbActivities.length}] ${act.date} — ${act.name} (${distTxt})${indoorTag}`;
+    const modeTag = isIndoor ? ' 🏠 [ROLO INDOOR DETECTADO]' : ' 🛣️ [ESTRADA]';
+    labelEl.innerText = `[#${currentTelRideIndex + 1}/${dbActivities.length}] ${act.date} — ${act.name} (${distTxt})${modeTag}`;
   }
 
-  updateTelemetryAuditCard(act, stream, hasRealStream);
+  updateTelemetryAuditCard(act, stream, isIndoor);
 
   if (!stream || stream.length < 2) {
     ctx.fillStyle = '#64748b';
@@ -172,7 +187,7 @@ window.renderTelemetriaChart = function() {
     return padL + (Math.min(maxKm, xKm) / maxKm) * drawW;
   };
 
-  let maxPwr = 320;
+  let maxPwr = 300;
   let minAlt = Infinity, maxAlt = -Infinity;
   let validAltPts = 0;
 
@@ -186,17 +201,19 @@ window.renderTelemetriaChart = function() {
     }
   });
 
-  maxPwr = Math.min(950, Math.ceil((maxPwr * 1.1) / 50) * 50);
+  // Teto visual inteligente da escala de Watts (múltiplo de 50W)
+  maxPwr = Math.min(750, Math.ceil((maxPwr * 1.12) / 50) * 50);
   if (!isFinite(minAlt)) { minAlt = 0; maxAlt = 100; }
-  const altSpan = Math.max(25, (maxAlt - minAlt) * 1.35);
+  const altDiff = Math.max(12, maxAlt - minAlt);
 
   const getYPwr = (pwr) => padT + drawH - (Math.max(0, Math.min(maxPwr, pwr)) / maxPwr) * drawH;
   const getYHr = (hr) => padT + drawH - ((Math.max(80, Math.min(205, hr)) - 80) / (205 - 80)) * drawH;
-  const getYAlt = (alt) => padT + drawH - ((alt - minAlt) / altSpan) * (drawH * 0.70);
-  const getYSpd = (spd) => padT + drawH - (Math.max(0, Math.min(65, spd)) / 65) * drawH;
-  const getYWind = (wnd) => (padT + drawH * 0.5) - (Math.max(-35, Math.min(35, wnd)) / 70) * drawH;
+  // Altimetria agora ocupa até 65% da altura vertical com contraste visível
+  const getYAlt = (alt) => padT + drawH - ((alt - minAlt) / altDiff) * (drawH * 0.62);
+  const getYSpd = (spd) => padT + drawH - (Math.max(0, Math.min(60, spd)) / 60) * drawH;
+  const getYWind = (wnd) => (padT + drawH * 0.5) - (Math.max(-30, Math.min(30, wnd)) / 60) * drawH;
 
-  // Grade Horizontal e Eixos
+  // Grade Horizontal
   ctx.strokeStyle = '#1e293b';
   ctx.lineWidth = 1;
   ctx.font = '10px sans-serif';
@@ -234,12 +251,12 @@ window.renderTelemetriaChart = function() {
     ctx.fillText(`${k} km`, x, padT + drawH + 18);
   }
 
-  // 1. Camada de Altimetria Real Translúcida ao Fundo
-  if (telActiveLayers.alt && validAltPts > 3 && (maxAlt - minAlt) >= 2) {
+  // 1. Camada de Altimetria Real Translúcida ao Fundo (Oculta automaticamente se for Rolo Indoor plano)
+  if (telActiveLayers.alt && !isIndoor && validAltPts > 3 && (maxAlt - minAlt) >= 4) {
     ctx.save();
-    const grad = ctx.createLinearGradient(0, padT, 0, padT + drawH);
-    grad.addColorStop(0, 'rgba(148, 163, 184, 0.38)');
-    grad.addColorStop(1, 'rgba(15, 23, 42, 0.04)');
+    const grad = ctx.createLinearGradient(0, padT + drawH * 0.35, 0, padT + drawH);
+    grad.addColorStop(0, 'rgba(148, 163, 184, 0.45)');
+    grad.addColorStop(1, 'rgba(30, 41, 59, 0.08)');
 
     ctx.beginPath();
     ctx.moveTo(getX(stream[0].km, 0), padT + drawH);
@@ -258,15 +275,14 @@ window.renderTelemetriaChart = function() {
       const x = getX(pt.km, idx), y = getYAlt(a);
       if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     });
-    ctx.strokeStyle = 'rgba(148, 163, 184, 0.70)';
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 1.6;
     ctx.stroke();
 
-    // Rótulo de Altitude Mín / Máx
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = 'bold 10px sans-serif';
+    ctx.fillStyle = '#e2e8f0';
+    ctx.font = 'bold 10.5px sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText(`🏔️ Alt: ${minAlt}m – ${maxAlt}m`, padL + 8, padT + 14);
+    ctx.fillText(`🏔️ Elevação: ${minAlt}m ➔ ${maxAlt}m (Δ ${maxAlt - minAlt}m)`, padL + 8, padT + 14);
     ctx.restore();
   }
 
@@ -290,13 +306,13 @@ window.renderTelemetriaChart = function() {
     ctx.restore();
   };
 
-  // 2. Vento Frontal Relativo (apenas quando disponível da reimportação)
-  if (telActiveLayers.wind && hasRealStream) {
-    drawMetricCurve(pt => pt.wind !== null ? getYWind(pt.wind) : null, '#a855f7', 1.4, true);
+  // 2. Vento Frontal Relativo (apenas em pedais de rua)
+  if (telActiveLayers.wind && !isIndoor) {
+    drawMetricCurve(pt => pt.wind !== null ? getYWind(pt.wind) : null, '#a855f7', 1.5, true);
   }
 
   // 3. Velocidade Real 15s (km/h)
-  if (telActiveLayers.spd && hasRealStream) {
+  if (telActiveLayers.spd) {
     drawMetricCurve(pt => pt.spd !== null ? getYSpd(pt.spd) : null, '#38bdf8', 1.6, false);
   }
 
@@ -316,7 +332,7 @@ window.renderTelemetriaChart = function() {
   }
 };
 
-function updateTelemetryAuditCard(act, stream, hasRealStream) {
+function updateTelemetryAuditCard(act, stream, isIndoor) {
   const box = document.getElementById('telAuditCard');
   if (!box) return;
 
@@ -324,9 +340,17 @@ function updateTelemetryAuditCard(act, stream, hasRealStream) {
   const em = act.estMetrics || act.metrics;
   const hasReal = rm && rm.avgPwr > 15;
 
-  const reimportWarning = !hasRealStream
-    ? `<div style="margin-top: 6px; color: #38bdf8; font-size: 0.78rem;">ℹ️ <strong>Nota:</strong> Esta atividade do Strava foi lida do cache antigo (sem stream de Altimetria/Velocidade/Vento de 15s). Clique em <strong>"+ Importar / Recalcular ZIP do Strava"</strong> abaixo para extrair o relevo real, velocidade e vento histórico ERA5!</div>`
-    : '';
+  if (isIndoor) {
+    const pwrVal = rm ? rm.avgPwr : (em?.avgPwr || 0);
+    const npVal = rm ? rm.np : (em?.np || 0);
+    box.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+        <span>🏠 <strong>Treino em Rolo (Indoor) Detectado:</strong> Altimetria e vento de rua desativados automaticamente (GPS estacionário).</span>
+        <span>⚡ <strong>Potência:</strong> <strong style="color:#22c55e;">${pwrVal} W</strong> (NP: ${npVal} W) | ❤️ <strong>FC Média:</strong> ${(rm || em)?.avgHr || 0} bpm</span>
+      </div>
+    `;
+    return;
+  }
 
   if (!hasReal) {
     box.innerHTML = `
@@ -334,25 +358,22 @@ function updateTelemetryAuditCard(act, stream, hasRealStream) {
         <span>📡 <strong>Atividade Sem Sensor de Potência Real:</strong> Reconstruída 100% pelo Motor Físico + Vento ERA5.</span>
         <span>🔮 <strong>Potência Estimada:</strong> <strong style="color:#eab308;">${em?.avgPwr || 0} W</strong> (NP: ${em?.np || 0} W) | ❤️ <strong>FC Média:</strong> ${em?.avgHr || 0} bpm</span>
       </div>
-      ${reimportWarning}
     `;
     return;
   }
 
-  const realAvg = rm.avgPwr || 0;
-  const estAvg = em?.avgPwr || 0;
-  const diffW = estAvg - realAvg;
-  const diffPct = realAvg > 0 ? ((diffW / realAvg) * 100).toFixed(1) : '0.0';
-
-  let sumAbsErr = 0, validCnt = 0;
+  let sumReal = 0, sumEst = 0, movCnt = 0;
+  let sumAbsErr = 0;
   let climbDiffSum = 0, climbCnt = 0;
   let flatDiffSum = 0, flatCnt = 0;
 
-  if (Array.isArray(stream)) {
+  if (Array.isArray(stream) && stream.length > 0) {
     stream.forEach(pt => {
-      if (pt.pReal > 30 || pt.pEst > 30) {
+      if (pt.pReal > 20 || pt.pEst > 20) {
+        sumReal += pt.pReal;
+        sumEst += pt.pEst;
+        movCnt++;
         sumAbsErr += Math.abs(pt.pEst - pt.pReal);
-        validCnt++;
         if (pt.grade >= 2.5) {
           climbDiffSum += (pt.pEst - pt.pReal);
           climbCnt++;
@@ -364,7 +385,12 @@ function updateTelemetryAuditCard(act, stream, hasRealStream) {
     });
   }
 
-  const mae = validCnt > 0 ? Math.round(sumAbsErr / validCnt) : Math.abs(diffW);
+  const realAvg = rm.avgPwr || (movCnt > 0 ? Math.round(sumReal / movCnt) : 0);
+  const estAvg = movCnt > 0 ? Math.round(sumEst / movCnt) : (em?.avgPwr || 0);
+  const diffW = estAvg - realAvg;
+  const diffPct = realAvg > 0 ? ((diffW / realAvg) * 100).toFixed(1) : '0.0';
+
+  const mae = movCnt > 0 ? Math.round(sumAbsErr / movCnt) : Math.abs(diffW);
   const climbBias = climbCnt > 0 ? `${climbDiffSum >= 0 ? '+' : ''}${Math.round(climbDiffSum / climbCnt)}W` : 's/ rampa';
   const flatBias = flatCnt > 0 ? `${flatDiffSum >= 0 ? '+' : ''}${Math.round(flatDiffSum / flatCnt)}W` : `${diffW >= 0 ? '+' : ''}${diffW}W`;
   const biasColor = Math.abs(diffW) <= 12 ? '#22c55e' : (Math.abs(diffW) <= 25 ? '#eab308' : '#f87171');
@@ -373,7 +399,7 @@ function updateTelemetryAuditCard(act, stream, hasRealStream) {
     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
       <div>
         ⚡ <strong>Real (Sensor):</strong> <span style="color:#22c55e; font-weight:bold;">${realAvg} W</span> (NP ${rm.np}W) &nbsp;|&nbsp;
-        🔮 <strong>Simulada (Motor):</strong> <span style="color:#eab308; font-weight:bold;">${estAvg} W</span> (NP ${em?.np || 0}W)
+        🔮 <strong>Simulada (Motor):</strong> <span style="color:#eab308; font-weight:bold;">${estAvg} W</span>
       </div>
       <div>
         📏 <strong>Divergência Média (Bias):</strong> <span style="color:${biasColor}; font-weight:bold;">${diffW >= 0 ? '+' : ''}${diffW} W (${diffW >= 0 ? '+' : ''}${diffPct}%)</span> &nbsp;|&nbsp;
@@ -382,6 +408,5 @@ function updateTelemetryAuditCard(act, stream, hasRealStream) {
         🛣️ <strong>Planos:</strong> ${flatBias}
       </div>
     </div>
-    ${reimportWarning}
   `;
 }

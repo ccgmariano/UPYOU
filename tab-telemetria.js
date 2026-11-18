@@ -276,7 +276,6 @@ window.renderTelemetriaChart = async function() {
   const getYSpd = (spd) => padT + drawH - (Math.max(0, Math.min(60, spd)) / 60) * drawH;
   const getYWind = (wnd) => (padT + drawH * 0.5) - (Math.max(-30, Math.min(30, wnd)) / 60) * drawH;
 
-  // Grade Horizontal e Eixos Multi-Escala (Esquerda = Watts | Direita = BPM / Cadência / Vel / Vento)
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
   ctx.lineWidth = 1;
   ctx.font = '10px "JetBrains Mono", monospace';
@@ -289,13 +288,11 @@ window.renderTelemetriaChart = async function() {
     ctx.lineTo(w - padR, y);
     ctx.stroke();
 
-    // Eixo Esquerdo: Watts
     const wVal = Math.round(frac * maxPwr);
     ctx.fillStyle = '#94a3b8';
     ctx.textAlign = 'right';
     ctx.fillText(`${wVal}W`, padL - 7, y + 3);
 
-    // Eixo Direito Dinâmico conforme as camadas ligadas
     ctx.textAlign = 'left';
     if (telActiveLayers.hr) {
       const hrVal = Math.round(80 + frac * (205 - 80));
@@ -316,7 +313,6 @@ window.renderTelemetriaChart = async function() {
     }
   }
 
-  // Grade Vertical em Km
   const kmStep = maxKm <= 15 ? 2 : (maxKm <= 40 ? 5 : (maxKm <= 90 ? 10 : 20));
   ctx.fillStyle = '#94a3b8';
   ctx.textAlign = 'center';
@@ -330,7 +326,6 @@ window.renderTelemetriaChart = async function() {
     ctx.fillText(`${k} km`, x, padT + drawH + 18);
   }
 
-  // 1. Altimetria Translúcida ao Fundo
   if (telActiveLayers.alt && !isIndoor && validAltPts > 3 && (maxAlt - minAlt) >= 4) {
     ctx.save();
     const grad = ctx.createLinearGradient(0, padT + drawH * 0.35, 0, padT + drawH);
@@ -385,7 +380,6 @@ window.renderTelemetriaChart = async function() {
     ctx.restore();
   };
 
-  // Linha de referência zero do vento (quando o vento estiver ativado)
   if (telActiveLayers.wind && !isIndoor) {
     const yZeroWind = padT + drawH * 0.5;
     ctx.save();
@@ -434,7 +428,6 @@ function updateTelemetryAuditAndNeonCards(act, stream, isIndoor) {
   const m = rm || em || act.metrics || {};
   const hasReal = rm && rm.avgPwr > 15;
 
-  // Calcula cadência média e vento médio do stream se disponível
   let sumCad = 0, cntCad = 0, sumWind = 0, cntWind = 0;
   let sumReal = 0, sumEst = 0, movCnt = 0, sumAbsErr = 0;
   let climbDiffSum = 0, climbCnt = 0, flatDiffSum = 0, flatCnt = 0;
@@ -463,7 +456,6 @@ function updateTelemetryAuditAndNeonCards(act, stream, isIndoor) {
   const displayCad = cntCad > 0 ? Math.round(sumCad / cntCad) : (m.avgCad || 0);
   const avgWind = cntWind > 0 ? (sumWind / cntWind).toFixed(1) : '0.0';
 
-  // Atualiza a coluna direita Matrix Neon Precision
   if (kpiCol) {
     kpiCol.innerHTML = `
       <div class="neon-kpi-card green">
@@ -515,4 +507,8 @@ function updateTelemetryAuditAndNeonCards(act, stream, isIndoor) {
     <span class="mono">
       <strong>BIAS:</strong> <span style="color:${biasColor}; font-weight:700;">${diffW >= 0 ? '+' : ''}${diffW}W (${diffW >= 0 ? '+' : ''}${diffPct}%)</span> &bull;
       <strong>MAE (15s):</strong> &plusmn;${mae}W &bull;
-      <strong>
+      <strong>SUBIDAS:</strong> ${climbBias} &bull;
+      <strong>PLANOS:</strong> ${flatBias}
+    </span>
+  `;
+}

@@ -1,4 +1,4 @@
-// Núcleo Principal (IndexedDB UpYouDB, Leitor Nativo FIT/ZIP com Altimetria, Vento ERA5, Telemetria 15s e Verificador GitHub)
+// Núcleo Principal (IndexedDB UpYouDB, Leitor Nativo FIT/ZIP com Enhanced Altitude/Speed, Vento ERA5, Telemetria 15s e Verificador GitHub)
 let dbActivities = [];
 let currentUserId = null;
 let currentUserName = "";
@@ -58,7 +58,6 @@ function updateHrSubtitle() {
   }
 }
 
-// --- SISTEMA DE LOGIN GOOGLE ---
 function handleCredentialResponse(response) {
   const base64Url = response.credential.split('.')[1];
   const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
@@ -92,7 +91,6 @@ function logout() {
   location.href = location.pathname; 
 }
 
-// --- VINCULAR CONTA GARMIN (MULTIUSUÁRIO) ---
 function connectGarminAccount() {
   if (!currentUserId) {
     alert("Faça login com o Google primeiro.");
@@ -118,7 +116,6 @@ async function checkGarminConnectionStatus() {
   }
 }
 
-// --- BANCO DE DADOS LOCAL ---
 function initDB() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME);
@@ -177,7 +174,6 @@ async function clearLocalDatabase() {
   }
 }
 
-// --- INICIALIZAÇÃO E SINCRONIZAÇÃO GARMIN CLOUD ---
 async function initializeAppForUser() {
   const savedData = await loadFromDB();
   if (savedData && savedData.length > 0) {
@@ -211,9 +207,9 @@ async function syncWithGarminCloud() {
       const existingAct = existingIdx !== -1 ? dbActivities[existingIdx] : null;
       const m = existingAct ? (existingAct.realMetrics || existingAct.metrics) : null;
       const hasFullDisp = m && m.dispWindows && m.dispWindows[5] !== undefined && m.mhr20 !== undefined;
-      const hasTelemetry = existingAct && Array.isArray(existingAct.telemetry15s) && existingAct.telemetry15s.length > 0;
+      const hasRealTelemetry = existingAct && Array.isArray(existingAct.telemetry15s) && existingAct.telemetry15s.length > 2 && !existingAct.telemetry15s[0].isFallback;
 
-      if (existingIdx === -1 || !m || !m.pwrHrPairs || !hasFullDisp || !hasTelemetry) {
+      if (existingIdx === -1 || !m || !m.pwrHrPairs || !hasFullDisp || !hasRealTelemetry) {
         const detailRes = await fetch(`${GARMIN_API_URL}?google_id=${encodeURIComponent(currentUserId)}&id=${encodeURIComponent(item.id)}`);
         if (detailRes.ok) {
           const garminJson = await detailRes.json();
@@ -272,7 +268,7 @@ async function buildDualMetricsFromRecords(records, dateObj) {
 
   let sumLat = 0, sumLon = 0, gpsCnt = 0;
   for (let i = 0; i < records.length; i += 10) {
-    if (records[i].lat && records[i].lon) {
+    if (records[i].lat && records[i].lon && Math.abs(records[i].lat) > 0.01) {
       sumLat += records[i].lat;
       sumLon += records[i].lon;
       gpsCnt++;
@@ -525,6 +521,7 @@ function parseStravaDate(str) {
   return isNaN(d.getTime()) ? new Date() : d;
 }
 
+// Leitor Nativo FIT completo: Suporta Standard & Enhanced Speed (6, 73, 134) e Standard & Enhanced Altitude (2, 78)
 function parseFitNative(u8) {
   const view = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
   let offset = view.getUint8(0);
@@ -572,12 +569,21 @@ function parseFitNative(u8) {
             }
             else if (f.num === 5) rec.distance = (val !== 0xFFFFFFFF) ? val / 100 : 0;
             else if (f.num === 6) { if (val !== 0xFFFF) rec.speed = (val / 1000) * 3.6; }
-            else if (f.num === 134) { if (val !== 0xFFFFFFFF) rec.speed = (val / 1000) * 3.6; }
+            else if (f.num === 73 || f.num === 134) {
+              // Enhanced Speed (32-bit uint, scale 1000 m/s)
+              if (val !== 0xFFFFFFFF) rec.speed = (val / 1000) * 3.6;
+            }
             else if (f.num === 2) {
-              if (val !== 0xFFFF) rec.altitude = (val / 5) - 500;
+              if (val !== 0xFFFF) {
+                const alt = (val / 5) - 500;
+                if (alt >= -200 && alt <= 6000) rec.altitude = alt;
+              }
             }
             else if (f.num === 78) {
-              if (val !== 0xFFFFFFFF) rec.altitude = (val / 5) - 500;
+              if (val !== 0xFFFFFFFF) {
+                const alt = (val / 5) - 500;
+                if (alt >= -200 && alt <= 6000) rec.altitude = alt;
+              }
             }
             else if (f.num === 0) lat = (signedVal !== 0x7FFFFFFF && signedVal !== 0) ? signedVal * (180 / Math.pow(2, 31)) : 0;
             else if (f.num === 1) lon = (signedVal !== 0x7FFFFFFF && signedVal !== 0) ? signedVal * (180 / Math.pow(2, 31)) : 0;
@@ -602,14 +608,20 @@ function parseFitNative(u8) {
           }
           if (rec.speed > 130) rec.speed = 0;
 
-          if (lat !== 0 && lon !== 0) {
+          if (lat !== 0 && lon !== 0 && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
             rec.lat = lat;
             rec.lon = lon;
             if (prevLat !== null && (lat !== prevLat || lon !== prevLon) && typeof window.calculateBearingDeg === 'function') {
-              lastBearing = window.calculateBearingDeg(prevLat, prevLon, lat, lon);
+              const distStepMeters = getDistanceFromLatLonInKm(prevLat, prevLon, lat, lon) * 1000;
+              if (distStepMeters >= 3.0) {
+                lastBearing = window.calculateBearingDeg(prevLat, prevLon, lat, lon);
+                prevLat = lat;
+                prevLon = lon;
+              }
+            } else if (prevLat === null) {
+              prevLat = lat;
+              prevLon = lon;
             }
-            prevLat = lat;
-            prevLon = lon;
           }
           rec.bearing = lastBearing;
           prevTime = rec.timestamp;
@@ -957,7 +969,6 @@ function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
   return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
 
-// --- VERIFICADOR AUTOMÁTICO DE ATUALIZAÇÕES DO GITHUB ---
 function checkForUpdates() {
   const repoUrl = 'https://api.github.com/repos/ccgmariano/UPYOU/commits/main';
   fetch(repoUrl)

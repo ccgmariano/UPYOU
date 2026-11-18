@@ -1,4 +1,4 @@
-// Motor Físico, Biométrico, Integração Meteorológica ERA5, Telemetria 15s e Auto-Calibrador Inverso (Fases 1 a 4)
+// Motor Físico, Biométrico, Integração Meteorológica ERA5 em Lotes, Detecção Geográfica de Rolo e Auto-Calibrador (Fases 1 a 4)
 
 window.userPowerConfig = {
   bikeType: 'road',       // 'road' ou 'mtb'
@@ -10,12 +10,12 @@ window.userPowerConfig = {
   cd: 0.80,
   cda: 0.328,
   crr: 0.0045,
-  calibratedCdScale: 1.0, // Fator de ajuste fino aprendido pela Auto-Calibração Histórica
-  calibratedCrr: null,    // Crr aprendido pela Auto-Calibração Histórica
-  windShelterFactor: 0.55 // Fator de redução do vento de 10m (ERA5) para o nível do guidão com abrigo/trânsito
+  calibratedCdScale: 1.0,
+  calibratedCrr: null,
+  windShelterFactor: 0.55
 };
 
-const WEATHER_CACHE_KEY = 'upyou_era5_weather_cache_v1';
+const WEATHER_CACHE_KEY = 'upyou_era5_weather_cache_v2';
 let weatherMemoryCache = null;
 
 function getWeatherCache() {
@@ -41,15 +41,12 @@ function getPowerStorageKey() {
   return `upyou_pwr_cfg_${uid}`;
 }
 
-// Cálculo Antropométrico Padrão de Área Frontal (A), CdA e Crr com suporte a Auto-Calibração
 window.computeDefaultAeroParams = function(totalWeightKg, heightCm, bikeType) {
   const isMtb = bikeType === 'mtb';
   const estBikeMass = isMtb ? 12.5 : 9.0;
   const riderMassKg = Math.max(42, totalWeightKg - estBikeMass);
 
-  // Área de Superfície Corporal de DuBois (BSA em m²)
   const bsa = 0.007184 * Math.pow(riderMassKg, 0.425) * Math.pow(heightCm, 0.725);
-
   const riderProjFactor = isMtb ? 0.215 : 0.178;
   const bikeFrontalM2 = isMtb ? 0.095 : 0.065;
 
@@ -110,7 +107,6 @@ window.savePowerEnginePreferences = function() {
   } catch (e) {}
 };
 
-// Re-escala instantaneamente estMetrics e telemetry15s quando o usuário altera Peso, Altura, Bike, Área Frontal ou Auto-Calibração
 function rescaleExistingSimulatedMetrics() {
   if (typeof dbActivities === 'undefined' || !Array.isArray(dbActivities)) return;
   const cfg = window.userPowerConfig;
@@ -122,8 +118,7 @@ function rescaleExistingSimulatedMetrics() {
     if (!act.estMetrics) return;
 
     const em = act.estMetrics;
-    // Se foi detectado como treino de rolo (sem deslocamento GPS), preserva espelhamento se houver sensor
-    if (em.isIndoorTrainer && act.realMetrics) return;
+    if (em.isIndoorTrainer) return;
 
     const baseMass = em.simParams?.totalWeightKg || 82;
     const baseCda = em.simParams?.cda || 0.328;
@@ -140,7 +135,6 @@ function rescaleExistingSimulatedMetrics() {
 
     scaleMetricsObject(em, ratio, cfg);
 
-    // Atualiza também a curva de Potência Estimada dentro da telemetria de 15 segundos da atividade
     if (Array.isArray(act.telemetry15s)) {
       act.telemetry15s.forEach(pt => {
         if (pt.pEst > 0) pt.pEst = Math.round(pt.pEst * ratio);
@@ -309,12 +303,16 @@ window.getActiveMetrics = function(act) {
   return act.realMetrics || act.estMetrics || act.metrics;
 };
 
-// --- FASE 2: INTEGRAÇÃO METEOROLÓGICA ERA5 / ECMWF (OPEN-METEO ARCHIVE API) ---
+// --- CONSULTA METEOROLÓGICA ERA5 COM FALLBACK REGIONAL E PROTEÇÃO DE RATE-LIMIT ---
 window.fetchHistoricalWeatherForActivity = async function(lat, lon, dateObj) {
-  if (!lat || !lon || !dateObj || isNaN(dateObj.getTime())) return null;
+  if (!dateObj || isNaN(dateObj.getTime())) return null;
 
-  const rLat = (Math.round(lat * 10) / 10).toFixed(1);
-  const rLon = (Math.round(lon * 10) / 10).toFixed(1);
+  // Fallback regional (Tubarão/SC) caso o GPS tenha demorado a sincronizar
+  const validLat = (lat && Math.abs(lat) > 0.1) ? lat : -28.48;
+  const validLon = (lon && Math.abs(lon) > 0.1) ? lon : -49.00;
+
+  const rLat = (Math.round(validLat * 5) / 5).toFixed(1);
+  const rLon = (Math.round(validLon * 5) / 5).toFixed(1);
   const yyyy = dateObj.getFullYear();
   const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
   const dd = String(dateObj.getDate()).padStart(2, '0');
@@ -334,7 +332,7 @@ window.fetchHistoricalWeatherForActivity = async function(lat, lon, dateObj) {
 
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 3500);
+    const timer = setTimeout(() => controller.abort(), 3200);
     const res = await fetch(url, { signal: controller.signal });
     clearTimeout(timer);
     if (!res.ok) return null;
@@ -364,7 +362,7 @@ window.calculateBearingDeg = function(lat1, lon1, lat2, lon2) {
   return (brng + 360) % 360;
 };
 
-// --- FASE 3 & 4: MOTOR DE ESTIMATIVA DE POTÊNCIA + TELEMETRIA DE 15 SEGUNDOS POR KM ---
+// --- DETECÇÃO GEOGRÁFICA PRECISA DE ROLO (INDOOR) + MOTOR FÍSICO ANTI-SPIKE ---
 window.simulatePowerAndTelemetry = function(records, weatherHourly, fallbackDateObj) {
   if (!records || records.length === 0) return { simRecords: [], telemetry15s: [], isIndoor: false };
   const cfg = window.userPowerConfig;
@@ -377,24 +375,76 @@ window.simulatePowerAndTelemetry = function(records, weatherHourly, fallbackDate
 
   const n = records.length;
 
-  // Detecta se é treino de Rolo (Indoor): ausência de coordenadas GPS válidas
+  // 1. Detecção de Rolo (Indoor) via Bounding Box Geográfico:
+  // Mesmo que o GPS esteja ligado dentro de casa, o ciclista não sai de uma caixa de ~250 metros.
+  let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
   let gpsValidCount = 0;
-  for (let i = 0; i < n; i += 5) {
-    if (records[i].lat && records[i].lon && Math.abs(records[i].lat) > 0.01) gpsValidCount++;
+  for (let i = 0; i < n; i += 3) {
+    const la = records[i].lat, lo = records[i].lon;
+    if (la && lo && Math.abs(la) > 0.01 && Math.abs(lo) > 0.01) {
+      if (la < minLat) minLat = la;
+      if (la > maxLat) maxLat = la;
+      if (lo < minLon) minLon = lo;
+      if (lo > maxLon) maxLon = lo;
+      gpsValidCount++;
+    }
   }
-  const isIndoor = gpsValidCount < 5;
 
-  // Suavização mais ampla de Altitude (±8 amostras) para evitar "falsas rampas" de GPS/barômetro na rua
+  let bboxSpanMeters = 0;
+  if (gpsValidCount >= 5 && isFinite(minLat)) {
+    const dLatM = (maxLat - minLat) * 111320;
+    const dLonM = (maxLon - minLon) * 111320 * Math.cos((minLat * Math.PI) / 180);
+    bboxSpanMeters = Math.hypot(dLatM, dLonM);
+  }
+  const isIndoor = (gpsValidCount < 10) || (bboxSpanMeters < 280);
+
+  // 2. Correção de Offset Negativo de Barômetro (ex: quando inicia em -20m ao nível do mar) e Suavização de Altitude
+  let rawMinAlt = Infinity;
+  for (let i = 0; i < n; i++) {
+    const a = records[i].altitude;
+    if (a !== undefined && a !== null && !isNaN(a) && a < rawMinAlt) rawMinAlt = a;
+  }
+  const altFloorOffset = (isFinite(rawMinAlt) && rawMinAlt < 0) ? (-rawMinAlt + 4) : 0;
+
   const smoothAlt = new Array(n);
   for (let i = 0; i < n; i++) {
     let sumA = 0, cntA = 0;
-    for (let j = Math.max(0, i - 8); j <= Math.min(n - 1, i + 8); j++) {
+    for (let j = Math.max(0, i - 10); j <= Math.min(n - 1, i + 10); j++) {
       if (records[j].altitude !== undefined && records[j].altitude !== null && !isNaN(records[j].altitude)) {
-        sumA += records[j].altitude;
+        sumA += (records[j].altitude + altFloorOffset);
         cntA++;
       }
     }
     smoothAlt[i] = cntA > 0 ? (sumA / cntA) : null;
+  }
+
+  // 3. Rumo (Bearing) Vetorial Suavizado a cada ~25m de deslocamento real (elimina zigue-zague do vento)
+  const smoothBearing = new Array(n).fill(null);
+  if (!isIndoor) {
+    let lastValidBrng = null;
+    for (let i = 0; i < n; i++) {
+      let back = i;
+      while (back > 0 && ((records[i].distance || 0) - (records[back].distance || 0)) < 25) back--;
+      if (records[i].lat && records[i].lon && records[back].lat && records[back].lon && back < i) {
+        const dLatM = (records[i].lat - records[back].lat) * 111320;
+        const dLonM = (records[i].lon - records[back].lon) * 111320;
+        if (Math.hypot(dLatM, dLonM) >= 12) {
+          lastValidBrng = window.calculateBearingDeg(records[back].lat, records[back].lon, records[i].lat, records[i].lon);
+        }
+      }
+      smoothBearing[i] = lastValidBrng !== null ? lastValidBrng : records[i].bearing;
+    }
+  }
+
+  // 4. Suavização de Velocidade (média de 3 amostras para eliminar saltos de GPS após paradas)
+  const smoothSpdKmh = new Array(n).fill(0);
+  for (let i = 0; i < n; i++) {
+    let s = 0, c = 0;
+    for (let j = Math.max(0, i - 2); j <= Math.min(n - 1, i + 2); j++) {
+      const sp = records[j].speed || 0;
+      if (sp >= 0 && sp < 110) { s += sp; c++; }
+    }
+    smoothSpdKmh[i] = c > 0 ? (s / c) : 0;
   }
 
   const baseHourUtc = fallbackDateObj ? fallbackDateObj.getUTCHours() : 12;
@@ -405,12 +455,21 @@ window.simulatePowerAndTelemetry = function(records, weatherHourly, fallbackDate
 
   for (let i = 0; i < n; i++) {
     const r = records[i];
-    const vMs = Math.max(0, (r.speed || 0) / 3.6);
+    const vMs = Math.max(0, smoothSpdKmh[i] / 3.6);
 
     if (isIndoor) {
-      // No rolo ergométrico: se existir sensor real, espelha; senão aplica curva de resistência fluida padrão (P = 0.22*v³ + 3.5*v)
-      const indoorW = r.power > 0 ? r.power : (vMs >= 1.0 ? Math.round(0.22 * Math.pow(vMs, 3) + 3.5 * vMs) : 0);
+      // No Rolo: se houver medidor de potência real, usa ele como gabarito; se não houver, estima pelo custo cardíaco/cadência
+      let indoorW = 0;
+      if (r.power > 0) {
+        indoorW = r.power;
+      } else if (r.hr > 95) {
+        indoorW = Math.max(45, Math.round((r.hr - 75) * 2.1));
+      } else if (vMs >= 1.0) {
+        indoorW = Math.round(0.22 * Math.pow(vMs, 3) + 4.2 * vMs);
+      }
       simRecords[i] = { ...r, power: indoorW };
+      headwindArr[i] = 0;
+      gradeArr[i] = 0;
       continue;
     }
 
@@ -419,20 +478,21 @@ window.simulatePowerAndTelemetry = function(records, weatherHourly, fallbackDate
       continue;
     }
 
-    // 1. Inclinação (Grade) com janela de ~50m a 90m (±10 amostras) para estabilidade em estrada
+    // Inclinação (Grade) com janela mínima de 40 metros para nunca criar picos falsos em baixa velocidade
     let grade = 0;
     if (smoothAlt[i] !== null) {
-      let backIdx = Math.max(0, i - 10);
-      let fwdIdx = Math.min(n - 1, i + 10);
+      let backIdx = i, fwdIdx = i;
+      while (backIdx > 0 && ((records[i].distance || 0) - (records[backIdx].distance || 0)) < 25) backIdx--;
+      while (fwdIdx < n - 1 && ((records[fwdIdx].distance || 0) - (records[i].distance || 0)) < 25) fwdIdx++;
       const dDist = (records[fwdIdx].distance || 0) - (records[backIdx].distance || 0);
-      if (dDist >= 25 && smoothAlt[fwdIdx] !== null && smoothAlt[backIdx] !== null) {
+      if (dDist >= 35 && smoothAlt[fwdIdx] !== null && smoothAlt[backIdx] !== null) {
         grade = (smoothAlt[fwdIdx] - smoothAlt[backIdx]) / dDist;
-        grade = Math.max(-0.16, Math.min(0.22, grade));
+        grade = Math.max(-0.14, Math.min(0.18, grade));
       }
     }
     gradeArr[i] = grade;
 
-    // 2. Condições Meteorológicas (ERA5)
+    // Meteorologia ERA5
     const elapsedHours = Math.floor(Math.max(0, (r.timestamp - startTs)) / 3600);
     const hourIdx = Math.min(23, Math.max(0, baseHourUtc + elapsedHours));
 
@@ -453,27 +513,28 @@ window.simulatePowerAndTelemetry = function(records, weatherHourly, fallbackDate
     const rho = (pressHpa * 100) / (287.058 * (tempC + 273.15));
 
     let headwindMs = 0;
-    if (windSpeedMs > 0 && r.bearing !== undefined && r.bearing !== null) {
-      const angleDiffRad = ((windFromDeg - r.bearing) * Math.PI) / 180;
+    const brng = smoothBearing[i];
+    if (windSpeedMs > 0 && brng !== undefined && brng !== null) {
+      const angleDiffRad = ((windFromDeg - brng) * Math.PI) / 180;
       headwindMs = windSpeedMs * Math.cos(angleDiffRad);
     }
-    headwindArr[i] = headwindMs * 3.6; // guarda em km/h para telemetria
+    headwindArr[i] = headwindMs * 3.6;
 
     const vAir = vMs + headwindMs;
 
-    // 3. Forças Físicas: Gravidade + Rolagem + Aerodinâmica + Aceleração Suavizada (janela de 4s para não inflar com ruído GPS)
     const theta = Math.atan(grade);
     const pGrav = mass * g * Math.sin(theta) * vMs;
     const pRoll = crr * mass * g * Math.cos(theta) * vMs;
     const pAero = 0.5 * rho * cda * vMs * vAir * Math.abs(vAir);
 
+    // Aceleração Cinética amortecida em janela de 8 segundos (evita explosão de NP em retomadas de GPS)
     let pKin = 0;
-    if (i >= 4) {
-      const dt = Math.max(1, (r.timestamp - records[i - 4].timestamp));
-      if (dt >= 3 && dt <= 12) {
-        const prevV = Math.max(0, (records[i - 4].speed || 0) / 3.6);
+    if (i >= 8) {
+      const dt = Math.max(1, (r.timestamp - records[i - 8].timestamp));
+      if (dt >= 6 && dt <= 16) {
+        const prevV = Math.max(0, smoothSpdKmh[i - 8] / 3.6);
         const dv = vMs - prevV;
-        const clampedAcc = Math.max(-0.55, Math.min(0.55, dv / dt));
+        const clampedAcc = Math.max(-0.32, Math.min(0.32, dv / dt));
         pKin = mass * 1.03 * vMs * clampedAcc;
       }
     }
@@ -482,14 +543,15 @@ window.simulatePowerAndTelemetry = function(records, weatherHourly, fallbackDate
 
     if ((r.hasCadSensor && r.cad === 0) || totalWatts <= 0) {
       totalWatts = 0;
-    } else if (totalWatts > 1350) {
-      totalWatts = 1350;
+    } else if (totalWatts > 680) {
+      // Teto físico realista para estimativa aerodinâmica/gravitacional contínua sem picos de ruído GPS
+      totalWatts = 680;
     }
 
     simRecords[i] = { ...r, power: Math.round(totalWatts) };
   }
 
-  // Construção da Série de Telemetria Compacta a cada 15 Segundos (Eixo X = km)
+  // Série de Telemetria Compacta a cada 15 Segundos
   const telemetry15s = [];
   let accDt = 0, sumPReal = 0, sumPEst = 0, sumHr = 0, cntHr = 0, sumSpd = 0, sumAlt = 0, cntAlt = 0, sumWind = 0, sumGrade = 0;
   let lastDistMeters = 0;
@@ -503,7 +565,7 @@ window.simulatePowerAndTelemetry = function(records, weatherHourly, fallbackDate
     accDt += dt;
     sumPReal += (rOrig.power || 0) * dt;
     sumPEst += (rSim.power || 0) * dt;
-    sumSpd += (rOrig.speed || 0) * dt;
+    sumSpd += smoothSpdKmh[i] * dt;
     sumWind += (headwindArr[i] || 0) * dt;
     sumGrade += (gradeArr[i] || 0) * dt;
 
@@ -527,7 +589,8 @@ window.simulatePowerAndTelemetry = function(records, weatherHourly, fallbackDate
         hr: cntHr > 0 ? Math.round(sumHr / cntHr) : 0,
         spd: parseFloat((sumSpd / accDt).toFixed(1)),
         wind: parseFloat((sumWind / accDt).toFixed(1)),
-        grade: parseFloat(((sumGrade / accDt) * 100).toFixed(1))
+        grade: parseFloat(((sumGrade / accDt) * 100).toFixed(1)),
+        indoor: isIndoor
       });
       accDt = 0; sumPReal = 0; sumPEst = 0; sumHr = 0; cntHr = 0; sumSpd = 0; sumAlt = 0; cntAlt = 0; sumWind = 0; sumGrade = 0;
     }
@@ -536,12 +599,11 @@ window.simulatePowerAndTelemetry = function(records, weatherHourly, fallbackDate
   return { simRecords, telemetry15s, isIndoor };
 };
 
-// Compatibilidade caso alguma chamada antiga use simulatePowerOnRecords
 window.simulatePowerOnRecords = function(records, weatherHourly, fallbackDateObj) {
   return window.simulatePowerAndTelemetry(records, weatherHourly, fallbackDateObj).simRecords;
 };
 
-// --- FASE 4: AUTO-CALIBRADOR FÍSICO INVERSO PELO HISTÓRICO REAL (2017–2026) ---
+// --- AUTO-CALIBRADOR FÍSICO INVERSO (IGNORA ROLO AUTOMATICAMENTE) ---
 window.runHistoricalAutoCalibration = function() {
   if (typeof dbActivities === 'undefined' || dbActivities.length === 0) {
     alert('Nenhuma atividade carregada para calibrar.');
@@ -556,54 +618,53 @@ window.runHistoricalAutoCalibration = function() {
   dbActivities.forEach(act => {
     if (!act.realMetrics || act.realMetrics.avgPwr < 50) return;
     if (act.estMetrics && act.estMetrics.isIndoorTrainer) return;
-    if (parseFloat(act.realMetrics.avgSpeed || 0) < 12) return; // Ignora rolo sem velocidade GPS
-
-    totalOutdoorRidesUsed++;
+    if (parseFloat(act.realMetrics.avgSpeed || 0) < 20) return; // Garante exclusão de rolo em baixa velocidade
 
     if (Array.isArray(act.telemetry15s) && act.telemetry15s.length > 10) {
+      if (act.telemetry15s[0].indoor) return;
+      let minAlt = Infinity, maxAlt = -Infinity;
+      act.telemetry15s.forEach(p => {
+        if (p.alt !== null) {
+          if (p.alt < minAlt) minAlt = p.alt;
+          if (p.alt > maxAlt) maxAlt = p.alt;
+        }
+      });
+      if ((maxAlt - minAlt) < 6) return; // Ignora atividades com barômetro travado/indoor
+
+      totalOutdoorRidesUsed++;
+
       act.telemetry15s.forEach(pt => {
-        if (pt.pReal < 60 || pt.pEst < 60 || pt.spd < 10) return;
-        // Descarta vácuo extremo de pelotão (>38 km/h no plano com potência baixa)
+        if (pt.pReal < 60 || pt.pEst < 60 || pt.spd < 12) return;
         if (Math.abs(pt.grade) <= 1.2 && pt.spd > 38 && pt.pReal < 160) return;
 
-        if (pt.grade >= 3.5 && pt.spd <= 22) {
-          // Subida firme: gravidade + rolagem dominam
+        if (pt.grade >= 3.0 && pt.spd <= 23) {
           climbRealSum += pt.pReal;
           climbEstSum += pt.pEst;
           climbPts++;
         } else if (Math.abs(pt.grade) <= 1.2 && pt.spd >= 25) {
-          // Plano rápido: aerodinâmica (CdA) domina
           flatRealSum += pt.pReal;
           flatEstSum += pt.pEst;
           flatPts++;
         }
       });
-    } else if (act.estMetrics && act.estMetrics.avgPwr > 50) {
-      // Fallback caso a atividade ainda não tenha telemetry15s detalhado
-      flatRealSum += act.realMetrics.avgPwr * 20;
-      flatEstSum += act.estMetrics.avgPwr * 20;
-      flatPts += 20;
     }
   });
 
   if (totalOutdoorRidesUsed === 0 || (flatPts + climbPts) < 10) {
-    alert('Não foram encontrados pedais de estrada suficientes com medidor de potência real para calibrar.');
+    alert('Não foram encontrados pedais de estrada suficientes com telemetria completa para calibrar.');
     return;
   }
 
-  // 1. Ajuste fino de Crr pelas subidas (se houver amostras suficientes)
   let newCrr = cfg.bikeType === 'mtb' ? 0.0075 : 0.0045;
   if (climbPts >= 15 && climbEstSum > 0) {
     const climbRatio = climbRealSum / climbEstSum;
     newCrr = Math.max(0.0025, Math.min(0.0095, parseFloat((newCrr * climbRatio).toFixed(4))));
   }
 
-  // 2. Ajuste fino de CdA pelos planos rápidos e média global de estrada
   const overallRatio = (flatPts >= 15 && flatEstSum > 0)
     ? (flatRealSum / flatEstSum)
     : ((climbRealSum + flatRealSum) / Math.max(1, climbEstSum + flatEstSum));
 
-  // Como na estrada ~75% da potência vem do arrasto aerodinâmico, ajustamos o fator de escala de Cd proporcionalmente
   const currentScale = cfg.calibratedCdScale || 1.0;
   const dampedAdjustment = Math.pow(overallRatio, 0.85);
   const newCdScale = Math.max(0.62, Math.min(1.35, parseFloat((currentScale * dampedAdjustment).toFixed(3))));
@@ -614,7 +675,7 @@ window.runHistoricalAutoCalibration = function() {
   recalcPowerEngineState(true);
   if (typeof saveToDB === 'function') saveToDB(dbActivities);
 
-  alert(`✅ Auto-Calibração Concluída com Sucesso!\n\n• Pedais de estrada auditados: ${totalOutdoorRidesUsed}\n• Novo CdA Calibrado: ${cfg.cda.toFixed(3)} m² (Escala Cd: ${newCdScale})\n• Novo Crr Calibrado: ${cfg.crr}\n\nTodas as curvas de potência estimada (2014–2026) foram ajustadas para convergir com o seu medidor real!`);
+  alert(`✅ Auto-Calibração Concluída com Sucesso!\n\n• Pedais de estrada auditados (excluindo Rolo): ${totalOutdoorRidesUsed}\n• Novo CdA Calibrado: ${cfg.cda.toFixed(3)} m² (Escala Cd: ${newCdScale})\n• Novo Crr Calibrado: ${cfg.crr}`);
 };
 
 window.resetCalibrationToDefault = function() {
@@ -624,7 +685,7 @@ window.resetCalibrationToDefault = function() {
   if (typeof saveToDB === 'function') saveToDB(dbActivities);
 };
 
-// --- MODAL E EXTRATOR DE ÁREA FRONTAL POR FOTO (VISÃO COMPUTACIONAL EM CANVAS) ---
+// --- MODAL E EXTRATOR DE ÁREA FRONTAL POR FOTO ---
 let photoState = {
   img: null,
   scalePts: [],

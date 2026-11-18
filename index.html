@@ -3,8 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Treinador Virtual UPYOU - Histórico Completo</title>
+  <title>UPYOU | Telemetry Cockpit</title>
   
+  <!-- Fontes Modernas (Inter + JetBrains Mono para telemetria) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet">
+
   <!-- Biblioteca de Login do Google -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   
@@ -12,439 +17,461 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
 
-  <!-- Folha de Estilo Modular -->
+  <!-- Folha de Estilo Matrix Neon Precision -->
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
   <!-- ECRÃ DE LOGIN -->
-  <div id="loginScreen" class="card">
-    <div class="logo-title">UPYOU</div>
-    <div class="logo-sub">Inteligência de Treino & Sincronização Garmin / Strava</div>
-    
-    <div id="g_id_onload"
-         data-client_id="731921508137-alvl8q48tpsvhp02531v1el2naia457g.apps.googleusercontent.com"
-         data-context="signin"
-         data-ux_mode="popup"
-         data-callback="handleCredentialResponse"
-         data-auto_prompt="false">
-    </div>
-    
-    <div class="google-btn-wrapper">
-      <div class="g_id_signin"
-           data-type="standard"
-           data-shape="rectangular"
-           data-theme="outline"
-           data-text="signin_with"
-           data-size="large"
-           data-logo_alignment="left">
+  <div id="loginScreen" class="login-container">
+    <div class="login-card">
+      <div class="brand-logo">UP<span>YOU</span></div>
+      <div class="brand-sub">TELEMETRY COCKPIT &bull; GARMIN &amp; STRAVA INTELLIGENCE</div>
+      
+      <div id="g_id_onload"
+           data-client_id="731921508137-alvl8q48tpsvhp02531v1el2naia457g.apps.googleusercontent.com"
+           data-context="signin"
+           data-ux_mode="popup"
+           data-callback="handleCredentialResponse"
+           data-auto_prompt="false">
+      </div>
+      
+      <div class="google-btn-wrapper">
+        <div class="g_id_signin"
+             data-type="standard"
+             data-shape="rectangular"
+             data-theme="filled_black"
+             data-text="signin_with"
+             data-size="large"
+             data-logo_alignment="left">
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- APLICAÇÃO PRINCIPAL -->
-  <div id="mainApp" style="display: none;">
+  <!-- APLICAÇÃO PRINCIPAL (COCKPIT) -->
+  <div id="mainApp" class="cockpit-shell" style="display: none;">
     
-    <div class="user-header" style="flex-wrap: wrap; gap: 10px;">
-      <div class="user-greeting" id="userGreeting">Olá, Ciclista</div>
-      <div class="header-actions" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
-        
-        <div class="hr-config-box" title="Tipo de bicicleta principal para cálculo aerodinâmico (CdA) e resistência de rolagem (Crr)">
-          <span>Bike:</span>
-          <select id="bikeTypeSelect" onchange="updatePowerEngineParams()" style="background: #0f172a; color: #38bdf8; border: 1px solid #334155; border-radius: 4px; padding: 2px 6px; font-weight: bold; cursor: pointer;">
-            <option value="road" selected>Road</option>
-            <option value="mtb">MTB</option>
-          </select>
-        </div>
+    <!-- BARRA SUPERIOR DE TELEMETRIA -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="brand-logo small">UP<span>YOU</span></div>
+        <span class="divider-v">|</span>
+        <span class="cockpit-tag">TELEMETRY COCKPIT</span>
+        <span id="garminConnectedBadge" class="live-badge" style="display: none;">
+          <span class="pulse-dot"></span> GARMIN LINKED
+        </span>
+      </div>
 
-        <div class="hr-config-box" title="Peso Total do Conjunto (Ciclista + Bicicleta + Equipamentos/Água)">
-          <span>Peso Conjunto:</span>
-          <input type="number" id="totalWeightInput" value="82" min="45" max="160" step="0.5" onchange="updatePowerEngineParams()" style="width: 52px;">
-          <span>kg</span>
-        </div>
-
-        <div class="hr-config-box" title="Altura do Ciclista em centímetros">
-          <span>Altura:</span>
-          <input type="number" id="userHeightInput" value="175" min="130" max="220" step="1" onchange="updatePowerEngineParams()" style="width: 52px;">
-          <span>cm</span>
-        </div>
-
-        <button id="btnFrontalArea" onclick="openFrontalAreaModal()" style="background: #1e293b; color: #38bdf8; border: 1px solid #38bdf8; border-radius: 6px; padding: 5px 10px; font-size: 0.78rem; font-weight: bold; cursor: pointer;" title="Calcular Área Frontal por Foto ou usar Fórmula Antropométrica Padrão">
-          📐 Área: <span id="headerAreaBadge">0.41 m² (Padrão)</span>
-        </button>
-
-        <div class="hr-config-box" style="border-color: #eab308;" title="Fonte Global de Potência usada em todos os gráficos e métricas do painel">
-          <span style="color: #eab308; font-weight: bold;">Potência:</span>
-          <select id="powerSourceSelect" onchange="updatePowerSourceMode(this.value)" style="background: #0f172a; color: #f8fafc; border: 1px solid #475569; border-radius: 4px; padding: 2px 6px; font-weight: bold; cursor: pointer;">
-            <option value="hybrid" selected>Híbrido (Real + Estimada)</option>
+      <div class="topbar-right">
+        <div class="power-mode-pill" title="Fonte Global de Potência usada em todo o painel">
+          <span class="pill-label">FONTE:</span>
+          <select id="powerSourceSelect" onchange="updatePowerSourceMode(this.value)">
+            <option value="hybrid" selected>Híbrido (Real + Sim)</option>
             <option value="real">Apenas Real (Sensor)</option>
-            <option value="simulated">100% Simulada (Motor Físico)</option>
+            <option value="simulated">100% Simulada</option>
           </select>
         </div>
 
-        <div class="hr-config-box" title="A sua Frequência Cardíaca Máxima (o Limiar LTHR de Coggan é estimado automaticamente nos bastidores)">
-          <span>FC Máx:</span>
-          <input type="number" id="maxHrInput" value="187" min="120" max="230" onchange="updateUserMaxHr(this.value)">
-          <span>bpm</span>
-        </div>
-
-        <span id="garminConnectedBadge" class="badge-connected" style="display: none;">✓ Garmin Vinculado</span>
-        <button id="btnConnectGarmin" class="btn-connect-garmin" onclick="connectGarminAccount()">Conectar Garmin</button>
-        <button class="btn-sync" onclick="syncWithGarminCloud()">↻ Sincronizar Garmin</button>
-        <button class="btn-logout" onclick="logout()">Sair</button>
+        <button id="btnConnectGarmin" class="btn-cockpit outline" onclick="connectGarminAccount()">Conectar Garmin</button>
+        <button class="btn-cockpit primary" onclick="syncWithGarminCloud()">&#8635; Sincronizar</button>
+        <span class="user-pill" id="userGreeting">Ciclista</span>
+        <button class="btn-cockpit ghost" onclick="logout()">Sair</button>
       </div>
-    </div>
+    </header>
 
-    <div class="card">
-      <h1>Painel de Desempenho</h1>
-
-      <div class="upload-area" id="uploadArea" onclick="document.getElementById('zipInput').click()">
-        <p>Ainda não há dados locais ou na nuvem para a sua conta. Conecte o seu Garmin acima ou carregue o histórico do Strava abaixo.</p>
-        <span class="btn">Carregar ZIP do Strava</span>
-        <input type="file" id="zipInput" accept=".zip">
-      </div>
-
-      <div id="statusMsg"></div>
+    <!-- CORPO PRINCIPAL (SIDEBAR ESQUERDA + WORKSPACE CENTRAL) -->
+    <div class="cockpit-body">
       
-      <div id="progressArea">
-        <h3 style="color: #38bdf8;">A processar o seu histórico...</h3>
-        <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
-        <p id="progressText" style="color: #94a3b8;">A preparar ambiente (aguarde)...</p>
-      </div>
-
-      <div id="summaryArea">
-        <div class="nav-tabs">
-          <button class="tab-btn active" onclick="switchDashboardTab('tableTab', this)">As Suas Pedaladas</button>
-          <button class="tab-btn" onclick="switchDashboardTab('ftpTab', this)">Evolução de FTP</button>
-          <button class="tab-btn" style="border-color: #f97316; color: #fb923c;" onclick="switchDashboardTab('curvaPotenciaTab', this)">Curva de Potência (MMP)</button>
-          <button class="tab-btn" onclick="switchDashboardTab('zonesTab', this)">Assinatura Cardíaca</button>
-          <button class="tab-btn" onclick="switchDashboardTab('pwrTimeTab', this)">Tempo/Zona (Potência)</button>
-          <button class="tab-btn" onclick="switchDashboardTab('hrTimeTab', this)">Tempo/Zona (FC)</button>
-          <button class="tab-btn" onclick="switchDashboardTab('driftChartTab', this)">Evolução do Drift</button>
-          <button class="tab-btn" style="border-color: #8b5cf6;" onclick="switchDashboardTab('viChartTab', this)">Índice de Variabilidade (VI)</button>
-          <button class="tab-btn" style="border-color: #8b5cf6;" onclick="switchDashboardTab('structureVolTab', this)">Volume de Estrutura</button>
-          <button class="tab-btn" onclick="switchDashboardTab('eficienciaTab', this)">Estudo de Eficiência (Pa:Hr)</button>
-          <button class="tab-btn tab-green" onclick="switchDashboardTab('dispersaoTab', this)">Dispersão Avançada</button>
-          <button class="tab-btn" style="border-color: #06b6d4; color: #38bdf8;" onclick="switchDashboardTab('isoPotenciaTab', this)">Evolução Iso-Potência</button>
-          <button class="tab-btn" style="border-color: #eab308; color: #facc15;" onclick="switchDashboardTab('telemetriaTab', this)">Telemetria & Calibração</button>
+      <!-- SIDEBAR ESQUERDA (NAVEGAÇÃO RÁPIDA + EQUIPAMENTO & BIOMETRIA) -->
+      <aside class="cockpit-sidebar">
+        <div class="sidebar-section">
+          <div class="sidebar-title">ACESSO RÁPIDO</div>
+          <button class="side-nav-btn active" data-tab="tableTab" onclick="triggerNavByTab('tableTab')">
+            <span class="nav-ico">&#9776;</span> Histórico de Pedais
+          </button>
+          <button class="side-nav-btn" data-tab="telemetriaTab" onclick="triggerNavByTab('telemetriaTab')">
+            <span class="nav-ico">&#9889;</span> Telemetria 15s &amp; Calib
+          </button>
+          <button class="side-nav-btn" data-tab="curvaPotenciaTab" onclick="triggerNavByTab('curvaPotenciaTab')">
+            <span class="nav-ico">&#128200;</span> Curva de Potência
+          </button>
+          <button class="side-nav-btn" data-tab="ftpTab" onclick="triggerNavByTab('ftpTab')">
+            <span class="nav-ico">&#127942;</span> Evolução de FTP
+          </button>
         </div>
 
-        <div id="tableTab" style="display: block;">
-          <table class="summary-table">
-            <thead><tr><th>Data</th><th>Nome</th><th>Distância</th><th>Potência (Méd / NP)</th><th>Perfil</th><th>Ação</th></tr></thead>
-            <tbody id="summaryBody"></tbody>
-          </table>
-          <div id="tablePaginationBox" style="text-align: center; margin-top: 14px;"></div>
-        </div>
-
-        <div id="ftpTab" style="display: none;">
-          <div class="section-header"><h3>Evolução do FTP (Janela Móvel 42 Dias + Retenção de Base)</h3></div>
-          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Calculado apenas em atividades ≥ 20 min (95% da MMP20), com decaimento fisiológico suave em períodos sem testes máximos.</p>
-          <canvas id="ftpCanvas"></canvas>
-        </div>
-
-        <!-- NOVA ABA: Curva de Potência (MMP 5s a 120min) Multi-Anos -->
-        <div id="curvaPotenciaTab" style="display: none;" class="dynamic-tab">
-          <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-            <h3 style="color: #fb923c; margin: 0;">Curva de Potência Máxima Média (MMP: 5s a 120 min)</h3>
-            <span style="font-size: 0.78rem; color: #94a3b8;">Selecione 1 ou múltiplos anos abaixo para comparar curvas sobrepostas</span>
-          </div>
-
-          <!-- Seletor Multi-Anos + Todo o Histórico -->
-          <div id="mmpYearSelector" style="display: flex; gap: 8px; flex-wrap: wrap; background: #0f172a; padding: 10px 14px; border-radius: 6px; border: 1px solid #334155; margin: 12px 0;"></div>
-
-          <canvas id="curvaPotenciaCanvas" style="height: 390px; margin-top: 5px;"></canvas>
-
-          <!-- 8 Cards Clicáveis de Melhores Marcas -->
-          <div style="margin-top: 18px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-              <span style="font-size: 0.85rem; font-weight: bold; color: #f8fafc;">🏆 Melhores Marcas nos Períodos Selecionados (Clique num tempo para abrir o histórico completo):</span>
-            </div>
-            <div id="mmpBestCardsGrid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px;"></div>
-          </div>
-
-          <!-- Histórico Detalhado da Marca Clicada (Ordenado da Mais Recente para a Mais Antiga) -->
-          <div id="mmpHistoryContainer" style="margin-top: 18px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 14px;"></div>
-        </div>
-
-        <div id="zonesTab" style="display: none;">
-          <div class="section-header"><h3>Assinatura Cardíaca: FC Média por Zona Dinâmica de Potência (Coggan Z1–Z7)</h3></div>
-          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0; line-height: 1.45;">A <strong>Assinatura Cardíaca</strong> revela o custo fisiológico (batimentos por minuto) exigido pelo seu corpo para sustentar cada zona de potência (relativa ao seu FTP vigente, descontando os 5 minutos iniciais de inércia cardíaca). Uma redução na FC média para uma mesma faixa de Watts ao longo do tempo indica ganho direto de condicionamento e eficiência aeróbica; além disso, a FC média observada na <strong>Z4 (91–105% do FTP)</strong> serve como referência direta da sua Frequência Cardíaca de Limiar de Lactato (LTHR).</p>
-          <canvas id="zonesCanvas"></canvas>
-        </div>
-
-        <div id="pwrTimeTab" style="display: none;" class="dynamic-tab">
-          <div class="section-header">
-            <h3>Tempo por Zona de Potência (Andrew Coggan Z1–Z7)</h3>
-            <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
-              <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
-            </select>
-          </div>
-          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">7 zonas de potência de Andrew Coggan recalculadas sobre o seu FTP vigente. Eixo vertical = Horas Absolutas.</p>
-          <div class="legend-container">
-            <div class="legend-item"><div class="legend-box" style="background:#94a3b8;"></div>Z1 Recup. Ativa (&lt;55%)</div>
-            <div class="legend-item"><div class="legend-box" style="background:#38bdf8;"></div>Z2 Resistência (56-75%)</div>
-            <div class="legend-item"><div class="legend-box" style="background:#22c55e;"></div>Z3 Tempo/Ritmo (76-90%)</div>
-            <div class="legend-item"><div class="legend-box" style="background:#eab308;"></div>Z4 Limiar FTP (91-105%)</div>
-            <div class="legend-item"><div class="legend-box" style="background:#f97316;"></div>Z5 VO2 Máx (106-120%)</div>
-            <div class="legend-item"><div class="legend-box" style="background:#ef4444;"></div>Z6 Cap. Anaeróbica (121-150%)</div>
-            <div class="legend-item"><div class="legend-box" style="background:#a855f7;"></div>Z7 Neuromuscular (&gt;150%)</div>
-          </div>
-          <canvas id="pwrTimeCanvas" style="height: 400px; margin-top: 10px;"></canvas>
-        </div>
-
-        <div id="hrTimeTab" style="display: none;" class="dynamic-tab">
-          <div class="section-header">
-            <h3>Tempo por Zona Cardíaca (Andrew Coggan Z1–Z5)</h3>
-            <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
-              <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
-            </select>
-          </div>
-          <p id="hrZoneSubtitle" style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Zonas de Andrew Coggan baseadas na LTHR estimada automaticamente nos bastidores. Eixo vertical = Horas Absolutas.</p>
-          <div class="legend-container">
-            <div class="legend-item"><div class="legend-box" style="background:#94a3b8;"></div>Z1 Recup. Ativa (&lt;68% LTHR)</div>
-            <div class="legend-item"><div class="legend-box" style="background:#38bdf8;"></div>Z2 Resistência (69-83% LTHR)</div>
-            <div class="legend-item"><div class="legend-box" style="background:#22c55e;"></div>Z3 Tempo/Ritmo (84-94% LTHR)</div>
-            <div class="legend-item"><div class="legend-box" style="background:#eab308;"></div>Z4 Limiar Lactato (95-105% LTHR)</div>
-            <div class="legend-item"><div class="legend-box" style="background:#ef4444;"></div>Z5 VO2 Máximo (&gt;106% LTHR)</div>
-          </div>
-          <canvas id="hrTimeCanvas" style="height: 400px; margin-top: 10px;"></canvas>
-        </div>
-
-        <div id="driftChartTab" style="display: none;" class="dynamic-tab">
-          <div class="section-header">
-            <h3>Evolução do Cardiac Drift (Desacoplamento Aeróbico)</h3>
-            <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
-              <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
-            </select>
-          </div>
-          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Apenas treinos contínuos elegíveis (duração ≥ 30 min e VI ≤ 1.12, excluindo aquecimento). Ideal: verde (≤ 5%).</p>
-          <canvas id="driftCanvas" style="height: 400px; margin-top: 10px;"></canvas>
-        </div>
-
-        <div id="viChartTab" style="display: none;" class="dynamic-tab">
-          <div class="section-header">
-            <h3 style="color: #a78bfa;">Média do Índice de Variabilidade (VI)</h3>
-            <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
-              <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
-            </select>
-          </div>
-          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">VI = Potência Normalizada (NP) / Potência Média (incluindo zeros em movimento). Faixa verde (1.00 a 1.10) = Ritmo constante.</p>
-          <canvas id="viCanvas" style="height: 400px; margin-top: 10px;"></canvas>
-        </div>
-
-        <div id="structureVolTab" style="display: none;" class="dynamic-tab">
-          <div class="section-header">
-            <h3 style="color: #a78bfa;">Horas de Treino: Estruturado vs Livre</h3>
-            <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
-              <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
-            </select>
-          </div>
-          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0;">Distribuição de horas no período. Verde = Treino estruturado (VI ≤ 1.10). Cinza = Pedalada livre/variável (VI &gt; 1.10).</p>
-          <div class="legend-container">
-            <div class="legend-item"><div class="legend-box" style="background:#22c55e;"></div>Estruturado/Ritmo (VI ≤ 1.10)</div>
-            <div class="legend-item"><div class="legend-box" style="background:#64748b;"></div>Livre/Estocástico (VI &gt; 1.10)</div>
-          </div>
-          <canvas id="structureVolCanvas" style="height: 400px; margin-top: 10px;"></canvas>
-        </div>
-
-        <!-- Estudo de Eficiência -->
-        <div id="eficienciaTab" style="display: none;" class="dynamic-tab">
-          <div class="section-header">
-            <h3>Estudo de Eficiência Cardíaca (FC Média por Faixa de Watts ao Longo do Tempo)</h3>
-            <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
-              <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
-            </select>
-          </div>
-          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0; line-height: 1.45;">Acompanhe a queda da Frequência Cardíaca para uma mesma faixa de potência ao longo dos meses. Selecione abaixo as zonas de Coggan que deseja exibir na tela (as barras ao fundo mostram o volume acumulado em minutos):</p>
+        <!-- WIDGET DE EQUIPAMENTO & AERODINÂMICA -->
+        <div class="sidebar-section config-panel">
+          <div class="sidebar-title">EQUIPAMENTO &amp; AERO</div>
           
-          <div style="display: flex; gap: 15px; flex-wrap: wrap; background: #0f172a; padding: 10px 15px; border-radius: 6px; border: 1px solid #334155; margin: 15px 0; align-items: center;">
-            <span style="font-size: 0.82rem; font-weight: bold; color: #38bdf8;">Exibir Zonas:</span>
-            <label style="font-size: 0.82rem; cursor: pointer; color: #38bdf8;"><input type="checkbox" id="chk-z2" value="Z2" checked onchange="updateEficienciaChart()"> Z2 (56-75%)</label>
-            <label style="font-size: 0.82rem; cursor: pointer; color: #22c55e;"><input type="checkbox" id="chk-z3" value="Z3" checked onchange="updateEficienciaChart()"> Z3 (76-90%)</label>
-            <label style="font-size: 0.82rem; cursor: pointer; color: #eab308;"><input type="checkbox" id="chk-z4" value="Z4" checked onchange="updateEficienciaChart()"> Z4 (91-105%)</label>
-            <label style="font-size: 0.82rem; cursor: pointer; color: #f97316;"><input type="checkbox" id="chk-z5" value="Z5" onchange="updateEficienciaChart()"> Z5 (106-120%)</label>
-            <label style="font-size: 0.82rem; cursor: pointer; color: #ef4444;"><input type="checkbox" id="chk-z6" value="Z6" onchange="updateEficienciaChart()"> Z6 (121-150%)</label>
-            <label style="font-size: 0.82rem; cursor: pointer; color: #a855f7;"><input type="checkbox" id="chk-z7" value="Z7" onchange="updateEficienciaChart()"> Z7 (&gt;150%)</label>
+          <div class="cfg-row">
+            <label>Bike</label>
+            <select id="bikeTypeSelect" onchange="updatePowerEngineParams()">
+              <option value="road" selected>Road</option>
+              <option value="mtb">MTB</option>
+            </select>
           </div>
 
-          <canvas id="eficienciaCanvas" style="height: 400px; margin-top: 10px;"></canvas>
-        </div>
-
-        <!-- Dispersão Avançada (Watt vs BPM) -->
-        <div id="dispersaoTab" style="display: none;" class="dynamic-tab">
-          <div class="section-header">
-            <h3 style="color: #a78bfa;">Estudo de Dispersão Avançada (Watt vs. BPM)</h3>
-          </div>
-          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 0; line-height: 1.45;">Compare diretamente os períodos selecionados (resolução de 1W e 1BPM, com linha de tendência própria para cada período e controle deslizante histórico).</p>
-          
-          <div style="display: flex; gap: 15px; flex-wrap: wrap; background: #0f172a; padding: 12px 15px; border-radius: 6px; border: 1px solid #334155; margin: 15px 0; align-items: center;">
-            <label style="font-size: 0.82rem; color: #cbd5e1;">Agrupamento: 
-              <select class="custom-select" id="dspAgrupamento" onchange="onDispParamChange()" style="padding: 4px 8px; margin-left: 5px;">
-                <option value="dia">Diário</option>
-                <option value="semana">Semanal</option>
-                <option value="quinzena">Quinzenal</option>
-                <option value="mes" selected>Mensal</option>
-                <option value="trimestre">Trimestral</option>
-                <option value="semestre">Semestral</option>
-                <option value="ano">Anual</option>
-              </select>
-            </label>
-
-            <label style="font-size: 0.82rem; color: #cbd5e1;">Intervalo do Ponto: 
-              <select class="custom-select" id="dspJanelaPonto" onchange="onDispParamChange()" style="padding: 4px 8px; margin-left: 5px;">
-                <option value="5">5 segundos</option>
-                <option value="15">15 segundos</option>
-                <option value="60">1 minuto</option>
-                <option value="300" selected>5 minutos</option>
-                <option value="600">10 minutos</option>
-                <option value="900">15 minutos</option>
-                <option value="3600">60 minutos</option>
-              </select>
-            </label>
-
-            <label style="font-size: 0.82rem; color: #cbd5e1;">Qtd. Períodos na Tela: 
-              <select class="custom-select" id="dspQtdPeriodos" onchange="onDispParamChange()" style="padding: 4px 8px; margin-left: 5px;">
-                <option value="1">1</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option>
-                <option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option>
-                <option value="9">9</option><option value="10">10</option><option value="11">11</option><option value="12">12</option>
-                <option value="13">13</option><option value="14">14</option><option value="15">15</option><option value="16">16</option>
-                <option value="17">17</option><option value="18">18</option><option value="19">19</option><option value="20">20</option>
-                <option value="21">21</option><option value="22">22</option><option value="23">23</option><option value="24">24</option>
-              </select>
-            </label>
-          </div>
-
-          <div id="dspLegendContainer" style="display: none;"></div>
-
-          <canvas id="dispersaoCanvas" style="height: 420px; margin-top: 5px;"></canvas>
-
-          <!-- Slider de Deslocamento Temporal -->
-          <div style="margin-top: 15px; background: #0f172a; padding: 12px 15px; border-radius: 6px; border: 1px solid #334155;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-              <span style="font-size: 0.82rem; font-weight: bold; color: #38bdf8;" id="dspSliderLabel">Janela Ativa: --</span>
-              <span style="font-size: 0.78rem; color: #94a3b8;">Arraste para navegar no tempo &larr; &rarr;</span>
+          <div class="cfg-row">
+            <label>Peso Total</label>
+            <div class="input-unit">
+              <input type="number" id="totalWeightInput" value="82" min="45" max="160" step="0.5" onchange="updatePowerEngineParams()">
+              <span>kg</span>
             </div>
-            <input type="range" id="dspTimeSlider" min="0" max="0" value="0" step="1" oninput="onDispSliderInput(this.value)" style="width: 100%; accent-color: #38bdf8; cursor: pointer;">
+          </div>
+
+          <div class="cfg-row">
+            <label>Altura</label>
+            <div class="input-unit">
+              <input type="number" id="userHeightInput" value="175" min="130" max="220" step="1" onchange="updatePowerEngineParams()">
+              <span>cm</span>
+            </div>
+          </div>
+
+          <div class="cfg-row">
+            <label>FC Máx</label>
+            <div class="input-unit">
+              <input type="number" id="maxHrInput" value="187" min="120" max="230" onchange="updateUserMaxHr(this.value)">
+              <span>bpm</span>
+            </div>
+          </div>
+
+          <div class="aero-readout-box">
+            <div class="aero-readout-val" id="headerAreaBadge">0.410 m² | CdA 0.328</div>
+            <button id="btnFrontalArea" class="btn-aero-photo" onclick="openFrontalAreaModal()">
+              &#128208; Medir Área por Foto
+            </button>
           </div>
         </div>
 
-        <!-- Evolução Histórica Iso-Potência -->
-        <div id="isoPotenciaTab" style="display: none;" class="dynamic-tab">
-          <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-            <h3 style="color: #38bdf8; margin: 0;">Evolução Histórica de Desempenho (Custo Cardíaco Fixo)</h3>
-            <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-              <label style="font-size: 0.8rem; color: #cbd5e1;">Agrupamento:
-                <select class="custom-select" id="isoAgrupamento" onchange="renderIsoPotenciaChart()" style="padding: 4px 8px; margin-left: 4px;">
-                  <option value="quinzena">Quinzenal</option>
-                  <option value="mes">Mensal</option>
-                  <option value="trimestre" selected>Trimestral</option>
-                  <option value="semestre">Semestral</option>
-                  <option value="ano">Anual</option>
-                </select>
-              </label>
-              <label style="font-size: 0.8rem; color: #cbd5e1;">Amostra da Regressão:
-                <select class="custom-select" id="isoJanelaPonto" onchange="renderIsoPotenciaChart()" style="padding: 4px 8px; margin-left: 4px;">
-                  <option value="5">5 segundos</option>
-                  <option value="15" selected>15 segundos</option>
-                  <option value="60">1 minuto</option>
-                  <option value="300">5 minutos</option>
-                </select>
-              </label>
-            </div>
-          </div>
-
-          <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 6px; line-height: 1.45;">Evolução da Frequência Cardíaca estimada pela regressão linear de cada período para <strong>3 potências fixas personalizáveis</strong> (barras verticais ao fundo = volume acumulado em horas no período).</p>
-
-          <div style="display: flex; justify-content: center; align-items: center; gap: 28px; flex-wrap: wrap; background: #0f172a; padding: 10px 18px; border-radius: 6px; border: 1px solid #334155; margin: 12px 0 8px 0;">
-            
-            <div style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; color: #f8fafc; font-weight: 600;">
-              <span style="width: 11px; height: 11px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 8px #22c55e; display: inline-block;"></span>
-              <span>FC @</span>
-              <input type="number" id="isoPwr1" value="160" min="60" max="400" step="5" onchange="renderIsoPotenciaChart()" style="width: 58px; background: #1e293b; color: #22c55e; border: 1px solid #334155; border-radius: 4px; padding: 3px 6px; font-weight: bold; text-align: center;">
-              <span>W</span>
-            </div>
-
-            <div style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; color: #f8fafc; font-weight: 600;">
-              <span style="width: 11px; height: 11px; border-radius: 50%; background: #06b6d4; box-shadow: 0 0 8px #06b6d4; display: inline-block;"></span>
-              <span>FC @</span>
-              <input type="number" id="isoPwr2" value="200" min="60" max="400" step="5" onchange="renderIsoPotenciaChart()" style="width: 58px; background: #1e293b; color: #06b6d4; border: 1px solid #334155; border-radius: 4px; padding: 3px 6px; font-weight: bold; text-align: center;">
-              <span>W</span>
-            </div>
-
-            <div style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; color: #f8fafc; font-weight: 600;">
-              <span style="width: 11px; height: 11px; border-radius: 50%; background: #eab308; box-shadow: 0 0 8px #eab308; display: inline-block;"></span>
-              <span>FC @</span>
-              <input type="number" id="isoPwr3" value="240" min="60" max="400" step="5" onchange="renderIsoPotenciaChart()" style="width: 58px; background: #1e293b; color: #eab308; border: 1px solid #334155; border-radius: 4px; padding: 3px 6px; font-weight: bold; text-align: center;">
-              <span>W</span>
-            </div>
-
-          </div>
-
-          <canvas id="isoPotenciaCanvas" style="height: 420px; margin-top: 5px;"></canvas>
+        <div class="sidebar-footer">
+          <button class="btn-cockpit outline full" onclick="document.getElementById('zipInput').click()">+ Importar ZIP Strava</button>
+          <button class="btn-cockpit danger full" onclick="clearLocalDatabase()">Limpar Banco Local</button>
         </div>
+      </aside>
 
-        <!-- Telemetria Multi-Camadas & Auto-Calibração -->
-        <div id="telemetriaTab" style="display: none;" class="dynamic-tab">
-          <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-            <h3 style="color: #facc15; margin: 0;">Analisador de Telemetria Multi-Camadas (15s por Km) & Auto-Calibração</h3>
-            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-              <button onclick="runHistoricalAutoCalibration()" style="background: #eab308; color: #020617; border: none; padding: 7px 14px; border-radius: 6px; font-weight: bold; font-size: 0.8rem; cursor: pointer; box-shadow: 0 0 10px rgba(234,179,8,0.35);">
-                🎯 Auto-Calibrar Motor pelo Histórico Real
-              </button>
-              <button onclick="resetCalibrationToDefault()" style="background: #334155; color: #cbd5e1; border: 1px solid #475569; padding: 6px 12px; border-radius: 6px; font-size: 0.78rem; cursor: pointer;">
-                ↺ Resetar Calibração
-              </button>
-            </div>
-          </div>
-
-          <p style="font-size: 0.84rem; color: #94a3b8; margin-top: 6px; line-height: 1.45;">
-            Compare visualmente <strong>Potência Real</strong> vs. <strong>Potência Estimada</strong> sobre o perfil altimétrico translúcido. Ligue ou desligue as camadas abaixo (a sua escolha fica salva automaticamente) e arraste o controle deslizante para navegar por todas as suas pedaladas.
-          </p>
-
-          <div id="telLayerButtons" style="display: flex; gap: 10px; flex-wrap: wrap; background: #0f172a; padding: 10px 15px; border-radius: 6px; border: 1px solid #334155; margin: 12px 0;"></div>
-
-          <div id="telAuditCard" style="background: #0f172a; padding: 12px 16px; border-radius: 6px; border-left: 4px solid #eab308; border-top: 1px solid #1e293b; border-right: 1px solid #1e293b; border-bottom: 1px solid #1e293b; margin-bottom: 12px; font-size: 0.82rem; color: #cbd5e1;"></div>
-
-          <canvas id="telemetriaCanvas" style="height: 430px; margin-top: 5px;"></canvas>
-
-          <div style="margin-top: 15px; background: #0f172a; padding: 12px 15px; border-radius: 6px; border: 1px solid #334155;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
-              <span style="font-size: 0.85rem; font-weight: bold; color: #facc15;" id="telSliderLabel">Pedalada Ativa: --</span>
-              <span style="font-size: 0.78rem; color: #94a3b8;">&larr; Pedaladas Anteriores | Mais Recente &rarr;</span>
-            </div>
-            <input type="range" id="telRideSlider" min="0" max="0" value="0" step="1" oninput="onTelSliderInput(this.value)" style="width: 100%; accent-color: #eab308; cursor: pointer;">
-          </div>
-        </div>
-
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 30px; border-top: 1px solid #334155; padding-top: 15px;">
-          <button class="btn" style="background:#334155;" onclick="document.getElementById('zipInput').click()">+ Importar / Recalcular ZIP do Strava</button>
-          <button class="btn btn-danger" onclick="clearLocalDatabase()">Limpar Banco Local</button>
-        </div>
-      </div>
-
-      <div id="detailArea">
-        <button class="btn" onclick="showSummary()" style="margin-bottom: 20px; background: #475569;">&larr; Voltar ao Histórico</button>
-        <h2 id="actTitle" style="color: #38bdf8; margin-bottom: 20px; text-align: center;"></h2>
+      <!-- ÁREA CENTRAL DE TRABALHO -->
+      <main class="cockpit-main">
         
-        <div class="stat-grid">
-          <div class="stat-box" style="border-left-color: #8b5cf6;"><div class="stat-title">Potência Normalizada (NP)</div><div class="stat-val" id="npVal">--</div></div>
-          <div class="stat-box" style="border-left-color: #8b5cf6;"><div class="stat-title">Índ. Variabilidade (VI)</div><div class="stat-val" id="viVal">--</div></div>
-          <div class="stat-box" style="border-left-color: #8b5cf6; grid-column: span 2;"><div class="stat-title">Diagnóstico de Estrutura (Blocos ≥ 5 min)</div><div class="stat-val" id="structureVal" style="font-size: 0.95rem; font-weight: normal; line-height: 1.4;">--</div></div>
+        <div class="upload-area" id="uploadArea" onclick="document.getElementById('zipInput').click()">
+          <p>Ainda não há dados locais ou na nuvem para a sua conta. Conecte o seu Garmin acima ou carregue o histórico do Strava.</p>
+          <span class="btn-cockpit primary">Carregar ZIP do Strava</span>
+          <input type="file" id="zipInput" accept=".zip">
         </div>
 
-        <div class="stat-grid">
-          <div class="stat-box"><div class="stat-title">Tempo Total</div><div class="stat-val" id="totalTime">--</div></div>
-          <div class="stat-box"><div class="stat-title">Distância Total</div><div class="stat-val" id="totalDist">--</div></div>
-          <div class="stat-box"><div class="stat-title">Velocidade Média (Mov)</div><div class="stat-val" id="avgSpeed">--</div></div>
-          <div class="stat-box"><div class="stat-title">Potência Média (Mov)</div><div class="stat-val" id="avgPwr">--</div></div>
-          <div class="stat-box"><div class="stat-title">FC Média (Mov)</div><div class="stat-val" id="avgHr">--</div></div>
-          <div class="stat-box"><div class="stat-title">Cadência Média (Mov)</div><div class="stat-val" id="avgCad">--</div></div>
-          <div class="stat-box" style="border-left-color: #22c55e;"><div class="stat-title">Cardiac Drift (Pa:Hr)</div><div class="stat-val" id="driftVal">--</div></div>
+        <div id="statusMsg" class="status-toast"></div>
+        
+        <div id="progressArea" class="progress-panel" style="display:none;">
+          <h3>A processar telemetria histórica...</h3>
+          <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
+          <p id="progressText">A preparar ambiente (aguarde)...</p>
         </div>
-        <div class="stat-box" style="border-left-color: #38bdf8; margin-bottom: 15px;"><div class="stat-title">Maior Bloco 20 Minutos (MMP20)</div><div class="stat-val" id="mmp20Val">--</div></div>
-        <div class="stat-box" style="border-left-color: #38bdf8;"><div class="stat-title">Top 4 Maiores Períodos de Potência (4 Minutos)</div><div class="stat-val" id="top4Mins" style="font-size: 0.95rem; font-weight: normal;">--</div></div>
-      </div>
+
+        <div id="summaryArea">
+          <!-- BARRA DE NAVEGAÇÃO HORIZONTAL LIMPA (OPÇÃO A) -->
+          <nav class="nav-tabs">
+            <button class="tab-btn active" data-tab="tableTab" onclick="switchDashboardTab('tableTab', this)">As Suas Pedaladas</button>
+            <button class="tab-btn" data-tab="telemetriaTab" onclick="switchDashboardTab('telemetriaTab', this)">Telemetria &amp; Calibração</button>
+            <button class="tab-btn" data-tab="curvaPotenciaTab" onclick="switchDashboardTab('curvaPotenciaTab', this)">Curva de Potência</button>
+            <button class="tab-btn" data-tab="ftpTab" onclick="switchDashboardTab('ftpTab', this)">Evolução de FTP</button>
+            <button class="tab-btn" data-tab="zonesTab" onclick="switchDashboardTab('zonesTab', this)">Assinatura Cardíaca</button>
+            <button class="tab-btn" data-tab="pwrTimeTab" onclick="switchDashboardTab('pwrTimeTab', this)">Tempo/Zona (W)</button>
+            <button class="tab-btn" data-tab="hrTimeTab" onclick="switchDashboardTab('hrTimeTab', this)">Tempo/Zona (FC)</button>
+            <button class="tab-btn" data-tab="driftChartTab" onclick="switchDashboardTab('driftChartTab', this)">Cardiac Drift</button>
+            <button class="tab-btn" data-tab="viChartTab" onclick="switchDashboardTab('viChartTab', this)">Variabilidade (VI)</button>
+            <button class="tab-btn" data-tab="structureVolTab" onclick="switchDashboardTab('structureVolTab', this)">Volume Estrutura</button>
+            <button class="tab-btn" data-tab="eficienciaTab" onclick="switchDashboardTab('eficienciaTab', this)">Eficiência (Pa:Hr)</button>
+            <button class="tab-btn" data-tab="dispersaoTab" onclick="switchDashboardTab('dispersaoTab', this)">Dispersão W vs BPM</button>
+            <button class="tab-btn" data-tab="isoPotenciaTab" onclick="switchDashboardTab('isoPotenciaTab', this)">Iso-Potência</button>
+          </nav>
+
+          <!-- TAB 1: TABELA DE ATIVIDADES -->
+          <div id="tableTab" class="tab-panel" style="display: block;">
+            <div class="table-wrapper">
+              <table class="summary-table">
+                <thead><tr><th>Data</th><th>Atividade</th><th>Distância</th><th>Potência (Méd / NP)</th><th>Perfil</th><th>Ação</th></tr></thead>
+                <tbody id="summaryBody"></tbody>
+              </table>
+            </div>
+            <div id="tablePaginationBox" class="pagination-bar"></div>
+          </div>
+
+          <!-- TAB 2: TELEMETRIA MULTI-CAMADAS + CARDS LATERAIS MATRIX NEON -->
+          <div id="telemetriaTab" class="tab-panel dynamic-tab" style="display: none;">
+            <div class="panel-header">
+              <div>
+                <h2>Análise de Telemetria Multi-Camadas (15s por Km)</h2>
+                <p class="panel-sub">Sobreposição de Potência Real, Simulada, FC, Cadência, Velocidade e Vento sobre o perfil altimétrico.</p>
+              </div>
+              <div class="panel-actions">
+                <button class="btn-cockpit primary" onclick="runHistoricalAutoCalibration()">&#127919; Auto-Calibrar Motor</button>
+                <button class="btn-cockpit outline" onclick="resetCalibrationToDefault()">&#8634; Resetar</button>
+              </div>
+            </div>
+
+            <!-- Botões de Camadas (inclui Altimetria, Pot Real, Pot Est, FC, Cadência, Vel, Vento) -->
+            <div id="telLayerButtons" class="layer-bar"></div>
+
+            <!-- Grade Cockpit: Gráfico Principal + Coluna Direita de Telemetria Matrix Neon -->
+            <div class="telemetry-cockpit-grid">
+              <div class="telemetry-chart-card">
+                <div id="telAuditCard" class="audit-strip"></div>
+                <canvas id="telemetriaCanvas" style="height: 410px;"></canvas>
+              </div>
+
+              <!-- Coluna Direita Estilo Matrix Neon Precision -->
+              <div id="telNeonSidebarCards" class="neon-kpi-column"></div>
+            </div>
+
+            <!-- Barra Inferior de Navegação da Atividade -->
+            <div class="timeline-navigator">
+              <div class="timeline-header">
+                <span class="timeline-title" id="telSliderLabel">Pedalada Ativa: --</span>
+                <span class="timeline-hint">&larr; Use os botões, setas do teclado ou arraste &rarr;</span>
+              </div>
+              <input type="range" id="telRideSlider" min="0" max="0" value="0" step="1" oninput="onTelSliderInput(this.value)">
+            </div>
+          </div>
+
+          <!-- TAB 3: CURVA DE POTÊNCIA (MMP) -->
+          <div id="curvaPotenciaTab" class="tab-panel dynamic-tab" style="display: none;">
+            <div class="panel-header">
+              <div>
+                <h2>Curva de Potência Máxima Média (MMP: 5s a 120 min)</h2>
+                <p class="panel-sub">Compare múltiplos anos sobrepostos e clique nos cartões abaixo para auditar o histórico completo de cada marca.</p>
+              </div>
+            </div>
+
+            <div id="mmpYearSelector" class="layer-bar"></div>
+            <div class="chart-box">
+              <canvas id="curvaPotenciaCanvas" style="height: 380px;"></canvas>
+            </div>
+
+            <div style="margin-top: 18px;">
+              <div class="section-label">MELHORES MARCAS NOS PERÍODOS SELECIONADOS (CLIQUE PARA VER HISTÓRICO):</div>
+              <div id="mmpBestCardsGrid" class="mmp-cards-grid"></div>
+            </div>
+
+            <div id="mmpHistoryContainer" class="mmp-history-box"></div>
+          </div>
+
+          <!-- TAB 4: EVOLUÇÃO FTP -->
+          <div id="ftpTab" class="tab-panel" style="display: none;">
+            <div class="panel-header">
+              <div>
+                <h2>Evolução do FTP (Janela Móvel 42 Dias)</h2>
+                <p class="panel-sub">95% da MMP20 em atividades &ge; 20 min, com decaimento fisiológico suave em períodos sem testes.</p>
+              </div>
+            </div>
+            <div class="chart-box"><canvas id="ftpCanvas"></canvas></div>
+          </div>
+
+          <!-- TAB 5: ASSINATURA CARDÍACA -->
+          <div id="zonesTab" class="tab-panel" style="display: none;">
+            <div class="panel-header">
+              <div>
+                <h2>Assinatura Cardíaca (FC Média por Zona Coggan Z1–Z7)</h2>
+                <p class="panel-sub">Custo cardíaco médio por zona de potência (descontando 5 min iniciais). Z4 reflete diretamente a sua LTHR.</p>
+              </div>
+            </div>
+            <div class="chart-box"><canvas id="zonesCanvas"></canvas></div>
+          </div>
+
+          <!-- TAB 6: TEMPO POR ZONA POTÊNCIA -->
+          <div id="pwrTimeTab" class="tab-panel dynamic-tab" style="display: none;">
+            <div class="panel-header">
+              <div>
+                <h2>Tempo por Zona de Potência (Coggan Z1–Z7)</h2>
+                <p class="panel-sub">Distribuição de horas acumuladas por faixa de potência relativa ao FTP vigente.</p>
+              </div>
+              <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
+                <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
+              </select>
+            </div>
+            <div class="legend-container">
+              <div class="legend-item"><div class="legend-box" style="background:#94a3b8;"></div>Z1 (&lt;55%)</div>
+              <div class="legend-item"><div class="legend-box" style="background:#38bdf8;"></div>Z2 (56-75%)</div>
+              <div class="legend-item"><div class="legend-box" style="background:#22c55e;"></div>Z3 (76-90%)</div>
+              <div class="legend-item"><div class="legend-box" style="background:#eab308;"></div>Z4 (91-105%)</div>
+              <div class="legend-item"><div class="legend-box" style="background:#f97316;"></div>Z5 (106-120%)</div>
+              <div class="legend-item"><div class="legend-box" style="background:#ef4444;"></div>Z6 (121-150%)</div>
+              <div class="legend-item"><div class="legend-box" style="background:#a855f7;"></div>Z7 (&gt;150%)</div>
+            </div>
+            <div class="chart-box"><canvas id="pwrTimeCanvas" style="height: 390px;"></canvas></div>
+          </div>
+
+          <!-- TAB 7: TEMPO POR ZONA FC -->
+          <div id="hrTimeTab" class="tab-panel dynamic-tab" style="display: none;">
+            <div class="panel-header">
+              <div>
+                <h2>Tempo por Zona Cardíaca (Coggan Z1–Z5)</h2>
+                <p class="panel-sub" id="hrZoneSubtitle">Zonas baseadas na LTHR dinâmica.</p>
+              </div>
+              <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
+                <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
+              </select>
+            </div>
+            <div class="legend-container">
+              <div class="legend-item"><div class="legend-box" style="background:#94a3b8;"></div>Z1 (&lt;68%)</div>
+              <div class="legend-item"><div class="legend-box" style="background:#38bdf8;"></div>Z2 (69-83%)</div>
+              <div class="legend-item"><div class="legend-box" style="background:#22c55e;"></div>Z3 (84-94%)</div>
+              <div class="legend-item"><div class="legend-box" style="background:#eab308;"></div>Z4 (95-105%)</div>
+              <div class="legend-item"><div class="legend-box" style="background:#ef4444;"></div>Z5 (&gt;106%)</div>
+            </div>
+            <div class="chart-box"><canvas id="hrTimeCanvas" style="height: 390px;"></canvas></div>
+          </div>
+
+          <!-- TAB 8: CARDIAC DRIFT -->
+          <div id="driftChartTab" class="tab-panel dynamic-tab" style="display: none;">
+            <div class="panel-header">
+              <div>
+                <h2>Evolução do Cardiac Drift (Desacoplamento Aeróbico)</h2>
+                <p class="panel-sub">Treinos contínuos elegíveis (&ge; 30 min e VI &le; 1.12). Ideal: &le; 5%.</p>
+              </div>
+              <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
+                <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
+              </select>
+            </div>
+            <div class="chart-box"><canvas id="driftCanvas" style="height: 390px;"></canvas></div>
+          </div>
+
+          <!-- TAB 9: VI -->
+          <div id="viChartTab" class="tab-panel dynamic-tab" style="display: none;">
+            <div class="panel-header">
+              <div>
+                <h2>Índice de Variabilidade (VI = NP / Potência Média)</h2>
+                <p class="panel-sub">Faixa de 1.00 a 1.10 indica controle constante de ritmo.</p>
+              </div>
+              <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
+                <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
+              </select>
+            </div>
+            <div class="chart-box"><canvas id="viCanvas" style="height: 390px;"></canvas></div>
+          </div>
+
+          <!-- TAB 10: VOLUME DE ESTRUTURA -->
+          <div id="structureVolTab" class="tab-panel dynamic-tab" style="display: none;">
+            <div class="panel-header">
+              <div>
+                <h2>Volume de Treino: Estruturado vs. Livre</h2>
+                <p class="panel-sub">Verde = Estruturado (VI &le; 1.10). Cinza = Pedalada livre/estocástica (VI &gt; 1.10).</p>
+              </div>
+              <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
+                <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
+              </select>
+            </div>
+            <div class="chart-box"><canvas id="structureVolCanvas" style="height: 390px;"></canvas></div>
+          </div>
+
+          <!-- TAB 11: EFICIÊNCIA -->
+          <div id="eficienciaTab" class="tab-panel dynamic-tab" style="display: none;">
+            <div class="panel-header">
+              <div>
+                <h2>Estudo de Eficiência Cardíaca (FC Média por Zona)</h2>
+                <p class="panel-sub">Acompanhe a queda da FC para uma mesma faixa de Watts ao longo do tempo.</p>
+              </div>
+              <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
+                <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
+              </select>
+            </div>
+            <div class="layer-bar">
+              <span class="pill-label">EXIBIR ZONAS:</span>
+              <label class="chk-pill" style="color:#38bdf8;"><input type="checkbox" id="chk-z2" value="Z2" checked onchange="updateEficienciaChart()"> Z2 (56-75%)</label>
+              <label class="chk-pill" style="color:#10b981;"><input type="checkbox" id="chk-z3" value="Z3" checked onchange="updateEficienciaChart()"> Z3 (76-90%)</label>
+              <label class="chk-pill" style="color:#eab308;"><input type="checkbox" id="chk-z4" value="Z4" checked onchange="updateEficienciaChart()"> Z4 (91-105%)</label>
+              <label class="chk-pill" style="color:#f97316;"><input type="checkbox" id="chk-z5" value="Z5" onchange="updateEficienciaChart()"> Z5 (106-120%)</label>
+              <label class="chk-pill" style="color:#ef4444;"><input type="checkbox" id="chk-z6" value="Z6" onchange="updateEficienciaChart()"> Z6 (121-150%)</label>
+              <label class="chk-pill" style="color:#a855f7;"><input type="checkbox" id="chk-z7" value="Z7" onchange="updateEficienciaChart()"> Z7 (&gt;150%)</label>
+            </div>
+            <div class="chart-box"><canvas id="eficienciaCanvas" style="height: 390px;"></canvas></div>
+          </div>
+
+          <!-- TAB 12: DISPERSÃO AVANÇADA -->
+          <div id="dispersaoTab" class="tab-panel dynamic-tab" style="display: none;">
+            <div class="panel-header">
+              <div>
+                <h2>Estudo de Dispersão Avançada (Watt vs. BPM)</h2>
+                <p class="panel-sub">Regressão linear comparativa entre períodos históricos.</p>
+              </div>
+            </div>
+            <div class="layer-bar">
+              <label class="inline-select">Agrupamento:
+                <select class="custom-select" id="dspAgrupamento" onchange="onDispParamChange()">
+                  <option value="dia">Diário</option><option value="semana">Semanal</option><option value="quinzena">Quinzenal</option><option value="mes" selected>Mensal</option><option value="trimestre">Trimestral</option><option value="semestre">Semestral</option><option value="ano">Anual</option>
+                </select>
+              </label>
+              <label class="inline-select">Intervalo:
+                <select class="custom-select" id="dspJanelaPonto" onchange="onDispParamChange()">
+                  <option value="5">5s</option><option value="15">15s</option><option value="60">1 min</option><option value="300" selected>5 min</option><option value="600">10 min</option><option value="900">15 min</option><option value="3600">60 min</option>
+                </select>
+              </label>
+              <label class="inline-select">Períodos:
+                <select class="custom-select" id="dspQtdPeriodos" onchange="onDispParamChange()">
+                  <option value="1">1</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="8">8</option><option value="12">12</option>
+                </select>
+              </label>
+            </div>
+            <div id="dspLegendContainer" style="display: none;"></div>
+            <div class="chart-box"><canvas id="dispersaoCanvas" style="height: 400px;"></canvas></div>
+            <div class="timeline-navigator">
+              <div class="timeline-header">
+                <span class="timeline-title" id="dspSliderLabel">Janela Ativa: --</span>
+                <span class="timeline-hint">Arraste para navegar no tempo &larr; &rarr;</span>
+              </div>
+              <input type="range" id="dspTimeSlider" min="0" max="0" value="0" step="1" oninput="onDispSliderInput(this.value)">
+            </div>
+          </div>
+
+          <!-- TAB 13: ISO-POTÊNCIA -->
+          <div id="isoPotenciaTab" class="tab-panel dynamic-tab" style="display: none;">
+            <div class="panel-header">
+              <div>
+                <h2>Evolução Histórica de Desempenho (Iso-Potência)</h2>
+                <p class="panel-sub">Custo cardíaco estimado para 3 potências fixas ao longo dos períodos.</p>
+              </div>
+              <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                <select class="custom-select" id="isoAgrupamento" onchange="renderIsoPotenciaChart()">
+                  <option value="quinzena">Quinzenal</option><option value="mes">Mensal</option><option value="trimestre" selected>Trimestral</option><option value="semestre">Semestral</option><option value="ano">Anual</option>
+                </select>
+                <select class="custom-select" id="isoJanelaPonto" onchange="renderIsoPotenciaChart()">
+                  <option value="5">5s</option><option value="15" selected>15s</option><option value="60">1 min</option><option value="300">5 min</option>
+                </select>
+              </div>
+            </div>
+            <div class="layer-bar" style="justify-content:center; gap:24px;">
+              <div class="iso-pill"><span class="dot" style="background:#10b981;"></span> FC @ <input type="number" id="isoPwr1" value="160" min="60" max="400" step="5" onchange="renderIsoPotenciaChart()"> W</div>
+              <div class="iso-pill"><span class="dot" style="background:#06b6d4;"></span> FC @ <input type="number" id="isoPwr2" value="200" min="60" max="400" step="5" onchange="renderIsoPotenciaChart()"> W</div>
+              <div class="iso-pill"><span class="dot" style="background:#eab308;"></span> FC @ <input type="number" id="isoPwr3" value="240" min="60" max="400" step="5" onchange="renderIsoPotenciaChart()"> W</div>
+            </div>
+            <div class="chart-box"><canvas id="isoPotenciaCanvas" style="height: 400px;"></canvas></div>
+          </div>
+        </div>
+
+        <!-- DETALHE INDIVIDUAL DA ATIVIDADE -->
+        <div id="detailArea" style="display: none;">
+          <button class="btn-cockpit outline" onclick="showSummary()" style="margin-bottom: 18px;">&larr; Voltar ao Histórico</button>
+          <h2 id="actTitle" style="color: #10b981; margin-bottom: 18px; font-family: 'JetBrains Mono', monospace;"></h2>
+          
+          <div class="stat-grid">
+            <div class="stat-box"><div class="stat-title">Potência Normalizada (NP)</div><div class="stat-val mono" id="npVal">--</div></div>
+            <div class="stat-box"><div class="stat-title">Índ. Variabilidade (VI)</div><div class="stat-val mono" id="viVal">--</div></div>
+            <div class="stat-box" style="grid-column: span 2;"><div class="stat-title">Diagnóstico de Estrutura (Blocos &ge; 5 min)</div><div class="stat-val" id="structureVal" style="font-size: 0.92rem; font-weight: 500;">--</div></div>
+          </div>
+
+          <div class="stat-grid">
+            <div class="stat-box"><div class="stat-title">Tempo Total</div><div class="stat-val mono" id="totalTime">--</div></div>
+            <div class="stat-box"><div class="stat-title">Distância Total</div><div class="stat-val mono" id="totalDist">--</div></div>
+            <div class="stat-box"><div class="stat-title">Velocidade Média</div><div class="stat-val mono" id="avgSpeed">--</div></div>
+            <div class="stat-box"><div class="stat-title">Potência Média</div><div class="stat-val mono neon-green" id="avgPwr">--</div></div>
+            <div class="stat-box"><div class="stat-title">FC Média</div><div class="stat-val mono neon-red" id="avgHr">--</div></div>
+            <div class="stat-box"><div class="stat-title">Cadência Média</div><div class="stat-val mono neon-cyan" id="avgCad">--</div></div>
+            <div class="stat-box"><div class="stat-title">Cardiac Drift (Pa:Hr)</div><div class="stat-val mono" id="driftVal">--</div></div>
+          </div>
+          <div class="stat-box" style="margin-bottom: 12px;"><div class="stat-title">Maior Bloco 20 Minutos (MMP20)</div><div class="stat-val mono neon-green" id="mmp20Val">--</div></div>
+          <div class="stat-box"><div class="stat-title">Top 4 Maiores Períodos de Potência (4 Minutos)</div><div class="stat-val mono" id="top4Mins" style="font-size: 0.92rem;">--</div></div>
+        </div>
+      </main>
     </div>
   </div>
 

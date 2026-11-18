@@ -1,11 +1,13 @@
-// Núcleo Principal Revisado (Sincronização Garmin Destravada para Pacotes Incompletos, Exclusão por ID Único, FIT/ZIP e Telemetria 15s)
+// Núcleo Principal Otimizado (Lazy Loading de Telemetria em Store Separada, Renderização Apenas da Aba Ativa e Curva MMP 5s-120m)
 let dbActivities = [];
 let currentUserId = null;
 let currentUserName = "";
 let userMaxHr = 187;
+let activeDashboardTabId = "tableTab";
 
 const DB_NAME = "UpYouDB";
 const STORE_NAME = "activitiesStore";
+const TELEMETRY_STORE = "telemetryStore";
 const GARMIN_API_URL = "https://garmin-webhook-731921508137.us-central1.run.app";
 
 function getDeletedIdsKey() {
@@ -30,7 +32,6 @@ function addDeletedActivityKey(uKey) {
   }
 }
 
-// Exclui a atividade exata pela sua chave única (garminId ou file), imune à reordenação do array
 window.deleteActivityByKey = async function(uKey) {
   if (typeof dbActivities === 'undefined' || !uKey) return;
   const idx = dbActivities.findIndex(a => window.getActivityUniqueKey(a) === uKey);
@@ -59,7 +60,6 @@ window.deleteActivityByKey = async function(uKey) {
   updateDynamicCharts();
 };
 
-// Mantém compatibilidade caso algum botão antigo chame deleteActivityByIndex
 window.deleteActivityByIndex = async function(idx) {
   if (typeof dbActivities === 'undefined' || !dbActivities[idx]) return;
   const uKey = window.getActivityUniqueKey(dbActivities[idx]);
@@ -174,21 +174,25 @@ async function checkGarminConnectionStatus() {
   }
 }
 
+// --- BANCO DE DADOS LOCAL COM 2 STORES (RESUMO LEVE + TELEMETRIA SOB DEMANDA) ---
 function initDB() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME);
     request.onupgradeneeded = (e) => {
       const db = e.target.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME, { keyPath: "id" });
+      if (!db.objectStoreNames.contains(TELEMETRY_STORE)) db.createObjectStore(TELEMETRY_STORE, { keyPath: "id" });
     };
     request.onsuccess = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
+      if (!db.objectStoreNames.contains(STORE_NAME) || !db.objectStoreNames.contains(TELEMETRY_STORE)) {
         const nextVer = db.version + 1;
         db.close();
         const upg = indexedDB.open(DB_NAME, nextVer);
         upg.onupgradeneeded = (ev) => {
-          ev.target.result.createObjectStore(STORE_NAME, { keyPath: "id" });
+          const uDb = ev.target.result;
+          if (!uDb.objectStoreNames.contains(STORE_NAME)) uDb.createObjectStore(STORE_NAME, { keyPath: "id" });
+          if (!uDb.objectStoreNames.contains(TELEMETRY_STORE)) uDb.createObjectStore(TELEMETRY_STORE, { keyPath: "id" });
         };
         upg.onsuccess = () => resolve(upg.result);
         upg.onerror = () => reject(upg.error);
@@ -200,12 +204,26 @@ function initDB() {
   });
 }
 
+// Separa os streams pesados de telemetria para a store dedicada e salva apenas objetos leves na memória principal
 async function saveToDB(activities) {
   if (!currentUserId) return;
   const db = await initDB();
-  const tx = db.transaction(STORE_NAME, "readwrite");
-  const store = tx.objectStore(STORE_NAME);
-  store.put({ id: currentUserId, data: activities });
+  const tx = db.transaction([STORE_NAME, TELEMETRY_STORE], "readwrite");
+  const mainStore = tx.objectStore(STORE_NAME);
+  const telStore = tx.objectStore(TELEMETRY_STORE);
+
+  const lightActivities = activities.map(act => {
+    const uKey = typeof window.getActivityUniqueKey === 'function' ? window.getActivityUniqueKey(act) : String(act.garminId || act.file || Math.random());
+    if (Array.isArray(act.telemetry15s) && act.telemetry15s.length > 0) {
+      telStore.put({ id: `${currentUserId}_${uKey}`, stream: act.telemetry15s });
+      act.hasSavedTelemetry = true;
+    }
+    // Cria cópia leve sem o array pesado telemetry15s para que a leitura inicial seja instantânea
+    const { telemetry15s, ...lightCopy } = act;
+    return lightCopy;
+  });
+
+  mainStore.put({ id: currentUserId, data: lightActivities });
   return new Promise(resolve => tx.oncomplete = resolve);
 }
 
@@ -221,11 +239,36 @@ async function loadFromDB() {
   });
 }
 
+// Carrega o stream de 15s do disco apenas no instante em que a atividade é aberta na aba de Telemetria
+window.loadTelemetryForActivityOnDemand = async function(act) {
+  if (!act || (Array.isArray(act.telemetry15s) && act.telemetry15s.length > 0)) return act?.telemetry15s || [];
+  try {
+    const uKey = typeof window.getActivityUniqueKey === 'function' ? window.getActivityUniqueKey(act) : String(act.garminId || act.file);
+    const db = await initDB();
+    const tx = db.transaction(TELEMETRY_STORE, "readonly");
+    const store = tx.objectStore(TELEMETRY_STORE);
+    const req = store.get(`${currentUserId}_${uKey}`);
+    return new Promise(resolve => {
+      req.onsuccess = () => {
+        if (req.result && Array.isArray(req.result.stream)) {
+          act.telemetry15s = req.result.stream;
+          resolve(act.telemetry15s);
+        } else {
+          resolve([]);
+        }
+      };
+      req.onerror = () => resolve([]);
+    });
+  } catch (e) {
+    return [];
+  }
+};
+
 async function clearLocalDatabase() {
   if(confirm("Tem a certeza que deseja apagar o histórico local? As atividades na nuvem Garmin serão recarregadas na próxima sincronização.")) {
     localStorage.removeItem(getDeletedIdsKey());
     const db = await initDB();
-    const tx = db.transaction(STORE_NAME, "readwrite");
+    const tx = db.transaction([STORE_NAME, TELEMETRY_STORE], "readwrite");
     tx.objectStore(STORE_NAME).delete(currentUserId);
     document.getElementById('summaryArea').style.display = 'none';
     document.getElementById('uploadArea').style.display = 'block';
@@ -237,16 +280,24 @@ async function initializeAppForUser() {
   const savedData = await loadFromDB();
   if (savedData && savedData.length > 0) {
     const deletedKeys = getDeletedActivityKeys();
+    let needsMigration = false;
+
     dbActivities = savedData.filter(a => {
       const k = typeof window.getActivityUniqueKey === 'function' ? window.getActivityUniqueKey(a) : String(a.garminId || a.file);
+      if (Array.isArray(a.telemetry15s) && a.telemetry15s.length > 0) needsMigration = true;
       return !deletedKeys.includes(k) && !deletedKeys.includes(String(a.garminId));
     });
+
     dbActivities.forEach(a => a.dateObj = new Date(a.dateObj));
     document.getElementById('uploadArea').style.display = 'none';
     if (typeof window.applyGlobalPowerSource === 'function') window.applyGlobalPowerSource();
     processGlobalMetrics();
     renderSummaryTable();
-    updateDynamicCharts();
+
+    // Se o banco antigo ainda estava com os vetores pesados na store principal, migra em segundo plano para acelerar os próximos carregamentos
+    if (needsMigration) {
+      setTimeout(() => saveToDB(dbActivities), 800);
+    }
   }
   await checkGarminConnectionStatus();
   await syncWithGarminCloud();
@@ -274,17 +325,13 @@ async function syncWithGarminCloud() {
       const existingIdx = dbActivities.findIndex(a => String(a.garminId) === String(item.id));
       const existingAct = existingIdx !== -1 ? dbActivities[existingIdx] : null;
 
-      // VERIFICAÇÃO RIGOROSA: Uma atividade Garmin só é considerada completa se tiver:
-      // 1) Potência real ou simulada > 0
-      // 2) Janelas de dispersão reais populadas (dispWindows[5].length > 0)
-      // 3) Telemetria de 15s populada (telemetry15s.length > 2)
       const rm = existingAct ? existingAct.realMetrics : null;
       const em = existingAct ? existingAct.estMetrics : null;
       const baseM = rm || em || (existingAct ? existingAct.metrics : null);
 
       const hasValidPwr = baseM && baseM.avgPwr > 10;
       const hasValidDisp = baseM && baseM.dispWindows && Array.isArray(baseM.dispWindows[5]) && baseM.dispWindows[5].length > 0;
-      const hasValidTel = existingAct && Array.isArray(existingAct.telemetry15s) && existingAct.telemetry15s.length > 2 && !existingAct.telemetry15s[0].isFallback;
+      const hasValidTel = existingAct && (existingAct.hasSavedTelemetry || (Array.isArray(existingAct.telemetry15s) && existingAct.telemetry15s.length > 2));
 
       if (existingIdx === -1 || !hasValidPwr || !hasValidDisp || !hasValidTel) {
         const detailRes = await fetch(`${GARMIN_API_URL}?google_id=${encodeURIComponent(currentUserId)}&id=${encodeURIComponent(item.id)}&t=${Date.now()}`);
@@ -380,14 +427,12 @@ async function buildDualMetricsFromRecords(records, dateObj) {
   return { realMetrics, estMetrics, telemetry15s };
 }
 
-// Leitor Universal de JSON da Garmin: encontra `summary` e `samples` em qualquer estrutura que o Webhook do Cloud Run tenha salvo
 async function parseGarminJsonToActivity(data, fallbackId) {
   if (!data) return null;
   let summary = null;
   let samples = [];
 
   if (Array.isArray(data.activityDetails) && data.activityDetails.length > 0) {
-    // Procura o item que realmente contém samples caso haja múltiplos pacotes no array
     const detailWithSamples = data.activityDetails.find(d => Array.isArray(d.samples) && d.samples.length > 0) || data.activityDetails[0];
     summary = detailWithSamples.summary || {};
     samples = detailWithSamples.samples || [];
@@ -443,8 +488,6 @@ async function parseGarminJsonToActivity(data, fallbackId) {
     }
   }
 
-  // Fallback físico inteligente caso o webhook no Cloud Run tenha gravado apenas o Resumo sem o array `samples`:
-  // Reconstrói os registros a partir da velocidade/distância/potência do resumo para nunca exibir 0W na tabela!
   if (records.length === 0 && (summary.distanceInMeters > 200 || summary.durationInSeconds > 60)) {
     const dur = Math.max(60, summary.movingDurationInSeconds || summary.durationInSeconds || 3600);
     const distM = summary.distanceInMeters || 0;
@@ -510,7 +553,6 @@ async function parseGarminJsonToActivity(data, fallbackId) {
     }
   });
 
-  // Se o resumo da Garmin trouxe averagePowerInWatts real mas não trouxe samples, garante que realMetrics também exista
   let finalRealMetrics = realMetrics;
   if (!finalRealMetrics && summary.averagePowerInWatts && summary.averagePowerInWatts > 15 && estMetrics) {
     finalRealMetrics = JSON.parse(JSON.stringify(estMetrics));
@@ -518,8 +560,6 @@ async function parseGarminJsonToActivity(data, fallbackId) {
     finalRealMetrics.avgPwr = Math.round(summary.averagePowerInWatts);
     finalRealMetrics.np = Math.round(summary.weightedAveragePowerInWatts || summary.averagePowerInWatts);
   } else if (!finalRealMetrics && estMetrics && records.length > 0 && summary.distanceInMeters > 1000) {
-    // Em atividades Garmin cujo webhook salvou apenas o resumo (sem powerInWatts no summary),
-    // permite que a potência reconstruída apareça mesmo quando o seletor estiver em "Apenas Real"
     finalRealMetrics = estMetrics;
   }
 
@@ -532,31 +572,25 @@ async function parseGarminJsonToActivity(data, fallbackId) {
     realMetrics: finalRealMetrics,
     estMetrics,
     telemetry15s,
+    hasSavedTelemetry: telemetry15s.length > 0,
     dateObj,
     source: 'garmin'
   };
 }
 
+// Renderiza APENAS a aba clicada pelo utilizador (elimina lentidão ao navegar)
 window.switchDashboardTab = function(tabId, el) {
+  activeDashboardTabId = tabId;
   document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-  ['tableTab', 'ftpTab', 'zonesTab', 'pwrTimeTab', 'hrTimeTab', 'driftChartTab', 'viChartTab', 'structureVolTab', 'eficienciaTab', 'dispersaoTab', 'isoPotenciaTab', 'telemetriaTab'].forEach(id => {
+  ['tableTab', 'ftpTab', 'curvaPotenciaTab', 'zonesTab', 'pwrTimeTab', 'hrTimeTab', 'driftChartTab', 'viChartTab', 'structureVolTab', 'eficienciaTab', 'dispersaoTab', 'isoPotenciaTab', 'telemetriaTab'].forEach(id => {
     const sec = document.getElementById(id);
     if (sec) sec.style.display = 'none';
   });
-  el.classList.add('active');
+  if (el) el.classList.add('active');
   const targetSec = document.getElementById(tabId);
   if (targetSec) targetSec.style.display = 'block';
   
-  if (tabId === 'dispersaoTab') {
-    if (typeof initDispersaoTab === 'function') initDispersaoTab();
-  } else if (tabId === 'isoPotenciaTab') {
-    if (typeof initIsoPotenciaTab === 'function') initIsoPotenciaTab();
-  } else if (tabId === 'telemetriaTab') {
-    if (typeof initTelemetriaTab === 'function') initTelemetriaTab();
-  } else if (targetSec && targetSec.classList.contains('dynamic-tab')) {
-    updateDynamicCharts();
-  }
-  if (tabId === 'ftpTab' || tabId === 'zonesTab') processGlobalMetrics();
+  updateDynamicCharts();
 };
 
 window.syncFiltersAndUpdate = function(value) {
@@ -627,7 +661,7 @@ document.getElementById('zipInput').addEventListener('change', async (event) => 
             const { realMetrics, estMetrics, telemetry15s } = await buildDualMetricsFromRecords(records, dateObj);
             const activeMetrics = realMetrics || estMetrics;
             if (activeMetrics) {
-              dbActivities.push({ ...task, metrics: activeMetrics, realMetrics, estMetrics, telemetry15s, dateObj });
+              dbActivities.push({ ...task, metrics: activeMetrics, realMetrics, estMetrics, telemetry15s, hasSavedTelemetry: telemetry15s.length > 0, dateObj });
             }
           } catch (e) { console.warn(`Aviso: ${task.file}`); }
         }
@@ -937,17 +971,25 @@ function calculateMetrics(records) {
     }
   }
 
-  let mmp20 = 0;
-  if (timeline.length >= 1200) {
-    let sum = 0;
-    for (let i = 0; i < 1200; i++) sum += timeline[i];
-    let max20m = sum / 1200;
-    for (let i = 1200; i < timeline.length; i++) {
-      sum = sum - timeline[i - 1200] + timeline[i];
-      if (sum / 1200 > max20m) max20m = sum / 1200;
+  // Cálculo Exato da Curva de Potência (MMP) para as 8 durações: 5s, 15s, 60s, 300s, 900s, 1200s, 3600s, 7200s
+  const mmpCurve = {};
+  [5, 15, 60, 300, 900, 1200, 3600, 7200].forEach(dur => {
+    if (timeline.length >= dur) {
+      let sum = 0;
+      for (let i = 0; i < dur; i++) sum += timeline[i];
+      let best = sum / dur;
+      for (let i = dur; i < timeline.length; i++) {
+        sum = sum - timeline[i - dur] + timeline[i];
+        const avg = sum / dur;
+        if (avg > best) best = avg;
+      }
+      mmpCurve[dur] = Math.round(best);
+    } else {
+      mmpCurve[dur] = 0;
     }
-    mmp20 = Math.round(max20m);
-  }
+  });
+
+  const mmp20 = mmpCurve[1200] || 0;
 
   let mhr20 = 0;
   if (hrTimeline.length >= 1200) {
@@ -993,7 +1035,7 @@ function calculateMetrics(records) {
 
   return {
     totalSecs, movingSecs, distKm: (maxDist / 1000).toFixed(2),
-    avgPwr, avgHr, avgCad, avgSpeed, top4, drift, driftEligible, mmp20, mhr20,
+    avgPwr, avgHr, avgCad, avgSpeed, top4, drift, driftEligible, mmp20, mmpCurve, mhr20,
     pwrHist, hrHist, pwrHrPairs, dispWindows, np, vi, blocksCount
   };
 }
@@ -1030,11 +1072,13 @@ function getActivityBest20MinHr(act) {
   return 0;
 }
 
+let cachedFtpHistory = [];
+
 function processGlobalMetrics() {
   if (typeof window.applyGlobalPowerSource === 'function') window.applyGlobalPowerSource();
   dbActivities.sort((a, b) => a.dateObj - b.dateObj); 
   const daysWindow = 42;
-  let ftpHistory = [];
+  cachedFtpHistory = [];
 
   let firstValidMmp20 = 0;
   let firstValidMhr20 = 0;
@@ -1079,22 +1123,56 @@ function processGlobalMetrics() {
     
     curr.currentFtp = rollingFtp;
     curr.currentLthr = rollingLthr;
-    ftpHistory.push({ date: curr.dateObj, ftp: rollingFtp, lthr: rollingLthr });
+    cachedFtpHistory.push({ date: curr.dateObj, ftp: rollingFtp, lthr: rollingLthr });
   }
-  renderFtpChart(ftpHistory);
-  renderDynamicZones();
+
+  if (activeDashboardTabId === 'ftpTab') renderFtpChart(cachedFtpHistory);
+  if (activeDashboardTabId === 'zonesTab') renderDynamicZones();
 }
 
+// Renderiza apenas o gráfico da aba visível na tela (Zero bloqueio de CPU)
 function updateDynamicCharts() {
-  renderStackedZonesChart('pwr');
-  renderStackedZonesChart('hr');
-  renderDriftChart();
-  renderViChart();
-  renderStructureVolChart();
-  if (typeof renderEficienciaChart === 'function') renderEficienciaChart();
-  if (typeof updateDispersaoChart === 'function') updateDispersaoChart();
-  if (typeof renderIsoPotenciaChart === 'function') renderIsoPotenciaChart();
-  if (typeof renderTelemetriaChart === 'function') renderTelemetriaChart();
+  switch (activeDashboardTabId) {
+    case 'tableTab':
+      renderSummaryTable();
+      break;
+    case 'ftpTab':
+      renderFtpChart(cachedFtpHistory);
+      break;
+    case 'curvaPotenciaTab':
+      if (typeof initCurvaPotenciaTab === 'function') initCurvaPotenciaTab();
+      break;
+    case 'zonesTab':
+      renderDynamicZones();
+      break;
+    case 'pwrTimeTab':
+      renderStackedZonesChart('pwr');
+      break;
+    case 'hrTimeTab':
+      renderStackedZonesChart('hr');
+      break;
+    case 'driftChartTab':
+      renderDriftChart();
+      break;
+    case 'viChartTab':
+      renderViChart();
+      break;
+    case 'structureVolTab':
+      renderStructureVolChart();
+      break;
+    case 'eficienciaTab':
+      if (typeof renderEficienciaChart === 'function') renderEficienciaChart();
+      break;
+    case 'dispersaoTab':
+      if (typeof initDispersaoTab === 'function') initDispersaoTab();
+      break;
+    case 'isoPotenciaTab':
+      if (typeof initIsoPotenciaTab === 'function') initIsoPotenciaTab();
+      break;
+    case 'telemetriaTab':
+      if (typeof initTelemetriaTab === 'function') initTelemetriaTab();
+      break;
+  }
 }
 
 function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {

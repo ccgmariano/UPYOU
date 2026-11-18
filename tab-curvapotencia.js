@@ -1,0 +1,426 @@
+// Aba: Curva de Potência Máxima Média (MMP: 5s, 15s, 1m, 5m, 15m, 20m, 60m, 120m) Multi-Anos e Histórico por Marca
+
+const MMP_DURATIONS = [
+  { sec: 5, label: '5s', title: '5 Segundos (Sprint Neuromuscular)' },
+  { sec: 15, label: '15s', title: '15 Segundos (Capacidade Anaeróbica)' },
+  { sec: 60, label: '1min', title: '1 Minuto (Potência Anaeróbica / Ataque)' },
+  { sec: 300, label: '5min', title: '5 Minutos (VO2 Máximo)' },
+  { sec: 900, label: '15min', title: '15 Minutos (Sub-Limiar / Ritmo)' },
+  { sec: 1200, label: '20min', title: '20 Minutos (Base de FTP — MMP20)' },
+  { sec: 3600, label: '60min', title: '60 Minutos (1 Hora — Limiar Funcional)' },
+  { sec: 7200, label: '120min', title: '120 Minutos (2 Horas — Resistência Aeróbica)' }
+];
+
+const CURVE_PALETTE = [
+  '#f97316', '#38bdf8', '#22c55e', '#eab308', '#a855f7', '#ec4899', '#14b8a6', '#f43f5e', '#84cc16', '#6366f1'
+];
+
+let selectedMmpYears = ['all']; // Pode conter 'all' e/ou anos específicos como '2026', '2025'
+let selectedMmpDurationSec = 1200; // Abre por padrão no card de 20 min
+let mmpHistorySortMode = 'date_desc'; // 'date_desc' (Mais recente -> Mais antiga) ou 'pwr_desc' (Maior Potência)
+
+// Extrai o melhor valor de potência de uma atividade para uma duração (usa mmpCurve exata ou reconstrói de dispWindows se for cache antigo)
+window.getActivityMmpForDuration = function(act, sec) {
+  if (!act || !act.metrics) return 0;
+  const m = act.metrics;
+  const totalDur = m.movingSecs || m.totalSecs || 0;
+  if (totalDur < sec * 0.90) return 0;
+
+  if (m.mmpCurve && m.mmpCurve[sec] !== undefined && m.mmpCurve[sec] > 0) {
+    return Math.round(m.mmpCurve[sec]);
+  }
+
+  if (sec === 1200 && m.mmp20 && m.mmp20 > 0) return Math.round(m.mmp20);
+
+  // Fallback imediato para atividades já salvas antes da criação do mmpCurve
+  const dw = m.dispWindows || {};
+  if (dw[sec] && Array.isArray(dw[sec]) && dw[sec].length > 0) {
+    let best = 0;
+    for (let i = 0; i < dw[sec].length; i++) {
+      if (dw[sec][i][0] > best) best = dw[sec][i][0];
+    }
+    if (best > 0) return Math.round(best);
+  }
+
+  if (sec === 1200 && dw[300] && dw[300].length >= 4) {
+    let best = 0;
+    for (let i = 0; i <= dw[300].length - 4; i++) {
+      const avg4 = (dw[300][i][0] + dw[300][i + 1][0] + dw[300][i + 2][0] + dw[300][i + 3][0]) / 4;
+      if (avg4 > best) best = avg4;
+    }
+    if (best > 0) return Math.round(best);
+  }
+
+  if (sec === 7200) {
+    if (dw[3600] && dw[3600].length >= 2) {
+      let best = 0;
+      for (let i = 0; i <= dw[3600].length - 2; i++) {
+        const avg2 = (dw[3600][i][0] + dw[3600][i + 1][0]) / 2;
+        if (avg2 > best) best = avg2;
+      }
+      if (best > 0) return Math.round(best);
+    }
+    if (totalDur >= 7200 && m.avgPwr > 0) return Math.round(m.avgPwr);
+  }
+
+  if (sec === 3600 && totalDur >= 3600 && m.avgPwr > 0) {
+    if (dw[900] && dw[900].length >= 4) {
+      let best = 0;
+      for (let i = 0; i <= dw[900].length - 4; i++) {
+        const avg4 = (dw[900][i][0] + dw[900][i + 1][0] + dw[900][i + 2][0] + dw[900][i + 3][0]) / 4;
+        if (avg4 > best) best = avg4;
+      }
+      if (best > 0) return Math.round(best);
+    }
+    return Math.round(m.avgPwr);
+  }
+
+  return 0;
+};
+
+function getAvailableYearsFromActivities() {
+  const yearsSet = new Set();
+  if (typeof dbActivities !== 'undefined') {
+    dbActivities.forEach(a => {
+      if (a.dateObj instanceof Date && !isNaN(a.dateObj.getTime())) {
+        yearsSet.add(String(a.dateObj.getFullYear()));
+      }
+    });
+  }
+  return Array.from(yearsSet).sort((a, b) => parseInt(b) - parseInt(a));
+}
+
+function renderMmpYearSelector() {
+  const container = document.getElementById('mmpYearSelector');
+  if (!container) return;
+
+  const years = getAvailableYearsFromActivities();
+  const options = [{ key: 'all', label: '🌐 Todo o Histórico' }, ...years.map(y => ({ key: y, label: y }))];
+
+  container.innerHTML = `<span style="font-size: 0.8rem; color: #94a3b8; font-weight: bold; display: flex; align-items: center; margin-right: 6px;">Períodos no Gráfico:</span>` +
+    options.map((opt, idx) => {
+      const isSelected = selectedMmpYears.includes(opt.key);
+      const colorIdx = selectedMmpYears.indexOf(opt.key);
+      const col = isSelected ? CURVE_PALETTE[colorIdx % CURVE_PALETTE.length] : '#475569';
+      const bg = isSelected ? 'rgba(30, 41, 59, 0.95)' : '#020617';
+      const textCol = isSelected ? '#f8fafc' : '#64748b';
+      const glow = isSelected ? `0 0 8px ${col}55` : 'none';
+
+      return `
+        <button onclick="toggleMmpYear('${opt.key}')" style="background: ${bg}; color: ${textCol}; border: 1.5px solid ${col}; box-shadow: ${glow}; padding: 5px 12px; border-radius: 18px; font-size: 0.78rem; font-weight: bold; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: 0.15s;">
+          <span style="width: 9px; height: 9px; border-radius: 50%; background: ${col}; display: inline-block;"></span>
+          ${opt.label}
+        </button>
+      `;
+    }).join('');
+}
+
+window.toggleMmpYear = function(yearKey) {
+  const idx = selectedMmpYears.indexOf(yearKey);
+  if (idx !== -1) {
+    if (selectedMmpYears.length > 1) {
+      selectedMmpYears.splice(idx, 1);
+    }
+  } else {
+    selectedMmpYears.push(yearKey);
+  }
+  renderMmpYearSelector();
+  renderCurvaPotenciaChart();
+  renderMmpBestCards();
+  renderMmpHistoryTable();
+};
+
+function filterActivitiesBySelectedYears(yearKey) {
+  if (typeof dbActivities === 'undefined') return [];
+  if (yearKey === 'all') return dbActivities;
+  return dbActivities.filter(a => a.dateObj instanceof Date && String(a.dateObj.getFullYear()) === String(yearKey));
+}
+
+function getCombinedActivitiesForActiveSelection() {
+  if (typeof dbActivities === 'undefined') return [];
+  if (selectedMmpYears.includes('all')) return dbActivities;
+  return dbActivities.filter(a => a.dateObj instanceof Date && selectedMmpYears.includes(String(a.dateObj.getFullYear())));
+}
+
+window.initCurvaPotenciaTab = function() {
+  renderMmpYearSelector();
+  renderCurvaPotenciaChart();
+  renderMmpBestCards();
+  renderMmpHistoryTable();
+};
+
+window.renderCurvaPotenciaChart = function() {
+  const canvas = document.getElementById('curvaPotenciaCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.offsetWidth || 920, h = 390;
+  const padL = 55, padR = 35, padT = 30, padB = 45;
+  canvas.width = w;
+  canvas.height = h;
+  ctx.clearRect(0, 0, w, h);
+
+  if (typeof dbActivities === 'undefined' || dbActivities.length === 0) return;
+
+  const drawW = w - padL - padR;
+  const drawH = h - padT - padB;
+
+  // Calcula as curvas para cada período selecionado
+  const seriesList = selectedMmpYears.map((yKey, sIdx) => {
+    const acts = filterActivitiesBySelectedYears(yKey);
+    const points = MMP_DURATIONS.map((d, dIdx) => {
+      let bestW = 0;
+      let bestAct = null;
+      for (let i = 0; i < acts.length; i++) {
+        const val = window.getActivityMmpForDuration(acts[i], d.sec);
+        if (val > bestW) {
+          bestW = val;
+          bestAct = acts[i];
+        }
+      }
+      return { sec: d.sec, label: d.label, watts: bestW, act: bestAct, dIdx };
+    });
+    return {
+      key: yKey,
+      name: yKey === 'all' ? 'Todo o Histórico' : `Ano ${yKey}`,
+      color: CURVE_PALETTE[sIdx % CURVE_PALETTE.length],
+      points
+    };
+  });
+
+  let maxWatts = 350;
+  seriesList.forEach(s => s.points.forEach(p => { if (p.watts > maxWatts) maxWatts = p.watts; }));
+  maxWatts = Math.ceil((maxWatts * 1.12) / 50) * 50;
+
+  const getX = (dIdx) => padL + (dIdx / (MMP_DURATIONS.length - 1)) * drawW;
+  const getY = (watts) => padT + drawH - (Math.max(0, Math.min(maxWatts, watts)) / maxWatts) * drawH;
+
+  // Grade Horizontal (Watts)
+  ctx.strokeStyle = '#1e293b';
+  ctx.lineWidth = 1;
+  ctx.font = '11px sans-serif';
+  for (let i = 0; i <= 5; i++) {
+    const frac = i / 5;
+    const y = padT + drawH - frac * drawH;
+    ctx.beginPath();
+    ctx.moveTo(padL, y);
+    ctx.lineTo(w - padR, y);
+    ctx.stroke();
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.textAlign = 'right';
+    ctx.fillText(`${Math.round(frac * maxWatts)} W`, padL - 8, y + 4);
+  }
+
+  // Grade Vertical (8 durações MMP)
+  MMP_DURATIONS.forEach((d, dIdx) => {
+    const x = getX(dIdx);
+    const isSel = d.sec === selectedMmpDurationSec;
+    ctx.beginPath();
+    ctx.moveTo(x, padT);
+    ctx.lineTo(x, padT + drawH);
+    ctx.strokeStyle = isSel ? 'rgba(251, 146, 60, 0.55)' : 'rgba(30, 41, 59, 0.7)';
+    ctx.lineWidth = isSel ? 1.8 : 1;
+    ctx.stroke();
+
+    ctx.fillStyle = isSel ? '#fb923c' : '#cbd5e1';
+    ctx.font = isSel ? 'bold 12px sans-serif' : '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(d.label, x, padT + drawH + 22);
+  });
+
+  // Desenha cada Curva Selecionada
+  seriesList.forEach((s, sIdx) => {
+    const validPts = s.points.filter(p => p.watts > 0);
+    if (validPts.length === 0) return;
+
+    // Preenchimento translúcido suave para a primeira curva ativa
+    if (sIdx === 0) {
+      ctx.save();
+      const grad = ctx.createLinearGradient(0, padT, 0, padT + drawH);
+      grad.addColorStop(0, `${s.color}38`);
+      grad.addColorStop(1, 'rgba(15, 23, 42, 0.02)');
+      ctx.beginPath();
+      ctx.moveTo(getX(validPts[0].dIdx), padT + drawH);
+      validPts.forEach(p => ctx.lineTo(getX(p.dIdx), getY(p.watts)));
+      ctx.lineTo(getX(validPts[validPts.length - 1].dIdx), padT + drawH);
+      ctx.closePath();
+      ctx.fillStyle = grad;
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Linha principal
+    ctx.save();
+    ctx.beginPath();
+    validPts.forEach((p, i) => {
+      const x = getX(p.dIdx), y = getY(p.watts);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth = 2.6;
+    ctx.shadowColor = s.color;
+    ctx.shadowBlur = 6;
+    ctx.stroke();
+    ctx.restore();
+
+    // Pontos e Rótulos de Watts
+    validPts.forEach(p => {
+      const x = getX(p.dIdx), y = getY(p.watts);
+      ctx.beginPath();
+      ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#0f172a';
+      ctx.fill();
+      ctx.lineWidth = 2.2;
+      ctx.strokeStyle = s.color;
+      ctx.stroke();
+
+      ctx.fillStyle = s.color;
+      ctx.font = 'bold 10.5px sans-serif';
+      ctx.textAlign = 'center';
+      const yOffset = (sIdx % 2 === 0) ? -10 : 15;
+      ctx.fillText(`${p.watts}W`, x, y + yOffset);
+    });
+  });
+};
+
+function renderMmpBestCards() {
+  const grid = document.getElementById('mmpBestCardsGrid');
+  if (!grid) return;
+
+  const activeActs = getCombinedActivitiesForActiveSelection();
+
+  grid.innerHTML = MMP_DURATIONS.map(d => {
+    let bestW = 0;
+    let bestAct = null;
+    for (let i = 0; i < activeActs.length; i++) {
+      const w = window.getActivityMmpForDuration(activeActs[i], d.sec);
+      if (w > bestW) {
+        bestW = w;
+        bestAct = activeActs[i];
+      }
+    }
+
+    const isSelected = d.sec === selectedMmpDurationSec;
+    const borderCol = isSelected ? '#fb923c' : '#334155';
+    const bgCol = isSelected ? '#1e293b' : '#0f172a';
+    const shadow = isSelected ? '0 0 12px rgba(251, 146, 60, 0.35)' : 'none';
+    const dateSub = bestAct ? bestAct.date : 'Sem registo';
+
+    return `
+      <div onclick="selectMmpDurationCard(${d.sec})" style="background: ${bgCol}; border: 2px solid ${borderCol}; box-shadow: ${shadow}; border-radius: 8px; padding: 10px 8px; text-align: center; cursor: pointer; transition: 0.15s;">
+        <div style="font-size: 0.78rem; color: #94a3b8; font-weight: bold;">MMP ${d.label}</div>
+        <div style="font-size: 1.25rem; font-weight: 800; color: ${isSelected ? '#fb923c' : '#38bdf8'}; margin: 4px 0;">${bestW > 0 ? `${bestW} W` : '--'}</div>
+        <div style="font-size: 0.68rem; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${dateSub}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+window.selectMmpDurationCard = function(sec) {
+  selectedMmpDurationSec = sec;
+  renderCurvaPotenciaChart();
+  renderMmpBestCards();
+  renderMmpHistoryTable();
+};
+
+window.toggleMmpHistorySort = function(mode) {
+  mmpHistorySortMode = mode;
+  renderMmpHistoryTable();
+};
+
+function renderMmpHistoryTable() {
+  const container = document.getElementById('mmpHistoryContainer');
+  if (!container) return;
+
+  const dMeta = MMP_DURATIONS.find(d => d.sec === selectedMmpDurationSec) || MMP_DURATIONS[5];
+  const activeActs = getCombinedActivitiesForActiveSelection();
+
+  const records = [];
+  activeActs.forEach(act => {
+    const w = window.getActivityMmpForDuration(act, dMeta.sec);
+    if (w > 0) {
+      records.push({ act, watts: w, dateObj: act.dateObj || new Date(0) });
+    }
+  });
+
+  // Descobre o recorde absoluto da lista para destacar com medalha
+  let maxRecordW = 0;
+  records.forEach(r => { if (r.watts > maxRecordW) maxRecordW = r.watts; });
+
+  // Ordenação padrão solicitada: Da mais recente para a mais antiga (com botão para alternar para Maior Potência)
+  if (mmpHistorySortMode === 'pwr_desc') {
+    records.sort((a, b) => b.watts - a.watts || b.dateObj - a.dateObj);
+  } else {
+    records.sort((a, b) => b.dateObj - a.dateObj);
+  }
+
+  const displayed = records.slice(0, 120);
+
+  container.innerHTML = `
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; border-bottom: 1px solid #1e293b; padding-bottom: 10px;">
+      <div>
+        <h4 style="margin: 0; color: #fb923c; font-size: 0.95rem;">📋 Histórico de Marcas — ${dMeta.title}</h4>
+        <span style="font-size: 0.76rem; color: #94a3b8;">Total de ${records.length} pedalada(s) elegíveis nos períodos selecionados (Recorde do filtro: <strong style="color:#22c55e;">${maxRecordW} W</strong>)</span>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <button onclick="toggleMmpHistorySort('date_desc')" style="background: ${mmpHistorySortMode === 'date_desc' ? '#fb923c' : '#1e293b'}; color: ${mmpHistorySortMode === 'date_desc' ? '#020617' : '#cbd5e1'}; border: 1px solid #475569; padding: 5px 10px; border-radius: 6px; font-size: 0.76rem; font-weight: bold; cursor: pointer;">
+          📅 Mais Recente &rarr; Mais Antiga
+        </button>
+        <button onclick="toggleMmpHistorySort('pwr_desc')" style="background: ${mmpHistorySortMode === 'pwr_desc' ? '#fb923c' : '#1e293b'}; color: ${mmpHistorySortMode === 'pwr_desc' ? '#020617' : '#cbd5e1'}; border: 1px solid #475569; padding: 5px 10px; border-radius: 6px; font-size: 0.76rem; font-weight: bold; cursor: pointer;">
+          ⚡ Maior Potência (Ranking)
+        </button>
+      </div>
+    </div>
+
+    <div style="max-height: 360px; overflow-y: auto;">
+      <table class="summary-table" style="margin: 0;">
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Pedalada</th>
+            <th>Marca (${dMeta.label})</th>
+            <th>Pot. Média / NP</th>
+            <th>Distância</th>
+            <th>Ação</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${displayed.length === 0 ? `<tr><td colspan="6" style="text-align:center; color:#64748b; padding:16px;">Nenhuma atividade com duração suficiente para ${dMeta.label}.</td></tr>` : displayed.map(r => {
+            const a = r.act;
+            const m = a.metrics || {};
+            const uKey = typeof window.getActivityUniqueKey === 'function' ? window.getActivityUniqueKey(a).replace(/'/g, "\\'") : '';
+            const isRecord = r.watts === maxRecordW;
+            const badge = isRecord ? `<span style="background:#eab308; color:#020617; font-size:0.65rem; font-weight:bold; padding:2px 5px; border-radius:4px; margin-left:6px;">🏆 RECORDE</span>` : '';
+            return `
+              <tr>
+                <td><strong>${a.date}</strong></td>
+                <td>${a.name}${badge}</td>
+                <td><strong style="color: ${isRecord ? '#22c55e' : '#fb923c'}; font-size: 0.95rem;">${r.watts} W</strong></td>
+                <td>${m.avgPwr || 0} W / ${m.np || 0} W</td>
+                <td>${m.distKm || '0.00'} km</td>
+                <td>
+                  <button class="btn" style="padding: 4px 9px; font-size: 0.74rem; margin: 0;" onclick="openRideInTelemetryByKey('${uKey}')">Ver Telemetria</button>
+                </td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+window.openRideInTelemetryByKey = function(uKey) {
+  if (typeof dbActivities === 'undefined') return;
+  const idx = dbActivities.findIndex(a => window.getActivityUniqueKey(a) === uKey);
+  if (idx === -1) return;
+  const telBtn = document.querySelector("button[onclick*='telemetriaTab']");
+  if (telBtn) {
+    window.switchDashboardTab('telemetriaTab', telBtn);
+    if (typeof window.onTelSliderInput === 'function') {
+      const slider = document.getElementById('telRideSlider');
+      if (slider) slider.value = idx;
+      window.onTelSliderInput(idx);
+    }
+  }
+};

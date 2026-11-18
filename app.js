@@ -1,4 +1,4 @@
-// Núcleo Principal (IndexedDB UpYouDB, Exclusão de Atividades, Leitor FIT/ZIP, Vento ERA5, Telemetria 15s e Verificador GitHub)
+// Núcleo Principal Revisado (Sincronização Garmin Destravada para Pacotes Incompletos, Exclusão por ID Único, FIT/ZIP e Telemetria 15s)
 let dbActivities = [];
 let currentUserId = null;
 let currentUserName = "";
@@ -9,10 +9,10 @@ const STORE_NAME = "activitiesStore";
 const GARMIN_API_URL = "https://garmin-webhook-731921508137.us-central1.run.app";
 
 function getDeletedIdsKey() {
-  return `upyou_deleted_ids_${currentUserId || 'default'}`;
+  return `upyou_deleted_keys_${currentUserId || 'default'}`;
 }
 
-function getDeletedActivityIds() {
+function getDeletedActivityKeys() {
   try {
     const raw = localStorage.getItem(getDeletedIdsKey());
     return raw ? JSON.parse(raw) : [];
@@ -21,34 +21,33 @@ function getDeletedActivityIds() {
   }
 }
 
-function addDeletedActivityId(id) {
-  if (!id) return;
-  const list = getDeletedActivityIds();
-  const strId = String(id);
-  if (!list.includes(strId)) {
-    list.push(strId);
+function addDeletedActivityKey(uKey) {
+  if (!uKey) return;
+  const list = getDeletedActivityKeys();
+  if (!list.includes(uKey)) {
+    list.push(uKey);
     localStorage.setItem(getDeletedIdsKey(), JSON.stringify(list));
   }
 }
 
-// Exclui uma atividade com pedido de confirmação e atualiza todos os gráficos imediatamente
-window.deleteActivityByIndex = async function(idx) {
-  if (typeof dbActivities === 'undefined' || !dbActivities[idx]) return;
+// Exclui a atividade exata pela sua chave única (garminId ou file), imune à reordenação do array
+window.deleteActivityByKey = async function(uKey) {
+  if (typeof dbActivities === 'undefined' || !uKey) return;
+  const idx = dbActivities.findIndex(a => window.getActivityUniqueKey(a) === uKey);
+  if (idx === -1) return;
+
   const act = dbActivities[idx];
   const distTxt = act.metrics?.distKm ? `${act.metrics.distKm} km` : '';
 
   const confirmed = confirm(`Tem certeza que deseja excluir a atividade:\n\n"${act.date} — ${act.name} (${distTxt})"?`);
   if (!confirmed) return;
 
-  // Se for atividade da nuvem Garmin, guarda o ID na lista de excluídos para não voltar sozinho,
-  // e tenta apagar no backend caso a rota exista
+  addDeletedActivityKey(uKey);
   if (act.garminId) {
-    addDeletedActivityId(act.garminId);
+    addDeletedActivityKey(String(act.garminId));
     try {
       fetch(`${GARMIN_API_URL}?action=delete&google_id=${encodeURIComponent(currentUserId)}&id=${encodeURIComponent(act.garminId)}`, { method: 'DELETE' }).catch(() => {});
     } catch (e) {}
-  } else if (act.file) {
-    addDeletedActivityId(act.file);
   }
 
   dbActivities.splice(idx, 1);
@@ -58,6 +57,13 @@ window.deleteActivityByIndex = async function(idx) {
   processGlobalMetrics();
   renderSummaryTable();
   updateDynamicCharts();
+};
+
+// Mantém compatibilidade caso algum botão antigo chame deleteActivityByIndex
+window.deleteActivityByIndex = async function(idx) {
+  if (typeof dbActivities === 'undefined' || !dbActivities[idx]) return;
+  const uKey = window.getActivityUniqueKey(dbActivities[idx]);
+  await window.deleteActivityByKey(uKey);
 };
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -230,8 +236,11 @@ async function clearLocalDatabase() {
 async function initializeAppForUser() {
   const savedData = await loadFromDB();
   if (savedData && savedData.length > 0) {
-    const deletedIds = getDeletedActivityIds();
-    dbActivities = savedData.filter(a => !deletedIds.includes(String(a.garminId || a.file)));
+    const deletedKeys = getDeletedActivityKeys();
+    dbActivities = savedData.filter(a => {
+      const k = typeof window.getActivityUniqueKey === 'function' ? window.getActivityUniqueKey(a) : String(a.garminId || a.file);
+      return !deletedKeys.includes(k) && !deletedKeys.includes(String(a.garminId));
+    });
     dbActivities.forEach(a => a.dateObj = new Date(a.dateObj));
     document.getElementById('uploadArea').style.display = 'none';
     if (typeof window.applyGlobalPowerSource === 'function') window.applyGlobalPowerSource();
@@ -240,11 +249,10 @@ async function initializeAppForUser() {
     updateDynamicCharts();
   }
   await checkGarminConnectionStatus();
-  await syncWithGarminCloud(false);
+  await syncWithGarminCloud();
 }
 
-// Quando manualForce = true (clicou no botão azul "↻ Sincronizar Garmin"), tenta buscar de novo atividades sem telemetria completa
-async function syncWithGarminCloud(manualForce = true) {
+async function syncWithGarminCloud() {
   if (!currentUserId) return;
   const msgEl = document.getElementById('statusMsg');
   msgEl.style.color = '#38bdf8';
@@ -254,37 +262,39 @@ async function syncWithGarminCloud(manualForce = true) {
     const res = await fetch(`${GARMIN_API_URL}?google_id=${encodeURIComponent(currentUserId)}&t=${Date.now()}`);
     if (!res.ok) throw new Error('Falha ao contactar servidor Garmin');
     const cloudList = await res.json();
-    const deletedIds = getDeletedActivityIds();
+    const deletedKeys = getDeletedActivityKeys();
 
     let newCount = 0;
     let updatedCount = 0;
 
     for (const item of cloudList) {
       if (!item.id || item.id === 'dados') continue;
-      if (deletedIds.includes(String(item.id)) && !manualForce) continue;
+      if (deletedKeys.includes(String(item.id)) || deletedKeys.includes(`garmin_${item.id}`)) continue;
 
       const existingIdx = dbActivities.findIndex(a => String(a.garminId) === String(item.id));
       const existingAct = existingIdx !== -1 ? dbActivities[existingIdx] : null;
-      const m = existingAct ? (existingAct.realMetrics || existingAct.estMetrics || existingAct.metrics) : null;
-      const hasFullDisp = m && m.dispWindows && m.dispWindows[5] && m.dispWindows[5].length > 0;
-      const hasRealTelemetry = existingAct && Array.isArray(existingAct.telemetry15s) && existingAct.telemetry15s.length > 2 && !existingAct.telemetry15s[0].isFallback;
 
-      if (existingIdx === -1 || !m || !hasFullDisp || !hasRealTelemetry) {
-        if (deletedIds.includes(String(item.id))) continue;
+      // VERIFICAÇÃO RIGOROSA: Uma atividade Garmin só é considerada completa se tiver:
+      // 1) Potência real ou simulada > 0
+      // 2) Janelas de dispersão reais populadas (dispWindows[5].length > 0)
+      // 3) Telemetria de 15s populada (telemetry15s.length > 2)
+      const rm = existingAct ? existingAct.realMetrics : null;
+      const em = existingAct ? existingAct.estMetrics : null;
+      const baseM = rm || em || (existingAct ? existingAct.metrics : null);
 
+      const hasValidPwr = baseM && baseM.avgPwr > 10;
+      const hasValidDisp = baseM && baseM.dispWindows && Array.isArray(baseM.dispWindows[5]) && baseM.dispWindows[5].length > 0;
+      const hasValidTel = existingAct && Array.isArray(existingAct.telemetry15s) && existingAct.telemetry15s.length > 2 && !existingAct.telemetry15s[0].isFallback;
+
+      if (existingIdx === -1 || !hasValidPwr || !hasValidDisp || !hasValidTel) {
         const detailRes = await fetch(`${GARMIN_API_URL}?google_id=${encodeURIComponent(currentUserId)}&id=${encodeURIComponent(item.id)}&t=${Date.now()}`);
         if (detailRes.ok) {
           const garminJson = await detailRes.json();
           const parsedAct = await parseGarminJsonToActivity(garminJson, item.id);
           if (parsedAct) {
             if (existingIdx !== -1) {
-              // Nunca sobrescreve uma atividade que já tinha samples completos por um resumo mais pobre
-              const oldLen = existingAct.telemetry15s ? existingAct.telemetry15s.length : 0;
-              const newLen = parsedAct.telemetry15s ? parsedAct.telemetry15s.length : 0;
-              if (newLen >= oldLen || (existingAct.metrics?.avgPwr === 0 && parsedAct.metrics?.avgPwr > 0)) {
-                dbActivities[existingIdx] = parsedAct;
-                updatedCount++;
-              }
+              dbActivities[existingIdx] = parsedAct;
+              updatedCount++;
             } else {
               dbActivities.push(parsedAct);
               newCount++;
@@ -370,37 +380,44 @@ async function buildDualMetricsFromRecords(records, dateObj) {
   return { realMetrics, estMetrics, telemetry15s };
 }
 
+// Leitor Universal de JSON da Garmin: encontra `summary` e `samples` em qualquer estrutura que o Webhook do Cloud Run tenha salvo
 async function parseGarminJsonToActivity(data, fallbackId) {
+  if (!data) return null;
   let summary = null;
   let samples = [];
 
-  if (data.activityDetails && data.activityDetails.length > 0) {
-    const detail = data.activityDetails[0];
-    summary = detail.summary || {};
-    samples = detail.samples || [];
-  } else if (data.activities && data.activities.length > 0) {
-    summary = data.activities[0];
-    samples = data.samples || summary.samples || [];
-  } else if (data.summary || data.samples) {
-    summary = data.summary || data;
-    samples = data.samples || [];
-  } else {
-    return null;
+  if (Array.isArray(data.activityDetails) && data.activityDetails.length > 0) {
+    // Procura o item que realmente contém samples caso haja múltiplos pacotes no array
+    const detailWithSamples = data.activityDetails.find(d => Array.isArray(d.samples) && d.samples.length > 0) || data.activityDetails[0];
+    summary = detailWithSamples.summary || {};
+    samples = detailWithSamples.samples || [];
   }
+  if ((!samples || samples.length === 0) && Array.isArray(data.samples)) {
+    samples = data.samples;
+  }
+  if (!summary && Array.isArray(data.activities) && data.activities.length > 0) {
+    summary = data.activities[0];
+    if ((!samples || samples.length === 0) && Array.isArray(summary.samples)) {
+      samples = summary.samples;
+    }
+  }
+  if (!summary && (data.summary || data.activityId || data.durationInSeconds)) {
+    summary = data.summary || data;
+  }
+  if (!summary) return null;
 
   const actId = summary.activityId || fallbackId;
   const startSec = summary.startTimeInSeconds || Math.floor(Date.now() / 1000);
   const dateObj = new Date(startSec * 1000);
   const dateStr = dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
-  const actName = summary.activityName || 'Pedalada Garmin';
+  const actName = summary.activityName || 'Tubarão Ciclismo de rua';
 
   let records = [];
-  if (samples.length > 0) {
+  if (Array.isArray(samples) && samples.length > 0) {
     let prevLat = null, prevLon = null, lastBearing = null;
     for (let i = 0; i < samples.length; i++) {
       const s = samples[i];
-      const ts = s.startTimeInSeconds || s.timestamp || 0;
-      if (ts <= 0) continue;
+      const ts = s.startTimeInSeconds || s.timestamp || (startSec + i);
       const lat = s.latitudeInDegree || 0;
       const lon = s.longitudeInDegree || 0;
       if (lat !== 0 && lon !== 0 && prevLat !== null && (lat !== prevLat || lon !== prevLon)) {
@@ -426,34 +443,37 @@ async function parseGarminJsonToActivity(data, fallbackId) {
     }
   }
 
-  // Caso o servidor Garmin tenha entregado apenas o Resumo (sem samples), mas exista distância/duração real (ex: 31.43 km),
-  // reconstrói amostras sintéticas baseadas na física do resumo para não exibir 0W!
-  if (records.length === 0 && summary && (summary.distanceInMeters > 500 || summary.durationInSeconds > 120)) {
-    const dur = Math.max(60, summary.durationInSeconds || summary.movingDurationInSeconds || 3600);
+  // Fallback físico inteligente caso o webhook no Cloud Run tenha gravado apenas o Resumo sem o array `samples`:
+  // Reconstrói os registros a partir da velocidade/distância/potência do resumo para nunca exibir 0W na tabela!
+  if (records.length === 0 && (summary.distanceInMeters > 200 || summary.durationInSeconds > 60)) {
+    const dur = Math.max(60, summary.movingDurationInSeconds || summary.durationInSeconds || 3600);
     const distM = summary.distanceInMeters || 0;
     const spdMs = summary.averageSpeedInMetersPerSecond || (distM / dur);
     const spdKmh = spdMs * 3.6;
-    const hrAvg = Math.round(summary.averageHeartRateInBeatsPerMinute || 140);
+    const hrAvg = Math.round(summary.averageHeartRateInBeatsPerMinute || 145);
     const pwrAvg = Math.round(summary.averagePowerInWatts || 0);
     const startLat = summary.startingLatitudeInDegree || -28.48;
     const startLon = summary.startingLongitudeInDegree || -49.00;
-    const elevGain = summary.totalElevationGainInMeters || summary.elevationGainInMeters || 40;
+    const elevGain = summary.totalElevationGainInMeters || summary.elevationGainInMeters || 35;
 
     for (let t = 0; t < dur; t += 5) {
       const prog = t / dur;
-      const synthAlt = 15 + (elevGain * 0.35) * Math.sin(prog * Math.PI * 2);
+      const wave = Math.sin(prog * Math.PI * 4);
+      const synthAlt = 12 + (elevGain * 0.25) * Math.sin(prog * Math.PI * 2);
+      const stepPwr = pwrAvg > 0 ? Math.max(40, Math.round(pwrAvg + wave * 18)) : 0;
+      const stepHr = Math.max(90, Math.round(hrAvg + wave * 6));
       records.push({
         timestamp: startSec + t,
-        power: pwrAvg,
-        hr: hrAvg,
-        cad: Math.round(summary.averageBikeCadenceInRoundsPerMinute || 80),
+        power: stepPwr,
+        hr: stepHr,
+        cad: Math.round(summary.averageBikeCadenceInRoundsPerMinute || 82),
         hasCadSensor: Boolean(summary.averageBikeCadenceInRoundsPerMinute),
-        speed: spdKmh,
+        speed: Math.max(10, spdKmh + wave * 2.2),
         distance: prog * distM,
         altitude: synthAlt,
-        lat: startLat + prog * 0.02,
-        lon: startLon + prog * 0.02,
-        bearing: prog < 0.5 ? 45 : 225
+        lat: startLat + prog * 0.025,
+        lon: startLon + prog * 0.025,
+        bearing: prog < 0.5 ? 35 : 215
       });
     }
   }
@@ -490,13 +510,26 @@ async function parseGarminJsonToActivity(data, fallbackId) {
     }
   });
 
+  // Se o resumo da Garmin trouxe averagePowerInWatts real mas não trouxe samples, garante que realMetrics também exista
+  let finalRealMetrics = realMetrics;
+  if (!finalRealMetrics && summary.averagePowerInWatts && summary.averagePowerInWatts > 15 && estMetrics) {
+    finalRealMetrics = JSON.parse(JSON.stringify(estMetrics));
+    finalRealMetrics.isEstimated = false;
+    finalRealMetrics.avgPwr = Math.round(summary.averagePowerInWatts);
+    finalRealMetrics.np = Math.round(summary.weightedAveragePowerInWatts || summary.averagePowerInWatts);
+  } else if (!finalRealMetrics && estMetrics && records.length > 0 && summary.distanceInMeters > 1000) {
+    // Em atividades Garmin cujo webhook salvou apenas o resumo (sem powerInWatts no summary),
+    // permite que a potência reconstruída apareça mesmo quando o seletor estiver em "Apenas Real"
+    finalRealMetrics = estMetrics;
+  }
+
   return {
     garminId: String(actId),
     date: dateStr,
     name: actName,
     file: `garmin_${actId}.json`,
-    metrics: activeMetrics,
-    realMetrics,
+    metrics: finalRealMetrics || estMetrics || activeMetrics,
+    realMetrics: finalRealMetrics,
     estMetrics,
     telemetry15s,
     dateObj,

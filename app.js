@@ -1,4 +1,4 @@
-// Núcleo Principal (IndexedDB UpYouDB, Leitor Nativo FIT/ZIP com Altimetria, Vento Histórico ERA5, Motor Físico Duplo e Verificador GitHub)
+// Núcleo Principal (IndexedDB UpYouDB, Leitor Nativo FIT/ZIP com Altimetria, Vento ERA5, Telemetria 15s e Verificador GitHub)
 let dbActivities = [];
 let currentUserId = null;
 let currentUserName = "";
@@ -211,9 +211,9 @@ async function syncWithGarminCloud() {
       const existingAct = existingIdx !== -1 ? dbActivities[existingIdx] : null;
       const m = existingAct ? (existingAct.realMetrics || existingAct.metrics) : null;
       const hasFullDisp = m && m.dispWindows && m.dispWindows[5] !== undefined && m.mhr20 !== undefined;
-      const hasSimEngine = existingAct && existingAct.estMetrics && existingAct.estMetrics.simParams;
+      const hasTelemetry = existingAct && Array.isArray(existingAct.telemetry15s) && existingAct.telemetry15s.length > 0;
 
-      if (existingIdx === -1 || !m || !m.pwrHrPairs || !hasFullDisp || !hasSimEngine) {
+      if (existingIdx === -1 || !m || !m.pwrHrPairs || !hasFullDisp || !hasTelemetry) {
         const detailRes = await fetch(`${GARMIN_API_URL}?google_id=${encodeURIComponent(currentUserId)}&id=${encodeURIComponent(item.id)}`);
         if (detailRes.ok) {
           const garminJson = await detailRes.json();
@@ -265,12 +265,11 @@ async function syncWithGarminCloud() {
 }
 
 async function buildDualMetricsFromRecords(records, dateObj) {
-  if (!records || records.length === 0) return { realMetrics: null, estMetrics: null };
+  if (!records || records.length === 0) return { realMetrics: null, estMetrics: null, telemetry15s: [] };
 
   const hasRealPower = records.some(r => r.power > 15);
   const realMetrics = hasRealPower ? calculateMetrics(records) : null;
 
-  // Coordenada média para consulta do vento histórico ERA5 (Open-Meteo)
   let sumLat = 0, sumLon = 0, gpsCnt = 0;
   for (let i = 0; i < records.length; i += 10) {
     if (records[i].lat && records[i].lon) {
@@ -286,12 +285,15 @@ async function buildDualMetricsFromRecords(records, dateObj) {
   }
 
   let estMetrics = null;
-  if (typeof window.simulatePowerOnRecords === 'function') {
-    const simRecords = window.simulatePowerOnRecords(records, weatherHourly, dateObj);
-    estMetrics = calculateMetrics(simRecords);
+  let telemetry15s = [];
+  if (typeof window.simulatePowerAndTelemetry === 'function') {
+    const simResult = window.simulatePowerAndTelemetry(records, weatherHourly, dateObj);
+    telemetry15s = simResult.telemetry15s || [];
+    estMetrics = calculateMetrics(simResult.simRecords);
     if (estMetrics) {
       estMetrics.isEstimated = true;
-      const cfg = window.userPowerConfig || { totalWeightKg: 82, cda: 0.361, crr: 0.0045 };
+      estMetrics.isIndoorTrainer = simResult.isIndoor;
+      const cfg = window.userPowerConfig || { totalWeightKg: 82, cda: 0.328, crr: 0.0045 };
       estMetrics.simParams = {
         totalWeightKg: cfg.totalWeightKg,
         cda: cfg.cda,
@@ -301,7 +303,7 @@ async function buildDualMetricsFromRecords(records, dateObj) {
     }
   }
 
-  return { realMetrics, estMetrics };
+  return { realMetrics, estMetrics, telemetry15s };
 }
 
 async function parseGarminJsonToActivity(data, fallbackId) {
@@ -356,7 +358,7 @@ async function parseGarminJsonToActivity(data, fallbackId) {
     }
   }
 
-  const { realMetrics, estMetrics } = await buildDualMetricsFromRecords(records, dateObj);
+  const { realMetrics, estMetrics, telemetry15s } = await buildDualMetricsFromRecords(records, dateObj);
   let activeMetrics = realMetrics || estMetrics;
 
   if (!activeMetrics && summary) {
@@ -396,6 +398,7 @@ async function parseGarminJsonToActivity(data, fallbackId) {
     metrics: activeMetrics,
     realMetrics,
     estMetrics,
+    telemetry15s,
     dateObj,
     source: 'garmin'
   };
@@ -403,7 +406,7 @@ async function parseGarminJsonToActivity(data, fallbackId) {
 
 window.switchDashboardTab = function(tabId, el) {
   document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-  ['tableTab', 'ftpTab', 'zonesTab', 'pwrTimeTab', 'hrTimeTab', 'driftChartTab', 'viChartTab', 'structureVolTab', 'eficienciaTab', 'dispersaoTab', 'isoPotenciaTab'].forEach(id => {
+  ['tableTab', 'ftpTab', 'zonesTab', 'pwrTimeTab', 'hrTimeTab', 'driftChartTab', 'viChartTab', 'structureVolTab', 'eficienciaTab', 'dispersaoTab', 'isoPotenciaTab', 'telemetriaTab'].forEach(id => {
     const sec = document.getElementById(id);
     if (sec) sec.style.display = 'none';
   });
@@ -415,6 +418,8 @@ window.switchDashboardTab = function(tabId, el) {
     if (typeof initDispersaoTab === 'function') initDispersaoTab();
   } else if (tabId === 'isoPotenciaTab') {
     if (typeof initIsoPotenciaTab === 'function') initIsoPotenciaTab();
+  } else if (tabId === 'telemetriaTab') {
+    if (typeof initTelemetriaTab === 'function') initTelemetriaTab();
   } else if (targetSec && targetSec.classList.contains('dynamic-tab')) {
     updateDynamicCharts();
   }
@@ -486,10 +491,10 @@ document.getElementById('zipInput').addEventListener('change', async (event) => 
             if (task.file.toLowerCase().endsWith('.gz')) decompressed = pako.inflate(rawData);
             const records = parseFitNative(decompressed);
             const dateObj = parseStravaDate(task.date);
-            const { realMetrics, estMetrics } = await buildDualMetricsFromRecords(records, dateObj);
+            const { realMetrics, estMetrics, telemetry15s } = await buildDualMetricsFromRecords(records, dateObj);
             const activeMetrics = realMetrics || estMetrics;
             if (activeMetrics) {
-              dbActivities.push({ ...task, metrics: activeMetrics, realMetrics, estMetrics, dateObj });
+              dbActivities.push({ ...task, metrics: activeMetrics, realMetrics, estMetrics, telemetry15s, dateObj });
             }
           } catch (e) { console.warn(`Aviso: ${task.file}`); }
         }
@@ -520,7 +525,6 @@ function parseStravaDate(str) {
   return isNaN(d.getTime()) ? new Date() : d;
 }
 
-// Leitor Nativo FIT atualizado com Altimetria (field 2 e field 78) e Rumo GPS (bearing)
 function parseFitNative(u8) {
   const view = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
   let offset = view.getUint8(0);
@@ -570,11 +574,9 @@ function parseFitNative(u8) {
             else if (f.num === 6) { if (val !== 0xFFFF) rec.speed = (val / 1000) * 3.6; }
             else if (f.num === 134) { if (val !== 0xFFFFFFFF) rec.speed = (val / 1000) * 3.6; }
             else if (f.num === 2) {
-              // Altitude padrão FIT: scale 5, offset 500m
               if (val !== 0xFFFF) rec.altitude = (val / 5) - 500;
             }
             else if (f.num === 78) {
-              // Enhanced Altitude FIT: scale 5, offset 500m
               if (val !== 0xFFFFFFFF) rec.altitude = (val / 5) - 500;
             }
             else if (f.num === 0) lat = (signedVal !== 0x7FFFFFFF && signedVal !== 0) ? signedVal * (180 / Math.pow(2, 31)) : 0;
@@ -945,6 +947,7 @@ function updateDynamicCharts() {
   if (typeof renderEficienciaChart === 'function') renderEficienciaChart();
   if (typeof updateDispersaoChart === 'function') updateDispersaoChart();
   if (typeof renderIsoPotenciaChart === 'function') renderIsoPotenciaChart();
+  if (typeof renderTelemetriaChart === 'function') renderTelemetriaChart();
 }
 
 function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {

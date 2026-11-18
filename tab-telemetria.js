@@ -65,7 +65,7 @@ window.toggleTelemetryLayer = function(key) {
   renderTelemetriaChart();
 };
 
-// Reconstrói uma série sintética de 15s por km para atividades que foram salvas antes da Fase 4
+// Reconstrói apenas Potência e FC de 15s (sem inventar ondas falsas de altimetria/velocidade) para atividades ainda não reimportadas
 function buildFallbackTelemetry15s(act) {
   const rm = act.realMetrics;
   const em = act.estMetrics || act.metrics;
@@ -75,28 +75,26 @@ function buildFallbackTelemetry15s(act) {
   const totalDistKm = Math.max(1, parseFloat(baseM.distKm) || 25);
   const realWin = (rm && rm.dispWindows && rm.dispWindows[15] && rm.dispWindows[15].length > 0) ? rm.dispWindows[15] : [];
   const estWin = (em && em.dispWindows && em.dispWindows[15] && em.dispWindows[15].length > 0) ? em.dispWindows[15] : [];
-  const count = Math.max(realWin.length, estWin.length, 30);
+  const count = Math.max(realWin.length, estWin.length);
+  if (count === 0) return [];
 
   const pts = [];
   for (let i = 0; i < count; i++) {
     const progress = i / Math.max(1, count - 1);
     const km = parseFloat((progress * totalDistKm).toFixed(2));
-    const pReal = realWin[i] ? realWin[i][0] : (rm ? rm.avgPwr : 0);
-    const pEst = estWin[i] ? estWin[i][0] : (em ? em.avgPwr : 0);
-    const hr = realWin[i] ? realWin[i][1] : (estWin[i] ? estWin[i][1] : (baseM.avgHr || 0));
-    const spd = parseFloat(baseM.avgSpeed) || 26;
-    // Perfil altimétrico ilustrativo proporcional à diferença de potência quando a atividade antiga não possui stream bruto
-    const synthAlt = Math.max(5, Math.round(35 + 25 * Math.sin(progress * Math.PI * 3) + (pEst - (em?.avgPwr || 150)) * 0.12));
+    const pReal = realWin[i] ? realWin[i][0] : 0;
+    const pEst = estWin[i] ? estWin[i][0] : 0;
+    const hr = realWin[i] ? realWin[i][1] : (estWin[i] ? estWin[i][1] : 0);
 
     pts.push({
       km,
       sec: i * 15,
-      alt: synthAlt,
+      alt: null,
       pReal,
       pEst,
       hr,
-      spd,
-      wind: 0,
+      spd: null,
+      wind: null,
       grade: 0,
       isFallback: true
     });
@@ -115,7 +113,7 @@ window.initTelemetriaTab = function() {
     slider.min = 0;
     slider.max = Math.max(0, dbActivities.length - 1);
     if (currentTelRideIndex < 0 || currentTelRideIndex >= dbActivities.length) {
-      currentTelRideIndex = dbActivities.length - 1; // Abre na última pedalada (extrema direita)
+      currentTelRideIndex = dbActivities.length - 1;
     }
     slider.value = currentTelRideIndex;
   }
@@ -133,7 +131,7 @@ window.renderTelemetriaChart = function() {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const w = canvas.offsetWidth || 920, h = 430;
-  const padL = 52, padR = 52, padT = 28, padB = 42;
+  const padL = 55, padR = 58, padT = 28, padB = 42;
   canvas.width = w;
   canvas.height = h;
   ctx.clearRect(0, 0, w, h);
@@ -145,17 +143,17 @@ window.renderTelemetriaChart = function() {
   }
 
   const act = dbActivities[currentTelRideIndex];
-  const stream = (Array.isArray(act.telemetry15s) && act.telemetry15s.length > 1)
-    ? act.telemetry15s
-    : buildFallbackTelemetry15s(act);
+  const hasRealStream = Array.isArray(act.telemetry15s) && act.telemetry15s.length > 1 && !act.telemetry15s[0].isFallback;
+  const stream = hasRealStream ? act.telemetry15s : buildFallbackTelemetry15s(act);
 
   const labelEl = document.getElementById('telSliderLabel');
   if (labelEl) {
     const distTxt = (act.metrics && act.metrics.distKm) ? `${act.metrics.distKm} km` : '';
-    labelEl.innerText = `[#${currentTelRideIndex + 1}/${dbActivities.length}] ${act.date} — ${act.name} (${distTxt})`;
+    const indoorTag = (act.estMetrics && act.estMetrics.isIndoorTrainer) ? ' [ROLO / INDOOR]' : '';
+    labelEl.innerText = `[#${currentTelRideIndex + 1}/${dbActivities.length}] ${act.date} — ${act.name} (${distTxt})${indoorTag}`;
   }
 
-  updateTelemetryAuditCard(act, stream);
+  updateTelemetryAuditCard(act, stream, hasRealStream);
 
   if (!stream || stream.length < 2) {
     ctx.fillStyle = '#64748b';
@@ -170,30 +168,35 @@ window.renderTelemetriaChart = function() {
 
   const maxKm = Math.max(0.5, stream[stream.length - 1].km || parseFloat(act.metrics?.distKm) || 10);
   const getX = (km, idx) => {
-    const xKm = km > 0 ? km : (idx / Math.max(1, stream.length - 1)) * maxKm;
+    const xKm = (km !== undefined && km > 0) ? km : (idx / Math.max(1, stream.length - 1)) * maxKm;
     return padL + (Math.min(maxKm, xKm) / maxKm) * drawW;
   };
 
-  // Escalas Verticais Independentes
   let maxPwr = 320;
   let minAlt = Infinity, maxAlt = -Infinity;
+  let validAltPts = 0;
+
   stream.forEach(p => {
     if (p.pReal > maxPwr) maxPwr = p.pReal;
     if (p.pEst > maxPwr) maxPwr = p.pEst;
-    if (p.alt < minAlt) minAlt = p.alt;
-    if (p.alt > maxAlt) maxAlt = p.alt;
+    if (p.alt !== null && p.alt !== undefined && !isNaN(p.alt)) {
+      if (p.alt < minAlt) minAlt = p.alt;
+      if (p.alt > maxAlt) maxAlt = p.alt;
+      validAltPts++;
+    }
   });
-  maxPwr = Math.min(900, Math.ceil((maxPwr * 1.1) / 50) * 50);
+
+  maxPwr = Math.min(950, Math.ceil((maxPwr * 1.1) / 50) * 50);
   if (!isFinite(minAlt)) { minAlt = 0; maxAlt = 100; }
-  const altSpan = Math.max(30, (maxAlt - minAlt) * 1.35);
+  const altSpan = Math.max(25, (maxAlt - minAlt) * 1.35);
 
   const getYPwr = (pwr) => padT + drawH - (Math.max(0, Math.min(maxPwr, pwr)) / maxPwr) * drawH;
   const getYHr = (hr) => padT + drawH - ((Math.max(80, Math.min(205, hr)) - 80) / (205 - 80)) * drawH;
-  const getYAlt = (alt) => padT + drawH - ((alt - minAlt) / altSpan) * (drawH * 0.72);
-  const getYSpd = (spd) => padT + drawH - (Math.max(0, Math.min(70, spd)) / 70) * drawH;
+  const getYAlt = (alt) => padT + drawH - ((alt - minAlt) / altSpan) * (drawH * 0.70);
+  const getYSpd = (spd) => padT + drawH - (Math.max(0, Math.min(65, spd)) / 65) * drawH;
   const getYWind = (wnd) => (padT + drawH * 0.5) - (Math.max(-35, Math.min(35, wnd)) / 70) * drawH;
 
-  // Grade Horizontal e Eixos (Esquerda = Watts, Direita = BPM / Alt)
+  // Grade Horizontal e Eixos
   ctx.strokeStyle = '#1e293b';
   ctx.lineWidth = 1;
   ctx.font = '10px sans-serif';
@@ -217,7 +220,7 @@ window.renderTelemetriaChart = function() {
     ctx.fillText(`${hrVal} bpm`, w - padR + 6, y + 3);
   }
 
-  // Grade e Rótulos do Eixo X em Km
+  // Grade Vertical em Km
   const kmStep = maxKm <= 15 ? 2 : (maxKm <= 40 ? 5 : (maxKm <= 90 ? 10 : 20));
   ctx.fillStyle = '#94a3b8';
   ctx.textAlign = 'center';
@@ -231,17 +234,18 @@ window.renderTelemetriaChart = function() {
     ctx.fillText(`${k} km`, x, padT + drawH + 18);
   }
 
-  // 1. Camada de Altimetria Translúcida ao Fundo (Silhueta de Montanha estilo Garmin/WKO)
-  if (telActiveLayers.alt) {
+  // 1. Camada de Altimetria Real Translúcida ao Fundo
+  if (telActiveLayers.alt && validAltPts > 3 && (maxAlt - minAlt) >= 2) {
     ctx.save();
     const grad = ctx.createLinearGradient(0, padT, 0, padT + drawH);
-    grad.addColorStop(0, 'rgba(148, 163, 184, 0.36)');
-    grad.addColorStop(1, 'rgba(15, 23, 42, 0.05)');
+    grad.addColorStop(0, 'rgba(148, 163, 184, 0.38)');
+    grad.addColorStop(1, 'rgba(15, 23, 42, 0.04)');
 
     ctx.beginPath();
     ctx.moveTo(getX(stream[0].km, 0), padT + drawH);
     stream.forEach((pt, idx) => {
-      ctx.lineTo(getX(pt.km, idx), getYAlt(pt.alt));
+      const a = (pt.alt !== null && pt.alt !== undefined) ? pt.alt : minAlt;
+      ctx.lineTo(getX(pt.km, idx), getYAlt(a));
     });
     ctx.lineTo(getX(stream[stream.length - 1].km, stream.length - 1), padT + drawH);
     ctx.closePath();
@@ -250,16 +254,22 @@ window.renderTelemetriaChart = function() {
 
     ctx.beginPath();
     stream.forEach((pt, idx) => {
-      const x = getX(pt.km, idx), y = getYAlt(pt.alt);
+      const a = (pt.alt !== null && pt.alt !== undefined) ? pt.alt : minAlt;
+      const x = getX(pt.km, idx), y = getYAlt(a);
       if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     });
-    ctx.strokeStyle = 'rgba(148, 163, 184, 0.65)';
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.70)';
     ctx.lineWidth = 1.5;
     ctx.stroke();
+
+    // Rótulo de Altitude Mín / Máx
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(`🏔️ Alt: ${minAlt}m – ${maxAlt}m`, padL + 8, padT + 14);
     ctx.restore();
   }
 
-  // Função auxiliar para desenhar linhas com efeito Neon suave
   const drawMetricCurve = (getterY, color, lineWidth = 1.8, dashed = false) => {
     ctx.save();
     ctx.beginPath();
@@ -267,7 +277,7 @@ window.renderTelemetriaChart = function() {
     let started = false;
     stream.forEach((pt, idx) => {
       const val = getterY(pt);
-      if (val === null) return;
+      if (val === null || isNaN(val)) return;
       const x = getX(pt.km, idx);
       if (!started) { ctx.moveTo(x, val); started = true; }
       else ctx.lineTo(x, val);
@@ -275,19 +285,19 @@ window.renderTelemetriaChart = function() {
     ctx.strokeStyle = color;
     ctx.lineWidth = lineWidth;
     ctx.shadowColor = color;
-    ctx.shadowBlur = 6;
+    ctx.shadowBlur = 5;
     ctx.stroke();
     ctx.restore();
   };
 
-  // 2. Vento Frontal Relativo
-  if (telActiveLayers.wind) {
-    drawMetricCurve(pt => getYWind(pt.wind || 0), '#a855f7', 1.4, true);
+  // 2. Vento Frontal Relativo (apenas quando disponível da reimportação)
+  if (telActiveLayers.wind && hasRealStream) {
+    drawMetricCurve(pt => pt.wind !== null ? getYWind(pt.wind) : null, '#a855f7', 1.4, true);
   }
 
-  // 3. Velocidade (km/h)
-  if (telActiveLayers.spd) {
-    drawMetricCurve(pt => getYSpd(pt.spd || 0), '#38bdf8', 1.5, false);
+  // 3. Velocidade Real 15s (km/h)
+  if (telActiveLayers.spd && hasRealStream) {
+    drawMetricCurve(pt => pt.spd !== null ? getYSpd(pt.spd) : null, '#38bdf8', 1.6, false);
   }
 
   // 4. Batimentos Cardíacos (BPM)
@@ -306,7 +316,7 @@ window.renderTelemetriaChart = function() {
   }
 };
 
-function updateTelemetryAuditCard(act, stream) {
+function updateTelemetryAuditCard(act, stream, hasRealStream) {
   const box = document.getElementById('telAuditCard');
   if (!box) return;
 
@@ -314,12 +324,17 @@ function updateTelemetryAuditCard(act, stream) {
   const em = act.estMetrics || act.metrics;
   const hasReal = rm && rm.avgPwr > 15;
 
+  const reimportWarning = !hasRealStream
+    ? `<div style="margin-top: 6px; color: #38bdf8; font-size: 0.78rem;">ℹ️ <strong>Nota:</strong> Esta atividade do Strava foi lida do cache antigo (sem stream de Altimetria/Velocidade/Vento de 15s). Clique em <strong>"+ Importar / Recalcular ZIP do Strava"</strong> abaixo para extrair o relevo real, velocidade e vento histórico ERA5!</div>`
+    : '';
+
   if (!hasReal) {
     box.innerHTML = `
       <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
         <span>📡 <strong>Atividade Sem Sensor de Potência Real:</strong> Reconstruída 100% pelo Motor Físico + Vento ERA5.</span>
         <span>🔮 <strong>Potência Estimada:</strong> <strong style="color:#eab308;">${em?.avgPwr || 0} W</strong> (NP: ${em?.np || 0} W) | ❤️ <strong>FC Média:</strong> ${em?.avgHr || 0} bpm</span>
       </div>
+      ${reimportWarning}
     `;
     return;
   }
@@ -329,7 +344,6 @@ function updateTelemetryAuditCard(act, stream) {
   const diffW = estAvg - realAvg;
   const diffPct = realAvg > 0 ? ((diffW / realAvg) * 100).toFixed(1) : '0.0';
 
-  // Cálculo de Erro Absoluto Médio (MAE) e separação Plano vs Subida nos blocos de 15s em movimento
   let sumAbsErr = 0, validCnt = 0;
   let climbDiffSum = 0, climbCnt = 0;
   let flatDiffSum = 0, flatCnt = 0;
@@ -339,7 +353,7 @@ function updateTelemetryAuditCard(act, stream) {
       if (pt.pReal > 30 || pt.pEst > 30) {
         sumAbsErr += Math.abs(pt.pEst - pt.pReal);
         validCnt++;
-        if (pt.grade >= 3.0) {
+        if (pt.grade >= 2.5) {
           climbDiffSum += (pt.pEst - pt.pReal);
           climbCnt++;
         } else if (Math.abs(pt.grade) <= 1.5) {
@@ -368,5 +382,6 @@ function updateTelemetryAuditCard(act, stream) {
         🛣️ <strong>Planos:</strong> ${flatBias}
       </div>
     </div>
+    ${reimportWarning}
   `;
 }

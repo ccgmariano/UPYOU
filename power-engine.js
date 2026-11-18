@@ -536,7 +536,7 @@ window.simulatePowerAndTelemetry = function(records, weatherHourly, fallbackDate
     simRecords[i] = { ...r, power: Math.round(totalWatts) };
   }
 
-  // Série de Telemetria Compacta a cada 15 Segundos (Inclui Cadência RPM)
+  // Série de Telemetria Compacta a cada 15 Segundos (Extraindo e agregando Cadência RPM!)
   const telemetry15s = [];
   let accDt = 0, sumPReal = 0, sumPEst = 0, sumHr = 0, cntHr = 0, sumCad = 0, cntCad = 0, sumSpd = 0, sumAlt = 0, cntAlt = 0, sumWind = 0, sumGrade = 0;
   let lastDistMeters = 0;
@@ -558,8 +558,10 @@ window.simulatePowerAndTelemetry = function(records, weatherHourly, fallbackDate
       sumHr += rOrig.hr * dt;
       cntHr += dt;
     }
-    if (rOrig.cad > 15 && rOrig.cad < 185) {
-      sumCad += rOrig.cad * dt;
+    // Coleta cadência real do sensor ou de propriedades alternativas
+    const cadVal = rOrig.cad || rOrig.cadence || 0;
+    if (cadVal > 15 && cadVal < 185) {
+      sumCad += cadVal * dt;
       cntCad += dt;
     }
     if (smoothAlt[i] !== null) {

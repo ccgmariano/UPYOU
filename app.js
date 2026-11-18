@@ -1,4 +1,4 @@
-// Núcleo Principal Otimizado (Cockpit Matrix Neon Precision, Google Sign-In Explícito, Lazy Loading de Telemetria e Curva MMP)
+// Núcleo Principal Otimizado (Cockpit Matrix Neon Precision, Google Sign-In com Retentativa, Lazy Loading de Telemetria e Curva MMP)
 let dbActivities = [];
 let currentUserId = null;
 let currentUserName = "";
@@ -13,16 +13,17 @@ const GARMIN_API_URL = "https://garmin-webhook-731921508137.us-central1.run.app"
 
 // Inicialização explícita e confiável do botão Google Sign-In (Desktop & Android Chrome)
 window.initGoogleSignIn = function() {
-  if (!window.google || !google.accounts || !google.accounts.id) return;
-  try {
-    google.accounts.id.initialize({
-      client_id: GOOGLE_CLIENT_ID,
-      callback: handleCredentialResponse,
-      auto_select: false,
-      cancel_on_tap_outside: true
-    });
-    const btnContainer = document.getElementById('googleSignInBtn');
-    if (btnContainer) {
+  const btnContainer = document.getElementById('googleSignInBtn');
+  if (!btnContainer || btnContainer.childElementCount > 0) return;
+
+  if (window.google && google.accounts && google.accounts.id) {
+    try {
+      google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: handleCredentialResponse,
+        auto_select: false,
+        cancel_on_tap_outside: true
+      });
       google.accounts.id.renderButton(btnContainer, {
         type: 'standard',
         shape: 'rectangular',
@@ -31,11 +32,15 @@ window.initGoogleSignIn = function() {
         size: 'large',
         logo_alignment: 'left'
       });
+    } catch (e) {
+      console.warn('Erro ao renderizar botão Google:', e);
     }
-  } catch (e) {
-    console.warn('Erro ao renderizar botão Google:', e);
+  } else {
+    setTimeout(window.initGoogleSignIn, 250);
   }
 };
+
+window.addEventListener('load', window.initGoogleSignIn);
 
 function getDeletedIdsKey() {
   return `upyou_deleted_keys_${currentUserId || 'default'}`;
@@ -94,10 +99,7 @@ window.deleteActivityByIndex = async function(idx) {
 };
 
 window.addEventListener('DOMContentLoaded', () => {
-  // Garante inicialização do botão Google caso o script tenha carregado antes do DOM
-  if (window.google && google.accounts && google.accounts.id) {
-    window.initGoogleSignIn();
-  }
+  window.initGoogleSignIn();
 
   const savedUser = localStorage.getItem('upyou_user') || sessionStorage.getItem('upyou_user');
   if (savedUser) {

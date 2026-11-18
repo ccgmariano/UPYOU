@@ -1,4 +1,12 @@
-// Módulo da Aba "As Suas Pedaladas" (Tabela de Histórico, Detalhes da Atividade e Exclusão com Confirmação)
+// Módulo da Aba "As Suas Pedaladas" (Tabela de Histórico, Detalhes e Exclusão Segura por Chave Única)
+
+window.getActivityUniqueKey = function(act) {
+  if (!act) return '';
+  if (act.garminId) return `garmin_${act.garminId}`;
+  if (act.file) return String(act.file);
+  const t = act.dateObj instanceof Date && !isNaN(act.dateObj.getTime()) ? act.dateObj.getTime() : 0;
+  return `${act.date}_${act.name}_${t}`;
+};
 
 window.renderSummaryTable = function() {
   const tbody = document.getElementById('summaryBody');
@@ -13,14 +21,16 @@ window.renderSummaryTable = function() {
     return;
   }
 
-  // Exibe da mais recente para a mais antiga na tabela
-  const sorted = [...dbActivities].map((act, idx) => ({ act, idx })).sort((a, b) => b.act.dateObj - a.act.dateObj);
+  // Ordena da mais recente para a mais antiga para exibição na tabela
+  const sorted = [...dbActivities].sort((a, b) => (b.dateObj || 0) - (a.dateObj || 0));
 
-  sorted.forEach(({ act, idx }) => {
+  sorted.forEach((act) => {
     const m = act.metrics || {};
     const tr = document.createElement('tr');
+    const uKey = window.getActivityUniqueKey(act);
+    const safeKey = uKey.replace(/'/g, "\\'");
 
-    const isGarmin = act.source === 'garmin' || String(act.file || '').startsWith('garmin_');
+    const isGarmin = act.source === 'garmin' || String(act.file || '').startsWith('garmin_') || Boolean(act.garminId);
     const garminBadge = isGarmin
       ? `<span style="background:#0284c7; color:#fff; font-size:0.65rem; font-weight:bold; padding:2px 6px; border-radius:4px; margin-left:6px; vertical-align:middle;">GARMIN</span>`
       : '';
@@ -50,13 +60,19 @@ window.renderSummaryTable = function() {
       <td>${pwrText}</td>
       <td>${profileBadge}</td>
       <td style="white-space: nowrap;">
-        <button class="btn" style="padding: 5px 10px; font-size: 0.78rem; margin: 0 4px 0 0;" onclick="showActivityDetail(${idx})">Detalhes</button>
-        <button class="btn btn-danger" style="padding: 5px 10px; font-size: 0.78rem; margin: 0; background: #dc2626;" onclick="deleteActivityByIndex(${idx})" title="Excluir esta atividade">Excluir</button>
+        <button class="btn" style="padding: 5px 10px; font-size: 0.78rem; margin: 0 4px 0 0;" onclick="showActivityDetailByKey('${safeKey}')">Detalhes</button>
+        <button class="btn btn-danger" style="padding: 5px 10px; font-size: 0.78rem; margin: 0; background: #dc2626; color: #fff;" onclick="deleteActivityByKey('${safeKey}')">Excluir</button>
       </td>
     `;
 
     tbody.appendChild(tr);
   });
+};
+
+window.showActivityDetailByKey = function(uKey) {
+  if (typeof dbActivities === 'undefined') return;
+  const idx = dbActivities.findIndex(a => window.getActivityUniqueKey(a) === uKey);
+  if (idx !== -1) window.showActivityDetail(idx);
 };
 
 window.showActivityDetail = function(idx) {

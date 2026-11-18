@@ -1,4 +1,4 @@
-// Aba Independente: Analisador de Telemetria Multi-Camadas (15s por Km) com Detecção de Rolo em Tempo Real e Altimetria Destacada
+// Aba Independente: Analisador de Telemetria Multi-Camadas (15s por Km) com Botões Passo a Passo (◀ / ▶) e Teclado
 
 const TEL_LAYERS_STORAGE_KEY = 'upyou_telemetry_layers_v1';
 
@@ -65,7 +65,80 @@ window.toggleTelemetryLayer = function(key) {
   renderTelemetriaChart();
 };
 
-// Sanitiza e corrige em tempo real streams já salvas no banco (detecta Rolo com GPS indoor, remove picos falsos de GPS e suaviza vento)
+// Injeta os botões ◀ Anterior e Próxima ▶ ao lado do Slider sem precisar editar o index.html
+function ensureTelStepButtons() {
+  const slider = document.getElementById('telRideSlider');
+  if (!slider || document.getElementById('telPrevBtn')) return;
+
+  const wrapper = document.createElement('div');
+  wrapper.style.cssText = 'display: flex; align-items: center; gap: 10px; width: 100%;';
+
+  const btnStyle = 'background: #1e293b; color: #facc15; border: 1px solid #475569; padding: 6px 14px; border-radius: 6px; font-weight: bold; font-size: 0.8rem; cursor: pointer; white-space: nowrap; transition: 0.15s;';
+
+  const prevBtn = document.createElement('button');
+  prevBtn.id = 'telPrevBtn';
+  prevBtn.innerHTML = '◀ Anterior';
+  prevBtn.title = 'Pedalada Anterior (ou Seta Esquerda do teclado)';
+  prevBtn.style.cssText = btnStyle;
+  prevBtn.onclick = () => window.stepTelRide(-1);
+
+  const nextBtn = document.createElement('button');
+  nextBtn.id = 'telNextBtn';
+  nextBtn.innerHTML = 'Próxima ▶';
+  nextBtn.title = 'Próxima Pedalada (ou Seta Direita do teclado)';
+  nextBtn.style.cssText = btnStyle;
+  nextBtn.onclick = () => window.stepTelRide(1);
+
+  slider.parentNode.insertBefore(wrapper, slider);
+  wrapper.appendChild(prevBtn);
+  wrapper.appendChild(slider);
+  wrapper.appendChild(nextBtn);
+}
+
+window.stepTelRide = function(delta) {
+  if (typeof dbActivities === 'undefined' || dbActivities.length === 0) return;
+  const nextIdx = Math.max(0, Math.min(dbActivities.length - 1, currentTelRideIndex + delta));
+  if (nextIdx === currentTelRideIndex) return;
+  currentTelRideIndex = nextIdx;
+  const slider = document.getElementById('telRideSlider');
+  if (slider) slider.value = currentTelRideIndex;
+  renderTelemetriaChart();
+};
+
+function updateTelStepButtonsState() {
+  const prevBtn = document.getElementById('telPrevBtn');
+  const nextBtn = document.getElementById('telNextBtn');
+  if (!prevBtn || !nextBtn || typeof dbActivities === 'undefined') return;
+
+  const atStart = currentTelRideIndex <= 0;
+  const atEnd = currentTelRideIndex >= dbActivities.length - 1;
+
+  prevBtn.disabled = atStart;
+  prevBtn.style.opacity = atStart ? '0.4' : '1';
+  prevBtn.style.cursor = atStart ? 'not-allowed' : 'pointer';
+
+  nextBtn.disabled = atEnd;
+  nextBtn.style.opacity = atEnd ? '0.4' : '1';
+  nextBtn.style.cursor = atEnd ? 'not-allowed' : 'pointer';
+}
+
+// Atalho de teclado (Setas Esquerda e Direita) quando a aba Telemetria estiver visível
+if (!window._telKeyListenerAdded) {
+  window._telKeyListenerAdded = true;
+  window.addEventListener('keydown', (e) => {
+    const tab = document.getElementById('telemetriaTab');
+    if (!tab || tab.style.display === 'none') return;
+    if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName) && document.activeElement?.id !== 'telRideSlider') return;
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      window.stepTelRide(-1);
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      window.stepTelRide(1);
+    }
+  });
+}
+
 function getSanitizedStream(act) {
   if (!Array.isArray(act.telemetry15s) || act.telemetry15s.length < 2) return [];
   const raw = act.telemetry15s;
@@ -84,7 +157,6 @@ function getSanitizedStream(act) {
   const avgPReal = sumPReal / raw.length;
   const altRange = isFinite(minAlt) ? (maxAlt - minAlt) : 0;
 
-  // Detecta Rolo (Indoor) mesmo em atividades já importadas: variação de altitude ≤ 9m com velocidade baixa (<20 km/h) e potência alta (>130W)
   const isIndoorDetected = Boolean(raw[0].indoor) || Boolean(act.estMetrics?.isIndoorTrainer) || (altRange <= 9 && avgSpd < 20.5 && avgPReal > 125);
   const altOffset = (isFinite(minAlt) && minAlt < 0) ? (-minAlt + 4) : 0;
 
@@ -94,18 +166,15 @@ function getSanitizedStream(act) {
     let alt = (pt.alt !== null && pt.alt !== undefined) ? (pt.alt + altOffset) : null;
 
     if (isIndoorDetected) {
-      // No Rolo: zera vento fantasma de GPS indoor e iguala estimativa ao gabarito/FC
       wind = 0;
       pEst = pt.pReal > 0 ? pt.pReal : (pt.hr > 95 ? Math.round((pt.hr - 75) * 2.1) : pEst);
     } else {
-      // Na Rua: Filtra spikes isolados de 15s (quando um ponto salta >85% acima dos vizinhos por falha de GPS)
       if (idx > 0 && idx < raw.length - 1) {
         const neighborAvg = ((raw[idx - 1].pEst || 0) + (raw[idx + 1].pEst || 0)) / 2;
         if (pEst > 360 && pEst > neighborAvg * 1.65) {
           pEst = Math.round(neighborAvg * 1.15);
         }
       }
-      // Suavização leve de 3 blocos no vento relativo para evitar serrilhado de GPS
       if (idx > 0 && idx < raw.length - 1) {
         wind = parseFloat((((raw[idx - 1].wind || 0) + wind * 2 + (raw[idx + 1].wind || 0)) / 4).toFixed(1));
       }
@@ -120,6 +189,7 @@ function getSanitizedStream(act) {
 window.initTelemetriaTab = function() {
   loadSavedTelemetryLayers();
   renderTelemetryLayerButtons();
+  ensureTelStepButtons();
 
   if (typeof dbActivities === 'undefined' || dbActivities.length === 0) return;
 
@@ -142,6 +212,7 @@ window.onTelSliderInput = function(val) {
 };
 
 window.renderTelemetriaChart = function() {
+  ensureTelStepButtons();
   const canvas = document.getElementById('telemetriaCanvas');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
@@ -156,6 +227,8 @@ window.renderTelemetriaChart = function() {
   if (currentTelRideIndex < 0 || currentTelRideIndex >= dbActivities.length) {
     currentTelRideIndex = dbActivities.length - 1;
   }
+
+  updateTelStepButtonsState();
 
   const act = dbActivities[currentTelRideIndex];
   const stream = getSanitizedStream(act);
@@ -201,14 +274,12 @@ window.renderTelemetriaChart = function() {
     }
   });
 
-  // Teto visual inteligente da escala de Watts (múltiplo de 50W)
   maxPwr = Math.min(750, Math.ceil((maxPwr * 1.12) / 50) * 50);
   if (!isFinite(minAlt)) { minAlt = 0; maxAlt = 100; }
   const altDiff = Math.max(12, maxAlt - minAlt);
 
   const getYPwr = (pwr) => padT + drawH - (Math.max(0, Math.min(maxPwr, pwr)) / maxPwr) * drawH;
   const getYHr = (hr) => padT + drawH - ((Math.max(80, Math.min(205, hr)) - 80) / (205 - 80)) * drawH;
-  // Altimetria agora ocupa até 65% da altura vertical com contraste visível
   const getYAlt = (alt) => padT + drawH - ((alt - minAlt) / altDiff) * (drawH * 0.62);
   const getYSpd = (spd) => padT + drawH - (Math.max(0, Math.min(60, spd)) / 60) * drawH;
   const getYWind = (wnd) => (padT + drawH * 0.5) - (Math.max(-30, Math.min(30, wnd)) / 60) * drawH;
@@ -251,7 +322,7 @@ window.renderTelemetriaChart = function() {
     ctx.fillText(`${k} km`, x, padT + drawH + 18);
   }
 
-  // 1. Camada de Altimetria Real Translúcida ao Fundo (Oculta automaticamente se for Rolo Indoor plano)
+  // 1. Camada de Altimetria Real Translúcida ao Fundo
   if (telActiveLayers.alt && !isIndoor && validAltPts > 3 && (maxAlt - minAlt) >= 4) {
     ctx.save();
     const grad = ctx.createLinearGradient(0, padT + drawH * 0.35, 0, padT + drawH);
@@ -306,7 +377,7 @@ window.renderTelemetriaChart = function() {
     ctx.restore();
   };
 
-  // 2. Vento Frontal Relativo (apenas em pedais de rua)
+  // 2. Vento Frontal Relativo
   if (telActiveLayers.wind && !isIndoor) {
     drawMetricCurve(pt => pt.wind !== null ? getYWind(pt.wind) : null, '#a855f7', 1.5, true);
   }

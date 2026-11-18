@@ -536,7 +536,7 @@ window.simulatePowerAndTelemetry = function(records, weatherHourly, fallbackDate
     simRecords[i] = { ...r, power: Math.round(totalWatts) };
   }
 
-  // Série de Telemetria Compacta a cada 15 Segundos (Agora inclui Cadência RPM!)
+  // Série de Telemetria Compacta a cada 15 Segundos (Inclui Cadência RPM)
   const telemetry15s = [];
   let accDt = 0, sumPReal = 0, sumPEst = 0, sumHr = 0, cntHr = 0, sumCad = 0, cntCad = 0, sumSpd = 0, sumAlt = 0, cntAlt = 0, sumWind = 0, sumGrade = 0;
   let lastDistMeters = 0;
@@ -544,4 +544,347 @@ window.simulatePowerAndTelemetry = function(records, weatherHourly, fallbackDate
   for (let i = 0; i < n; i++) {
     const rOrig = records[i];
     const rSim = simRecords[i];
-    let dt = (i < n - 1)
+    let dt = (i < n - 1) ? (records[i + 1].timestamp - rOrig.timestamp) : 1;
+    if (dt <= 0 || dt > 10) dt = 1;
+
+    accDt += dt;
+    sumPReal += (rOrig.power || 0) * dt;
+    sumPEst += (rSim.power || 0) * dt;
+    sumSpd += smoothSpdKmh[i] * dt;
+    sumWind += (headwindArr[i] || 0) * dt;
+    sumGrade += (gradeArr[i] || 0) * dt;
+
+    if (rOrig.hr > 40 && rOrig.hr < 230) {
+      sumHr += rOrig.hr * dt;
+      cntHr += dt;
+    }
+    if (rOrig.cad > 15 && rOrig.cad < 185) {
+      sumCad += rOrig.cad * dt;
+      cntCad += dt;
+    }
+    if (smoothAlt[i] !== null) {
+      sumAlt += smoothAlt[i] * dt;
+      cntAlt += dt;
+    }
+    if (rOrig.distance > lastDistMeters) lastDistMeters = rOrig.distance;
+
+    if (accDt >= 15) {
+      telemetry15s.push({
+        km: parseFloat((lastDistMeters / 1000).toFixed(2)),
+        sec: rOrig.timestamp - startTs,
+        alt: cntAlt > 0 ? Math.round(sumAlt / cntAlt) : 0,
+        pReal: Math.round(sumPReal / accDt),
+        pEst: Math.round(sumPEst / accDt),
+        hr: cntHr > 0 ? Math.round(sumHr / cntHr) : 0,
+        cad: cntCad > 0 ? Math.round(sumCad / cntCad) : 0,
+        spd: parseFloat((sumSpd / accDt).toFixed(1)),
+        wind: parseFloat((sumWind / accDt).toFixed(1)),
+        grade: parseFloat(((sumGrade / accDt) * 100).toFixed(1)),
+        indoor: isIndoor
+      });
+      accDt = 0; sumPReal = 0; sumPEst = 0; sumHr = 0; cntHr = 0; sumCad = 0; cntCad = 0; sumSpd = 0; sumAlt = 0; cntAlt = 0; sumWind = 0; sumGrade = 0;
+    }
+  }
+
+  return { simRecords, telemetry15s, isIndoor };
+};
+
+window.simulatePowerOnRecords = function(records, weatherHourly, fallbackDateObj) {
+  return window.simulatePowerAndTelemetry(records, weatherHourly, fallbackDateObj).simRecords;
+};
+
+window.runHistoricalAutoCalibration = function() {
+  if (typeof dbActivities === 'undefined' || dbActivities.length === 0) {
+    alert('Nenhuma atividade carregada para calibrar.');
+    return;
+  }
+
+  const cfg = window.userPowerConfig;
+  let climbRealSum = 0, climbEstSum = 0, climbPts = 0;
+  let flatRealSum = 0, flatEstSum = 0, flatPts = 0;
+  let totalOutdoorRidesUsed = 0;
+
+  dbActivities.forEach(act => {
+    if (!act.realMetrics || act.realMetrics.avgPwr < 50) return;
+    if (act.estMetrics && act.estMetrics.isIndoorTrainer) return;
+    if (parseFloat(act.realMetrics.avgSpeed || 0) < 20) return;
+
+    if (Array.isArray(act.telemetry15s) && act.telemetry15s.length > 10) {
+      if (act.telemetry15s[0].indoor) return;
+      let minAlt = Infinity, maxAlt = -Infinity;
+      act.telemetry15s.forEach(p => {
+        if (p.alt !== null) {
+          if (p.alt < minAlt) minAlt = p.alt;
+          if (p.alt > maxAlt) maxAlt = p.alt;
+        }
+      });
+      if ((maxAlt - minAlt) < 6) return;
+
+      totalOutdoorRidesUsed++;
+
+      act.telemetry15s.forEach(pt => {
+        if (pt.pReal < 60 || pt.pEst < 60 || pt.spd < 12) return;
+        if (Math.abs(pt.grade) <= 1.2 && pt.spd > 38 && pt.pReal < 160) return;
+
+        if (pt.grade >= 3.0 && pt.spd <= 23) {
+          climbRealSum += pt.pReal;
+          climbEstSum += pt.pEst;
+          climbPts++;
+        } else if (Math.abs(pt.grade) <= 1.2 && pt.spd >= 25) {
+          flatRealSum += pt.pReal;
+          flatEstSum += pt.pEst;
+          flatPts++;
+        }
+      });
+    }
+  });
+
+  if (totalOutdoorRidesUsed === 0 || (flatPts + climbPts) < 10) {
+    alert('Abra algumas atividades de estrada na Telemetria ou reimporte o ZIP para calibrar com os streams completos.');
+    return;
+  }
+
+  let newCrr = cfg.bikeType === 'mtb' ? 0.0075 : 0.0045;
+  if (climbPts >= 15 && climbEstSum > 0) {
+    const climbRatio = climbRealSum / climbEstSum;
+    newCrr = Math.max(0.0025, Math.min(0.0095, parseFloat((newCrr * climbRatio).toFixed(4))));
+  }
+
+  const overallRatio = (flatPts >= 15 && flatEstSum > 0)
+    ? (flatRealSum / flatEstSum)
+    : ((climbRealSum + flatRealSum) / Math.max(1, climbEstSum + flatEstSum));
+
+  const currentScale = cfg.calibratedCdScale || 1.0;
+  const dampedAdjustment = Math.pow(overallRatio, 0.85);
+  const newCdScale = Math.max(0.62, Math.min(1.35, parseFloat((currentScale * dampedAdjustment).toFixed(3))));
+
+  cfg.calibratedCrr = newCrr;
+  cfg.calibratedCdScale = newCdScale;
+
+  recalcPowerEngineState(true);
+  if (typeof saveToDB === 'function') saveToDB(dbActivities);
+
+  alert(`✅ Auto-Calibração Concluída!\n\n• Pedais auditados: ${totalOutdoorRidesUsed}\n• Novo CdA Calibrado: ${cfg.cda.toFixed(3)} m²\n• Novo Crr Calibrado: ${cfg.crr}`);
+};
+
+window.resetCalibrationToDefault = function() {
+  window.userPowerConfig.calibratedCdScale = 1.0;
+  window.userPowerConfig.calibratedCrr = null;
+  recalcPowerEngineState(true);
+  if (typeof saveToDB === 'function') saveToDB(dbActivities);
+};
+
+// --- MODAL EXTRATOR DE ÁREA FRONTAL POR FOTO ---
+let photoState = { img: null, scalePts: [], bgColor: null, tolerance: 38, computedAreaM2: null };
+
+function ensureFrontalAreaModal() {
+  if (document.getElementById('frontalAreaModal')) return;
+  const modal = document.createElement('div');
+  modal.id = 'frontalAreaModal';
+  modal.style.cssText = 'display: none; position: fixed; inset: 0; background: rgba(2, 6, 23, 0.85); z-index: 10000; align-items: center; justify-content: center; padding: 15px;';
+  modal.innerHTML = `
+    <div style="background: #0a0e17; border: 1px solid rgba(16,185,129,0.4); border-radius: 12px; max-width: 780px; width: 100%; max-height: 92vh; overflow-y: auto; padding: 20px; color: #f1f5f9;">
+      <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 12px; margin-bottom: 14px;">
+        <h3 style="margin: 0; color: #10b981;">&#128208; Extrator de Área Frontal (A &amp; CdA) — Foto vs. Antropometria</h3>
+        <button onclick="closeFrontalAreaModal()" style="background: transparent; border: none; color: #94a3b8; font-size: 1.3rem; cursor: pointer;">&#10005;</button>
+      </div>
+      <div id="aeroSummaryBox" style="background: #0f1522; padding: 12px 15px; border-radius: 8px; border-left: 3px solid #10b981; margin-bottom: 15px; font-size: 0.84rem; line-height: 1.5;"></div>
+      <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 12px;">
+        <label class="btn-cockpit primary" style="cursor: pointer; margin: 0;">
+          &#128247; Carregar Foto de Frente
+          <input type="file" id="frontalPhotoInput" accept="image/*" style="display: none;" onchange="handleFrontalPhotoUpload(event)">
+        </label>
+        <label style="font-size: 0.82rem; color: #cbd5e1;">Referência (2 cliques):
+          <select id="photoRefType" onchange="recomputePhotoSilhouette()" class="custom-select">
+            <option value="0.622" selected>Aro 700c / 29" (0.622 m)</option>
+            <option value="0.680">Roda c/ Pneu (0.680 m)</option>
+            <option value="0.420">Guidão Road (0.420 m)</option>
+            <option value="0.720">Guidão MTB (0.720 m)</option>
+            <option value="height">Minha Altura Completa</option>
+          </select>
+        </label>
+        <label style="font-size: 0.82rem; color: #cbd5e1;">Sensibilidade:
+          <input type="range" id="photoToleranceSlider" min="12" max="90" value="38" oninput="onPhotoToleranceChange(this.value)" style="vertical-align: middle; width: 95px;">
+        </label>
+      </div>
+      <div style="text-align: center; background: #05070b; border: 1px dashed rgba(255,255,255,0.15); border-radius: 8px; padding: 8px; min-height: 240px; display: flex; align-items: center; justify-content: center;">
+        <canvas id="frontalPhotoCanvas" width="520" height="360" style="max-width: 100%; cursor: crosshair;"></canvas>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px; flex-wrap: wrap; gap: 10px;">
+        <button onclick="resetToDefaultFrontalArea()" class="btn-cockpit outline">&#8634; Usar Fórmula Padrão</button>
+        <div style="display: flex; gap: 10px;">
+          <button onclick="clearPhotoScalePoints()" class="btn-cockpit ghost">Refazer Marcação</button>
+          <button onclick="applyPhotoFrontalArea()" class="btn-cockpit primary">&#10003; Salvar Área da Foto</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const canvas = document.getElementById('frontalPhotoCanvas');
+  canvas.addEventListener('click', (e) => {
+    if (!photoState.img) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.round((e.clientX - rect.left) * (canvas.width / rect.width));
+    const y = Math.round((e.clientY - rect.top) * (canvas.height / rect.height));
+    if (photoState.scalePts.length < 2) {
+      photoState.scalePts.push({ x, y });
+    } else {
+      const ctx = canvas.getContext('2d');
+      drawPhotoBase(ctx, canvas);
+      const px = ctx.getImageData(x, y, 1, 1).data;
+      photoState.bgColor = [px[0], px[1], px[2]];
+    }
+    recomputePhotoSilhouette();
+  });
+}
+
+window.openFrontalAreaModal = function() {
+  ensureFrontalAreaModal();
+  updateModalAeroSummary();
+  document.getElementById('frontalAreaModal').style.display = 'flex';
+  if (!photoState.img) {
+    const canvas = document.getElementById('frontalPhotoCanvas');
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#64748b';
+    ctx.font = '13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Nenhuma foto carregada. Usando cálculo antropométrico padrão.', canvas.width / 2, canvas.height / 2);
+  } else {
+    recomputePhotoSilhouette();
+  }
+};
+
+window.closeFrontalAreaModal = function() {
+  const modal = document.getElementById('frontalAreaModal');
+  if (modal) modal.style.display = 'none';
+};
+
+function updateModalAeroSummary() {
+  const cfg = window.userPowerConfig;
+  const aero = window.computeDefaultAeroParams(cfg.totalWeightKg, cfg.heightCm, cfg.bikeType);
+  const box = document.getElementById('aeroSummaryBox');
+  if (!box) return;
+  const photoInfo = photoState.computedAreaM2 ? ` | <strong style="color:#10b981;">Medida na Foto: ${photoState.computedAreaM2.toFixed(3)} m²</strong>` : '';
+  box.innerHTML = `
+    <div><strong>Conjunto:</strong> ${cfg.bikeType.toUpperCase()} | Peso: <strong>${cfg.totalWeightKg} kg</strong> | Altura: <strong>${cfg.heightCm} cm</strong></div>
+    <div><strong>Área Ativa:</strong> <span style="color:#10b981; font-weight:bold;">${aero.activeArea.toFixed(3)} m²</span> | <strong>CdA:</strong> <span style="color:#06b6d4; font-weight:bold;">${aero.cda.toFixed(3)} m²</span> | <strong>Crr:</strong> ${aero.crr}${photoInfo}</div>
+  `;
+}
+
+window.handleFrontalPhotoUpload = function(ev) {
+  const file = ev.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const img = new Image();
+    img.onload = () => {
+      photoState.img = img;
+      photoState.scalePts = [];
+      photoState.bgColor = null;
+      photoState.computedAreaM2 = null;
+      recomputePhotoSilhouette();
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+};
+
+function drawPhotoBase(ctx, canvas) {
+  const img = photoState.img;
+  if (!img) return;
+  const ratio = Math.min(620 / img.width, 420 / img.height);
+  canvas.width = Math.round(img.width * ratio);
+  canvas.height = Math.round(img.height * ratio);
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+}
+
+window.onPhotoToleranceChange = function(val) {
+  photoState.tolerance = parseInt(val, 10) || 38;
+  recomputePhotoSilhouette();
+};
+
+window.clearPhotoScalePoints = function() {
+  photoState.scalePts = [];
+  photoState.computedAreaM2 = null;
+  recomputePhotoSilhouette();
+};
+
+window.recomputePhotoSilhouette = function() {
+  const canvas = document.getElementById('frontalPhotoCanvas');
+  if (!canvas || !photoState.img) return;
+  const ctx = canvas.getContext('2d');
+  drawPhotoBase(ctx, canvas);
+  const w = canvas.width, h = canvas.height;
+  const imgData = ctx.getImageData(0, 0, w, h);
+  const d = imgData.data;
+
+  let bg = photoState.bgColor;
+  if (!bg) {
+    const idxR = (w - 1) * 4;
+    bg = [Math.round((d[0] + d[idxR]) / 2), Math.round((d[1] + d[idxR + 1]) / 2), Math.round((d[2] + d[idxR + 2]) / 2)];
+  }
+
+  let foregroundPixels = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    const dist = Math.hypot(d[i] - bg[0], d[i + 1] - bg[1], d[i + 2] - bg[2]);
+    if (dist > photoState.tolerance) {
+      foregroundPixels++;
+      d[i] = Math.min(255, Math.round(d[i] * 0.55 + 16));
+      d[i + 1] = Math.min(255, Math.round(d[i + 1] * 0.55 + 185));
+      d[i + 2] = Math.min(255, Math.round(d[i + 2] * 0.55 + 129));
+    }
+  }
+  ctx.putImageData(imgData, 0, 0);
+
+  if (photoState.scalePts.length > 0) {
+    ctx.strokeStyle = '#10b981';
+    ctx.fillStyle = '#10b981';
+    ctx.lineWidth = 2.5;
+    photoState.scalePts.forEach(pt => {
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    if (photoState.scalePts.length === 2) {
+      const p1 = photoState.scalePts[0], p2 = photoState.scalePts[1];
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.stroke();
+
+      const pixelDist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      const refSel = document.getElementById('photoRefType')?.value || '0.622';
+      const refMeters = refSel === 'height' ? (window.userPowerConfig.heightCm / 100) : parseFloat(refSel);
+      if (pixelDist > 15 && refMeters > 0) {
+        const mPerPx = refMeters / pixelDist;
+        const rawArea = foregroundPixels * mPerPx * mPerPx;
+        photoState.computedAreaM2 = (rawArea >= 0.22 && rawArea <= 0.95) ? parseFloat(rawArea.toFixed(3)) : null;
+      }
+    }
+  }
+  updateModalAeroSummary();
+};
+
+window.applyPhotoFrontalArea = function() {
+  if (!photoState.computedAreaM2) {
+    alert('Marque os 2 pontos de referência na foto primeiro.');
+    return;
+  }
+  window.userPowerConfig.customFrontalArea = photoState.computedAreaM2;
+  recalcPowerEngineState(true);
+  closeFrontalAreaModal();
+};
+
+window.resetToDefaultFrontalArea = function() {
+  window.userPowerConfig.customFrontalArea = null;
+  photoState.computedAreaM2 = null;
+  recalcPowerEngineState(true);
+  updateModalAeroSummary();
+};
+
+window.addEventListener('DOMContentLoaded', () => {
+  setTimeout(loadPowerEnginePreferences, 150);
+});

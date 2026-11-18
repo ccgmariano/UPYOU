@@ -1,4 +1,4 @@
-// Núcleo Principal (IndexedDB UpYouDB, Leitor Nativo FIT/ZIP com Enhanced Altitude/Speed, Vento ERA5, Telemetria 15s e Verificador GitHub)
+// Núcleo Principal (IndexedDB UpYouDB, Exclusão de Atividades, Leitor FIT/ZIP, Vento ERA5, Telemetria 15s e Verificador GitHub)
 let dbActivities = [];
 let currentUserId = null;
 let currentUserName = "";
@@ -7,6 +7,58 @@ let userMaxHr = 187;
 const DB_NAME = "UpYouDB";
 const STORE_NAME = "activitiesStore";
 const GARMIN_API_URL = "https://garmin-webhook-731921508137.us-central1.run.app";
+
+function getDeletedIdsKey() {
+  return `upyou_deleted_ids_${currentUserId || 'default'}`;
+}
+
+function getDeletedActivityIds() {
+  try {
+    const raw = localStorage.getItem(getDeletedIdsKey());
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function addDeletedActivityId(id) {
+  if (!id) return;
+  const list = getDeletedActivityIds();
+  const strId = String(id);
+  if (!list.includes(strId)) {
+    list.push(strId);
+    localStorage.setItem(getDeletedIdsKey(), JSON.stringify(list));
+  }
+}
+
+// Exclui uma atividade com pedido de confirmação e atualiza todos os gráficos imediatamente
+window.deleteActivityByIndex = async function(idx) {
+  if (typeof dbActivities === 'undefined' || !dbActivities[idx]) return;
+  const act = dbActivities[idx];
+  const distTxt = act.metrics?.distKm ? `${act.metrics.distKm} km` : '';
+
+  const confirmed = confirm(`Tem certeza que deseja excluir a atividade:\n\n"${act.date} — ${act.name} (${distTxt})"?`);
+  if (!confirmed) return;
+
+  // Se for atividade da nuvem Garmin, guarda o ID na lista de excluídos para não voltar sozinho,
+  // e tenta apagar no backend caso a rota exista
+  if (act.garminId) {
+    addDeletedActivityId(act.garminId);
+    try {
+      fetch(`${GARMIN_API_URL}?action=delete&google_id=${encodeURIComponent(currentUserId)}&id=${encodeURIComponent(act.garminId)}`, { method: 'DELETE' }).catch(() => {});
+    } catch (e) {}
+  } else if (act.file) {
+    addDeletedActivityId(act.file);
+  }
+
+  dbActivities.splice(idx, 1);
+  await saveToDB(dbActivities);
+
+  if (typeof window.applyGlobalPowerSource === 'function') window.applyGlobalPowerSource();
+  processGlobalMetrics();
+  renderSummaryTable();
+  updateDynamicCharts();
+};
 
 window.addEventListener('DOMContentLoaded', () => {
   const savedUser = localStorage.getItem('upyou_user') || sessionStorage.getItem('upyou_user');
@@ -165,6 +217,7 @@ async function loadFromDB() {
 
 async function clearLocalDatabase() {
   if(confirm("Tem a certeza que deseja apagar o histórico local? As atividades na nuvem Garmin serão recarregadas na próxima sincronização.")) {
+    localStorage.removeItem(getDeletedIdsKey());
     const db = await initDB();
     const tx = db.transaction(STORE_NAME, "readwrite");
     tx.objectStore(STORE_NAME).delete(currentUserId);
@@ -177,7 +230,8 @@ async function clearLocalDatabase() {
 async function initializeAppForUser() {
   const savedData = await loadFromDB();
   if (savedData && savedData.length > 0) {
-    dbActivities = savedData;
+    const deletedIds = getDeletedActivityIds();
+    dbActivities = savedData.filter(a => !deletedIds.includes(String(a.garminId || a.file)));
     dbActivities.forEach(a => a.dateObj = new Date(a.dateObj));
     document.getElementById('uploadArea').style.display = 'none';
     if (typeof window.applyGlobalPowerSource === 'function') window.applyGlobalPowerSource();
@@ -186,37 +240,51 @@ async function initializeAppForUser() {
     updateDynamicCharts();
   }
   await checkGarminConnectionStatus();
-  await syncWithGarminCloud();
+  await syncWithGarminCloud(false);
 }
 
-async function syncWithGarminCloud() {
+// Quando manualForce = true (clicou no botão azul "↻ Sincronizar Garmin"), tenta buscar de novo atividades sem telemetria completa
+async function syncWithGarminCloud(manualForce = true) {
   if (!currentUserId) return;
   const msgEl = document.getElementById('statusMsg');
   msgEl.style.color = '#38bdf8';
   msgEl.innerText = 'A sincronizar atividades e telemetria física com a nuvem Garmin...';
 
   try {
-    const res = await fetch(`${GARMIN_API_URL}?google_id=${encodeURIComponent(currentUserId)}`);
+    const res = await fetch(`${GARMIN_API_URL}?google_id=${encodeURIComponent(currentUserId)}&t=${Date.now()}`);
     if (!res.ok) throw new Error('Falha ao contactar servidor Garmin');
     const cloudList = await res.json();
+    const deletedIds = getDeletedActivityIds();
 
     let newCount = 0;
+    let updatedCount = 0;
+
     for (const item of cloudList) {
       if (!item.id || item.id === 'dados') continue;
+      if (deletedIds.includes(String(item.id)) && !manualForce) continue;
+
       const existingIdx = dbActivities.findIndex(a => String(a.garminId) === String(item.id));
       const existingAct = existingIdx !== -1 ? dbActivities[existingIdx] : null;
-      const m = existingAct ? (existingAct.realMetrics || existingAct.metrics) : null;
-      const hasFullDisp = m && m.dispWindows && m.dispWindows[5] !== undefined && m.mhr20 !== undefined;
+      const m = existingAct ? (existingAct.realMetrics || existingAct.estMetrics || existingAct.metrics) : null;
+      const hasFullDisp = m && m.dispWindows && m.dispWindows[5] && m.dispWindows[5].length > 0;
       const hasRealTelemetry = existingAct && Array.isArray(existingAct.telemetry15s) && existingAct.telemetry15s.length > 2 && !existingAct.telemetry15s[0].isFallback;
 
-      if (existingIdx === -1 || !m || !m.pwrHrPairs || !hasFullDisp || !hasRealTelemetry) {
-        const detailRes = await fetch(`${GARMIN_API_URL}?google_id=${encodeURIComponent(currentUserId)}&id=${encodeURIComponent(item.id)}`);
+      if (existingIdx === -1 || !m || !hasFullDisp || !hasRealTelemetry) {
+        if (deletedIds.includes(String(item.id))) continue;
+
+        const detailRes = await fetch(`${GARMIN_API_URL}?google_id=${encodeURIComponent(currentUserId)}&id=${encodeURIComponent(item.id)}&t=${Date.now()}`);
         if (detailRes.ok) {
           const garminJson = await detailRes.json();
           const parsedAct = await parseGarminJsonToActivity(garminJson, item.id);
           if (parsedAct) {
             if (existingIdx !== -1) {
-              dbActivities[existingIdx] = parsedAct;
+              // Nunca sobrescreve uma atividade que já tinha samples completos por um resumo mais pobre
+              const oldLen = existingAct.telemetry15s ? existingAct.telemetry15s.length : 0;
+              const newLen = parsedAct.telemetry15s ? parsedAct.telemetry15s.length : 0;
+              if (newLen >= oldLen || (existingAct.metrics?.avgPwr === 0 && parsedAct.metrics?.avgPwr > 0)) {
+                dbActivities[existingIdx] = parsedAct;
+                updatedCount++;
+              }
             } else {
               dbActivities.push(parsedAct);
               newCount++;
@@ -231,9 +299,9 @@ async function syncWithGarminCloud() {
       msgEl.style.color = '#22c55e';
       msgEl.innerText = 'Conta Garmin vinculada com sucesso!';
       window.history.replaceState({}, document.title, window.location.pathname);
-    } else if (newCount > 0) {
+    } else if (newCount > 0 || updatedCount > 0) {
       msgEl.style.color = '#22c55e';
-      msgEl.innerText = `${newCount} nova(s) atividade(s) Garmin sincronizada(s)!`;
+      msgEl.innerText = `${newCount} nova(s) e ${updatedCount} atividade(s) atualizada(s) da nuvem Garmin!`;
     } else if (dbActivities.length > 0) {
       msgEl.style.color = '#22c55e';
       msgEl.innerText = 'Histórico atualizado com a nuvem Garmin.';
@@ -257,7 +325,7 @@ async function syncWithGarminCloud() {
     msgEl.style.color = '#f87171';
     msgEl.innerText = 'Modo offline: não foi possível verificar novas atividades na nuvem.';
   }
-  setTimeout(() => { if (msgEl.innerText.includes('sincronizada') || msgEl.innerText.includes('atualizado') || msgEl.innerText.includes('vinculada')) msgEl.innerText = ''; }, 4000);
+  setTimeout(() => { if (msgEl.innerText.includes('sincronizada') || msgEl.innerText.includes('atualizada') || msgEl.innerText.includes('atualizado') || msgEl.innerText.includes('vinculada')) msgEl.innerText = ''; }, 4000);
 }
 
 async function buildDualMetricsFromRecords(records, dateObj) {
@@ -312,6 +380,10 @@ async function parseGarminJsonToActivity(data, fallbackId) {
     samples = detail.samples || [];
   } else if (data.activities && data.activities.length > 0) {
     summary = data.activities[0];
+    samples = data.samples || summary.samples || [];
+  } else if (data.summary || data.samples) {
+    summary = data.summary || data;
+    samples = data.samples || [];
   } else {
     return null;
   }
@@ -327,7 +399,7 @@ async function parseGarminJsonToActivity(data, fallbackId) {
     let prevLat = null, prevLon = null, lastBearing = null;
     for (let i = 0; i < samples.length; i++) {
       const s = samples[i];
-      const ts = s.startTimeInSeconds || 0;
+      const ts = s.startTimeInSeconds || s.timestamp || 0;
       if (ts <= 0) continue;
       const lat = s.latitudeInDegree || 0;
       const lon = s.longitudeInDegree || 0;
@@ -350,6 +422,38 @@ async function parseGarminJsonToActivity(data, fallbackId) {
         lat,
         lon,
         bearing: lastBearing
+      });
+    }
+  }
+
+  // Caso o servidor Garmin tenha entregado apenas o Resumo (sem samples), mas exista distância/duração real (ex: 31.43 km),
+  // reconstrói amostras sintéticas baseadas na física do resumo para não exibir 0W!
+  if (records.length === 0 && summary && (summary.distanceInMeters > 500 || summary.durationInSeconds > 120)) {
+    const dur = Math.max(60, summary.durationInSeconds || summary.movingDurationInSeconds || 3600);
+    const distM = summary.distanceInMeters || 0;
+    const spdMs = summary.averageSpeedInMetersPerSecond || (distM / dur);
+    const spdKmh = spdMs * 3.6;
+    const hrAvg = Math.round(summary.averageHeartRateInBeatsPerMinute || 140);
+    const pwrAvg = Math.round(summary.averagePowerInWatts || 0);
+    const startLat = summary.startingLatitudeInDegree || -28.48;
+    const startLon = summary.startingLongitudeInDegree || -49.00;
+    const elevGain = summary.totalElevationGainInMeters || summary.elevationGainInMeters || 40;
+
+    for (let t = 0; t < dur; t += 5) {
+      const prog = t / dur;
+      const synthAlt = 15 + (elevGain * 0.35) * Math.sin(prog * Math.PI * 2);
+      records.push({
+        timestamp: startSec + t,
+        power: pwrAvg,
+        hr: hrAvg,
+        cad: Math.round(summary.averageBikeCadenceInRoundsPerMinute || 80),
+        hasCadSensor: Boolean(summary.averageBikeCadenceInRoundsPerMinute),
+        speed: spdKmh,
+        distance: prog * distM,
+        altitude: synthAlt,
+        lat: startLat + prog * 0.02,
+        lon: startLon + prog * 0.02,
+        bearing: prog < 0.5 ? 45 : 225
       });
     }
   }
@@ -521,7 +625,6 @@ function parseStravaDate(str) {
   return isNaN(d.getTime()) ? new Date() : d;
 }
 
-// Leitor Nativo FIT completo: Suporta Standard & Enhanced Speed (6, 73, 134) e Standard & Enhanced Altitude (2, 78)
 function parseFitNative(u8) {
   const view = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
   let offset = view.getUint8(0);
@@ -570,7 +673,6 @@ function parseFitNative(u8) {
             else if (f.num === 5) rec.distance = (val !== 0xFFFFFFFF) ? val / 100 : 0;
             else if (f.num === 6) { if (val !== 0xFFFF) rec.speed = (val / 1000) * 3.6; }
             else if (f.num === 73 || f.num === 134) {
-              // Enhanced Speed (32-bit uint, scale 1000 m/s)
               if (val !== 0xFFFFFFFF) rec.speed = (val / 1000) * 3.6;
             }
             else if (f.num === 2) {

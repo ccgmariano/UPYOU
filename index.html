@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet">
 
   <!-- Biblioteca de Login do Google -->
-  <script src="https://accounts.google.com/gsi/client" async defer ></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   
   <!-- Bibliotecas de Processamento ZIP -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -28,7 +28,7 @@
       <div class="brand-logo">UP<span>YOU</span></div>
       <div class="brand-sub">TELEMETRY COCKPIT &bull; PERFORMANCE INTELLIGENCE</div>
       
-            <div id="g_id_onload"
+      <div id="g_id_onload"
            data-client_id="731921508137-alvl8q48tpsvhp02531v1el2naia457g.apps.googleusercontent.com"
            data-context="signin"
            data-ux_mode="popup"
@@ -46,7 +46,6 @@
              data-logo_alignment="left">
         </div>
       </div>
-
     </div>
   </div>
 
@@ -369,4 +368,124 @@
                 <p class="panel-sub">Acompanhe a queda da FC para uma mesma faixa de Watts ao longo do tempo.</p>
               </div>
               <select class="custom-select time-filter" onchange="syncFiltersAndUpdate(this.value)">
-                <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">An
+                <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
+              </select>
+            </div>
+            <div class="layer-bar">
+              <span class="pill-label">EXIBIR ZONAS:</span>
+              <label class="chk-pill" style="color:#38bdf8;"><input type="checkbox" id="chk-z2" value="Z2" checked onchange="updateEficienciaChart()"> Z2 (56-75%)</label>
+              <label class="chk-pill" style="color:#10b981;"><input type="checkbox" id="chk-z3" value="Z3" checked onchange="updateEficienciaChart()"> Z3 (76-90%)</label>
+              <label class="chk-pill" style="color:#eab308;"><input type="checkbox" id="chk-z4" value="Z4" checked onchange="updateEficienciaChart()"> Z4 (91-105%)</label>
+              <label class="chk-pill" style="color:#f97316;"><input type="checkbox" id="chk-z5" value="Z5" onchange="updateEficienciaChart()"> Z5 (106-120%)</label>
+              <label class="chk-pill" style="color:#ef4444;"><input type="checkbox" id="chk-z6" value="Z6" onchange="updateEficienciaChart()"> Z6 (121-150%)</label>
+              <label class="chk-pill" style="color:#a855f7;"><input type="checkbox" id="chk-z7" value="Z7" onchange="updateEficienciaChart()"> Z7 (&gt;150%)</label>
+            </div>
+            <div class="chart-box"><canvas id="eficienciaCanvas" style="height: 390px;"></canvas></div>
+          </div>
+
+          <!-- TAB 12: DISPERSÃO AVANÇADA -->
+          <div id="dispersaoTab" class="tab-panel dynamic-tab" style="display: none;">
+            <div class="panel-header">
+              <div>
+                <h2>Estudo de Dispersão Avançada (Watt vs. BPM)</h2>
+                <p class="panel-sub">Regressão linear comparativa entre períodos históricos.</p>
+              </div>
+            </div>
+            <div class="layer-bar">
+              <label class="inline-select">Agrupamento:
+                <select class="custom-select" id="dspAgrupamento" onchange="onDispParamChange()">
+                  <option value="dia">Diário</option><option value="semana">Semanal</option><option value="quinzena">Quinzenal</option><option value="mes" selected>Mensal</option><option value="trimestre">Trimestral</option><option value="semestre">Semestral</option><option value="ano">Anual</option>
+                </select>
+              </label>
+              <label class="inline-select">Intervalo:
+                <select class="custom-select" id="dspJanelaPonto" onchange="onDispParamChange()">
+                  <option value="5">5s</option><option value="15">15s</option><option value="60">1 min</option><option value="300" selected>5 min</option><option value="600">10 min</option><option value="900">15 min</option><option value="3600">60 min</option>
+                </select>
+              </label>
+              <label class="inline-select">Períodos:
+                <select class="custom-select" id="dspQtdPeriodos" onchange="onDispParamChange()">
+                  <option value="1">1</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="8">8</option><option value="12">12</option>
+                </select>
+              </label>
+            </div>
+            <div id="dspLegendContainer" style="display: none;"></div>
+            <div class="chart-box"><canvas id="dispersaoCanvas" style="height: 400px;"></canvas></div>
+            <div class="timeline-navigator">
+              <div class="timeline-header">
+                <span class="timeline-title" id="dspSliderLabel">Janela Ativa: --</span>
+                <span class="timeline-hint">Arraste para navegar no tempo &larr; &rarr;</span>
+              </div>
+              <input type="range" id="dspTimeSlider" min="0" max="0" value="0" step="1" oninput="onDispSliderInput(this.value)">
+            </div>
+          </div>
+
+          <!-- TAB 13: ISO-POTÊNCIA -->
+          <div id="isoPotenciaTab" class="tab-panel dynamic-tab" style="display: none;">
+            <div class="panel-header">
+              <div>
+                <h2>Evolução Histórica de Desempenho (Iso-Potência)</h2>
+                <p class="panel-sub">Custo cardíaco estimado para 3 potências fixas ao longo dos períodos.</p>
+              </div>
+              <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                <select class="custom-select" id="isoAgrupamento" onchange="renderIsoPotenciaChart()">
+                  <option value="quinzena">Quinzenal</option><option value="mes">Mensal</option><option value="trimestre" selected>Trimestral</option><option value="semestre">Semestral</option><option value="ano">Anual</option>
+                </select>
+                <select class="custom-select" id="isoJanelaPonto" onchange="renderIsoPotenciaChart()">
+                  <option value="5">5s</option><option value="15" selected>15s</option><option value="60">1 min</option><option value="300">5 min</option>
+                </select>
+              </div>
+            </div>
+            <div class="layer-bar" style="justify-content:center; gap:24px;">
+              <div class="iso-pill"><span class="dot" style="background:#10b981;"></span> FC @ <input type="number" id="isoPwr1" value="160" min="60" max="400" step="5" onchange="renderIsoPotenciaChart()"> W</div>
+              <div class="iso-pill"><span class="dot" style="background:#06b6d4;"></span> FC @ <input type="number" id="isoPwr2" value="200" min="60" max="400" step="5" onchange="renderIsoPotenciaChart()"> W</div>
+              <div class="iso-pill"><span class="dot" style="background:#eab308;"></span> FC @ <input type="number" id="isoPwr3" value="240" min="60" max="400" step="5" onchange="renderIsoPotenciaChart()"> W</div>
+            </div>
+            <div class="chart-box"><canvas id="isoPotenciaCanvas" style="height: 400px;"></canvas></div>
+          </div>
+        </div>
+
+        <!-- DETALHE INDIVIDUAL DA ATIVIDADE -->
+        <div id="detailArea" style="display: none;">
+          <button class="btn-cockpit outline" onclick="showSummary()" style="margin-bottom: 18px;">&larr; Voltar ao Histórico</button>
+          <h2 id="actTitle" style="color: #10b981; margin-bottom: 18px; font-family: 'JetBrains Mono', monospace;"></h2>
+          
+          <div class="stat-grid">
+            <div class="stat-box"><div class="stat-title">Potência Normalizada (NP)</div><div class="stat-val mono" id="npVal">--</div></div>
+            <div class="stat-box"><div class="stat-title">Índ. Variabilidade (VI)</div><div class="stat-val mono" id="viVal">--</div></div>
+            <div class="stat-box" style="grid-column: span 2;"><div class="stat-title">Diagnóstico de Estrutura (Blocos &ge; 5 min)</div><div class="stat-val" id="structureVal" style="font-size: 0.92rem; font-weight: 500;">--</div></div>
+          </div>
+
+          <div class="stat-grid">
+            <div class="stat-box"><div class="stat-title">Tempo Total</div><div class="stat-val mono" id="totalTime">--</div></div>
+            <div class="stat-box"><div class="stat-title">Distância Total</div><div class="stat-val mono" id="totalDist">--</div></div>
+            <div class="stat-box"><div class="stat-title">Velocidade Média</div><div class="stat-val mono" id="avgSpeed">--</div></div>
+            <div class="stat-box"><div class="stat-title">Potência Média</div><div class="stat-val mono neon-green" id="avgPwr">--</div></div>
+            <div class="stat-box"><div class="stat-title">FC Média</div><div class="stat-val mono neon-red" id="avgHr">--</div></div>
+            <div class="stat-box"><div class="stat-title">Cadência Média</div><div class="stat-val mono neon-cyan" id="avgCad">--</div></div>
+            <div class="stat-box"><div class="stat-title">Cardiac Drift (Pa:Hr)</div><div class="stat-val mono" id="driftVal">--</div></div>
+          </div>
+          <div class="stat-box" style="margin-bottom: 12px;"><div class="stat-title">Maior Bloco 20 Minutos (MMP20)</div><div class="stat-val mono neon-green" id="mmp20Val">--</div></div>
+          <div class="stat-box"><div class="stat-title">Top 4 Maiores Períodos de Potência (4 Minutos)</div><div class="stat-val mono" id="top4Mins" style="font-size: 0.92rem;">--</div></div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Módulos Separados -->
+  <script src="chart-theme.js"></script>
+  <script src="power-engine.js"></script>
+  <script src="tab-atividades.js"></script>
+  <script src="tab-ftp.js"></script>
+  <script src="tab-curvapotencia.js"></script>
+  <script src="tab-assinatura.js"></script>
+  <script src="tab-zonas.js"></script>
+  <script src="tab-drift.js"></script>
+  <script src="tab-vi.js"></script>
+  <script src="tab-estrutura.js"></script>
+  <script src="tab-eficiencia.js"></script>
+  <script src="tab-dispersao.js"></script>
+  <script src="tab-isopotencia.js"></script>
+  <script src="tab-telemetria.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

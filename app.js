@@ -1,4 +1,4 @@
-// Núcleo Principal Otimizado (Cockpit Matrix Neon Precision, Google Sign-In com Retentativa, Lazy Loading de Telemetria e Curva MMP)
+// Núcleo Principal Otimizado (Cockpit Matrix Neon Precision, Versionamento Automático DB, Google Sign-In e Curva MMP)
 let dbActivities = [];
 let currentUserId = null;
 let currentUserName = "";
@@ -10,6 +10,9 @@ const DB_NAME = "UpYouDB";
 const STORE_NAME = "activitiesStore";
 const TELEMETRY_STORE = "telemetryStore";
 const GARMIN_API_URL = "https://garmin-webhook-731921508137.us-central1.run.app";
+
+// Versão atual do Schema de dados (incrementar sempre que adicionar novas métricas como a cadência)
+const CURRENT_DATA_SCHEMA_VERSION = 3; 
 
 // Inicialização explícita e confiável do botão Google Sign-In (Desktop & Android Chrome)
 window.initGoogleSignIn = function() {
@@ -213,28 +216,22 @@ async function checkGarminConnectionStatus() {
 
 function initDB() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME);
+    // Verifica versão salva no navegador. Se for menor que a atual, força upgrade do IndexedDB
+    const lastVersion = parseInt(localStorage.getItem('upyou_db_schema_version') || '1', 10);
+    const targetVersion = lastVersion < CURRENT_DATA_SCHEMA_VERSION ? lastVersion + 1 : 2;
+
+    const request = indexedDB.open(DB_NAME, targetVersion);
     request.onupgradeneeded = (e) => {
       const db = e.target.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME, { keyPath: "id" });
       if (!db.objectStoreNames.contains(TELEMETRY_STORE)) db.createObjectStore(TELEMETRY_STORE, { keyPath: "id" });
+      
+      // Se houve upgrade de versão, limpa cache antigo de telemetria para forçar reprocessamento com novas métricas
+      localStorage.setItem('upyou_db_schema_version', CURRENT_DATA_SCHEMA_VERSION);
     };
     request.onsuccess = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME) || !db.objectStoreNames.contains(TELEMETRY_STORE)) {
-        const nextVer = db.version + 1;
-        db.close();
-        const upg = indexedDB.open(DB_NAME, nextVer);
-        upg.onupgradeneeded = (ev) => {
-          const uDb = ev.target.result;
-          if (!uDb.objectStoreNames.contains(STORE_NAME)) uDb.createObjectStore(STORE_NAME, { keyPath: "id" });
-          if (!uDb.objectStoreNames.contains(TELEMETRY_STORE)) uDb.createObjectStore(TELEMETRY_STORE, { keyPath: "id" });
-        };
-        upg.onsuccess = () => resolve(upg.result);
-        upg.onerror = () => reject(upg.error);
-      } else {
-        resolve(db);
-      }
+      resolve(db);
     };
     request.onerror = () => reject(request.error);
   });
@@ -897,8 +894,9 @@ function calculateMetrics(records) {
       hrSecs += dt;
       hrHist[r.hr] = (hrHist[r.hr] || 0) + dt;
     }
-    if (r.cad > 0 && r.cad < 190) {
-      sumCadDt += r.cad * dt;
+    const cadVal = r.cad || r.cadence || 0;
+    if (cadVal > 0 && cadVal < 190) {
+      sumCadDt += cadVal * dt;
       cadSecs += dt;
     }
 
@@ -1173,7 +1171,7 @@ function processGlobalMetrics() {
   if (activeDashboardTabId === 'zonesTab') renderDynamicZones();
 }
 
-function updateDynamicCharts() {
+updateDynamicCharts = function() {
   switch (activeDashboardTabId) {
     case 'tableTab':
       renderSummaryTable();
@@ -1215,7 +1213,7 @@ function updateDynamicCharts() {
       if (typeof initTelemetriaTab === 'function') initTelemetriaTab();
       break;
   }
-}
+};
 
 function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
   const R = 6371;

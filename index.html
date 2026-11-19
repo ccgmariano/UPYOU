@@ -172,7 +172,27 @@
         <p id="progressText">A preparar ambiente (aguarde)...</p>
       </div>
 
-      <div id="detailArea" class="detail-panel" style="display:none;"></div>
+      <!-- PAINEL DE DETALHES DA ATIVIDADE -->
+      <div id="detailArea" class="detail-panel" style="display:none; background:#0a0e17; border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:18px; margin-bottom:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:12px; margin-bottom:14px;">
+          <h2 id="actTitle" style="font-size:1.05rem; color:#34d399; margin:0;">Detalhes da Atividade</h2>
+          <button class="btn-cockpit outline" onclick="showSummary()">&larr; Voltar para a Lista</button>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:10px; margin-bottom:14px;">
+          <div class="neon-kpi-card green"><div class="neon-kpi-label">POTÊNCIA MÉDIA</div><div class="neon-kpi-main neon-green" id="avgPwr">--</div></div>
+          <div class="neon-kpi-card cyan"><div class="neon-kpi-label">POTÊNCIA NORMALIZADA</div><div class="neon-kpi-main neon-cyan" id="npVal">--</div></div>
+          <div class="neon-kpi-card yellow"><div class="neon-kpi-label">VARIABILIDADE (VI)</div><div class="neon-kpi-main neon-yellow" id="viVal">--</div></div>
+          <div class="neon-kpi-card red"><div class="neon-kpi-label">FREQ. CARDÍACA</div><div class="neon-kpi-main neon-red" id="avgHr">--</div></div>
+          <div class="neon-kpi-card"><div class="neon-kpi-label">CARDIAC DRIFT</div><div class="neon-kpi-main" id="driftVal">--</div></div>
+          <div class="neon-kpi-card"><div class="neon-kpi-label">DISTÂNCIA / VEL</div><div class="neon-kpi-main" style="font-size:1.05rem;" id="totalDist">--</div><div class="neon-kpi-sub" id="avgSpeed">--</div></div>
+          <div class="neon-kpi-card"><div class="neon-kpi-label">TEMPO / CADÊNCIA</div><div class="neon-kpi-main" style="font-size:1.05rem;" id="totalTime">--</div><div class="neon-kpi-sub" id="avgCad">--</div></div>
+        </div>
+        <div style="background:#0f1522; border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:12px; font-size:0.82rem; line-height:1.7; color:#cbd5e1;">
+          <div><strong>Estrutura:</strong> <span id="structureVal">--</span></div>
+          <div><strong>Melhor 20 min (MMP20):</strong> <span id="mmp20Val" style="color:#eab308; font-weight:700;">--</span></div>
+          <div><strong>Top 4 Intervalos (4 min):</strong> <span id="top4Mins">--</span></div>
+        </div>
+      </div>
 
       <div id="summaryArea">
         <!-- BARRA DE NAVEGAÇÃO HORIZONTAL LIMPA -->
@@ -366,7 +386,7 @@
           <div class="chart-box"><canvas id="structureVolCanvas" style="height: 390px;"></canvas></div>
         </div>
 
-        <!-- TAB 11: EFICIÊNCIA -->
+        <!-- TAB 11: EFICIÊNCIA (COM CHECKBOXES DE ZONAS RESTAURADOS) -->
         <div id="eficienciaTab" class="tab-panel dynamic-tab" style="display: none;">
           <div class="panel-header">
             <div>
@@ -377,10 +397,19 @@
               <option value="dia">Dia</option><option value="semana">Semana</option><option value="quinzena">Quinzena</option><option value="mes" selected>Mês</option><option value="trimestre">Trimestre</option><option value="semestre">Semestre</option><option value="ano">Ano</option>
             </select>
           </div>
+          <div class="layer-bar" style="background:#0f1522; padding:8px 12px; border-radius:8px; border:1px solid rgba(255,255,255,0.08);">
+            <span class="pill-label">ZONAS:</span>
+            <label style="font-size:0.76rem; color:#38bdf8; cursor:pointer; display:inline-flex; align-items:center; gap:4px;"><input type="checkbox" id="chk-z2" checked onchange="updateEficienciaChart()"> Z2 Resistência</label>
+            <label style="font-size:0.76rem; color:#22c55e; cursor:pointer; display:inline-flex; align-items:center; gap:4px;"><input type="checkbox" id="chk-z3" checked onchange="updateEficienciaChart()"> Z3 Tempo</label>
+            <label style="font-size:0.76rem; color:#eab308; cursor:pointer; display:inline-flex; align-items:center; gap:4px;"><input type="checkbox" id="chk-z4" checked onchange="updateEficienciaChart()"> Z4 Limiar</label>
+            <label style="font-size:0.76rem; color:#f97316; cursor:pointer; display:inline-flex; align-items:center; gap:4px;"><input type="checkbox" id="chk-z5" onchange="updateEficienciaChart()"> Z5 VO2Máx</label>
+            <label style="font-size:0.76rem; color:#ef4444; cursor:pointer; display:inline-flex; align-items:center; gap:4px;"><input type="checkbox" id="chk-z6" onchange="updateEficienciaChart()"> Z6 Anaeróbico</label>
+            <label style="font-size:0.76rem; color:#a855f7; cursor:pointer; display:inline-flex; align-items:center; gap:4px;"><input type="checkbox" id="chk-z7" onchange="updateEficienciaChart()"> Z7 Neuromusc.</label>
+          </div>
           <div class="chart-box"><canvas id="eficienciaCanvas" style="height: 390px;"></canvas></div>
         </div>
 
-        <!-- TAB 12: DISPERSÃO W vs BPM -->
+        <!-- TAB 12: DISPERSÃO W vs BPM (COM CONTROLES E SLIDER RESTAURADOS) -->
         <div id="dispersaoTab" class="tab-panel dynamic-tab" style="display: none;">
           <div class="panel-header">
             <div>
@@ -388,20 +417,89 @@
               <p class="panel-sub">Relação fisiológica entre esforço mecânico (Watts) e resposta cardiovascular (BPM).</p>
             </div>
           </div>
-          <div id="dispersaoControls" class="layer-bar"></div>
-          <div class="chart-box"><canvas id="dispersaoCanvas" style="height: 410px;"></canvas></div>
+          <div id="dispersaoControls" class="layer-bar" style="background:#0f1522; padding:10px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.08); gap:14px;">
+            <label style="font-size:0.76rem; color:#cbd5e1;">Agrupamento:
+              <select id="dspAgrupamento" class="custom-select" onchange="onDispParamChange()">
+                <option value="dia">Dia</option>
+                <option value="semana">Semana</option>
+                <option value="quinzena">Quinzena</option>
+                <option value="mes" selected>Mês</option>
+                <option value="trimestre">Trimestre</option>
+                <option value="semestre">Semestre</option>
+                <option value="ano">Ano</option>
+              </select>
+            </label>
+            <label style="font-size:0.76rem; color:#cbd5e1;">Janela do Ponto:
+              <select id="dspJanelaPonto" class="custom-select" onchange="onDispParamChange()">
+                <option value="5">5 seg</option>
+                <option value="15">15 seg</option>
+                <option value="60">1 min</option>
+                <option value="300" selected>5 min</option>
+                <option value="600">10 min</option>
+                <option value="900">15 min</option>
+                <option value="3600">60 min</option>
+              </select>
+            </label>
+            <label style="font-size:0.76rem; color:#cbd5e1;">Períodos Sobrepostos:
+              <select id="dspQtdPeriodos" class="custom-select" onchange="onDispParamChange()">
+                <option value="1">1 período</option>
+                <option value="2">2 períodos</option>
+                <option value="3" selected>3 períodos</option>
+                <option value="6">6 períodos</option>
+                <option value="12">12 períodos</option>
+                <option value="24">24 períodos</option>
+              </select>
+            </label>
+          </div>
+          <div id="dspLegendContainer" class="legend-container"></div>
+          <div class="chart-box"><canvas id="dispersaoCanvas" style="height: 420px;"></canvas></div>
+          <div class="timeline-navigator">
+            <div class="timeline-header">
+              <span class="timeline-title" id="dspSliderLabel">Período Ativo: --</span>
+              <span class="timeline-hint">&larr; Arraste para navegar no histórico &rarr;</span>
+            </div>
+            <input type="range" id="dspTimeSlider" min="0" max="0" value="0" step="1" oninput="onDispSliderInput(this.value)" style="width:100%; accent-color:#10b981;">
+          </div>
         </div>
 
-        <!-- TAB 13: ISO-POTÊNCIA -->
+        <!-- TAB 13: ISO-POTÊNCIA (COM CONTROLES DE 3 POTÊNCIAS RESTAURADOS) -->
         <div id="isoPotenciaTab" class="tab-panel dynamic-tab" style="display: none;">
           <div class="panel-header">
             <div>
               <h2>Curvas de Iso-Potência</h2>
-              <p class="panel-sub">Análise de estabilidade aeróbica e eficiência em faixas fixas de potência.</p>
+              <p class="panel-sub">FC estimada por regressão linear em 3 potências fixas com volume (horas) ao fundo.</p>
             </div>
           </div>
-          <div id="isoPotenciaControls" class="layer-bar"></div>
-          <div class="chart-box"><canvas id="isoPotenciaCanvas" style="height: 410px;"></canvas></div>
+          <div id="isoPotenciaControls" class="layer-bar" style="background:#0f1522; padding:10px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.08); gap:14px;">
+            <label style="font-size:0.76rem; color:#cbd5e1;">Agrupamento:
+              <select id="isoAgrupamento" class="custom-select" onchange="renderIsoPotenciaChart()">
+                <option value="mes">Mês</option>
+                <option value="trimestre" selected>Trimestre</option>
+                <option value="semestre">Semestre</option>
+                <option value="ano">Ano</option>
+              </select>
+            </label>
+            <label style="font-size:0.76rem; color:#cbd5e1;">Janela:
+              <select id="isoJanelaPonto" class="custom-select" onchange="renderIsoPotenciaChart()">
+                <option value="5">5 seg</option>
+                <option value="15" selected>15 seg</option>
+                <option value="60">1 min</option>
+                <option value="300">5 min</option>
+                <option value="600">10 min</option>
+                <option value="900">15 min</option>
+              </select>
+            </label>
+            <label style="font-size:0.76rem; color:#22c55e; font-weight:700;">P1 (W):
+              <input type="number" id="isoPwr1" value="160" min="80" max="350" step="10" onchange="renderIsoPotenciaChart()" class="custom-select" style="width:68px; color:#22c55e; font-weight:700;">
+            </label>
+            <label style="font-size:0.76rem; color:#06b6d4; font-weight:700;">P2 (W):
+              <input type="number" id="isoPwr2" value="200" min="100" max="400" step="10" onchange="renderIsoPotenciaChart()" class="custom-select" style="width:68px; color:#06b6d4; font-weight:700;">
+            </label>
+            <label style="font-size:0.76rem; color:#eab308; font-weight:700;">P3 (W):
+              <input type="number" id="isoPwr3" value="240" min="120" max="450" step="10" onchange="renderIsoPotenciaChart()" class="custom-select" style="width:68px; color:#eab308; font-weight:700;">
+            </label>
+          </div>
+          <div class="chart-box"><canvas id="isoPotenciaCanvas" style="height: 420px;"></canvas></div>
         </div>
 
       </div>

@@ -216,26 +216,25 @@ async function checkGarminConnectionStatus() {
 
 function initDB() {
   return new Promise((resolve, reject) => {
-    // Verifica versão salva no navegador. Se for menor que a atual, força upgrade do IndexedDB
-    const lastVersion = parseInt(localStorage.getItem('upyou_db_schema_version') || '1', 10);
-    const targetVersion = lastVersion < CURRENT_DATA_SCHEMA_VERSION ? lastVersion + 1 : 2;
+    const lastVersion = parseInt(localStorage.getItem('upyou_db_schema_version') || '3', 10);
+    const targetVersion = Math.max(3, CURRENT_DATA_SCHEMA_VERSION, lastVersion);
 
     const request = indexedDB.open(DB_NAME, targetVersion);
     request.onupgradeneeded = (e) => {
       const db = e.target.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME, { keyPath: "id" });
       if (!db.objectStoreNames.contains(TELEMETRY_STORE)) db.createObjectStore(TELEMETRY_STORE, { keyPath: "id" });
-      
-      // Se houve upgrade de versão, limpa cache antigo de telemetria para forçar reprocessamento com novas métricas
-      localStorage.setItem('upyou_db_schema_version', CURRENT_DATA_SCHEMA_VERSION);
+      localStorage.setItem('upyou_db_schema_version', String(targetVersion));
     };
     request.onsuccess = () => {
       const db = request.result;
+      localStorage.setItem('upyou_db_schema_version', String(db.version));
       resolve(db);
     };
     request.onerror = () => reject(request.error);
   });
 }
+
 
 async function saveToDB(activities) {
   if (!currentUserId) return;

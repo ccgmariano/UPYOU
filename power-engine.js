@@ -570,7 +570,7 @@ window.simulatePowerAndTelemetry = function(records, weatherHourly, fallbackDate
     }
     if (rOrig.distance > lastDistMeters) lastDistMeters = rOrig.distance;
 
-    if (accDt >= 15) {
+    if (accDt >= 5) {
       telemetry15s.push({
         km: parseFloat((lastDistMeters / 1000).toFixed(2)),
         sec: rOrig.timestamp - startTs,

@@ -565,50 +565,34 @@ body {
   margin-bottom: 12px;
 }
 
-/* --- GRID DA TELEMETRIA + CARDS KPI --- */
+/* --- GRID DA TELEMETRIA + CARDS KPI COMPACTOS --- */
 .telemetry-cockpit-grid {
   display: grid;
-  grid-template-columns: 1fr 230px;
-  gap: 14px;
-  align-items: stretch;
+  grid-template-columns: 1fr 175px;
+  gap: 10px;
+  align-items: start;
 }
 
-.telemetry-chart-card, .chart-box {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  padding: 12px;
-  width: 100%;
-  overflow: hidden;
+.telemetry-cockpit-grid.no-sidebar {
+  grid-template-columns: 1fr;
 }
 
-.telemetry-chart-card canvas, .chart-box canvas {
-  width: 100% !important;
-  display: block;
-}
-
-.audit-strip {
-  font-size: 0.73rem;
-  color: var(--text-secondary);
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  padding: 6px 10px;
-  margin-bottom: 10px;
+.telemetry-cockpit-grid.no-sidebar .neon-kpi-column {
+  display: none;
 }
 
 .neon-kpi-column {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 7px;
 }
 
 .neon-kpi-card {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-left: 3px solid var(--neon-green);
-  border-radius: 8px;
-  padding: 10px 12px;
+  border-radius: 7px;
+  padding: 7px 10px;
 }
 
 .neon-kpi-card.green { border-left-color: var(--neon-green); }
@@ -618,30 +602,30 @@ body {
 
 .neon-kpi-label {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 0.64rem;
+  font-size: 0.6rem;
   font-weight: 700;
   color: var(--text-muted);
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
 }
 
 .neon-kpi-main {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 1.35rem;
+  font-size: 1.08rem;
   font-weight: 800;
-  margin: 2px 0;
+  margin: 1px 0;
+  line-height: 1.2;
 }
 
-.neon-green { color: var(--neon-green-bright); }
-.neon-red { color: #f87171; }
-.neon-cyan { color: var(--neon-blue); }
-.neon-yellow { color: #facc15; }
+.neon-kpi-main span {
+  font-size: 0.72rem;
+  font-weight: 600;
+}
 
 .neon-kpi-sub {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 0.68rem;
+  font-size: 0.63rem;
   color: var(--text-secondary);
 }
-
 /* --- NAVEGADOR DE TIMELINE (SLIDER) --- */
 .timeline-navigator {
   background: var(--bg-surface);

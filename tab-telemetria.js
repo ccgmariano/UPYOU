@@ -1,4 +1,4 @@
-// Aba: Telemetria Multi-Camadas Matrix Neon Precision (Altimetria, Pot Real, Pot Sim, FC, Cadência RPM, Vel, Vento + Escalas Dinâmicas)
+// Aba: Telemetria Multi-Camadas Matrix Neon Precision (Seleção Interativa, Eixo Tempo+Km, Cards Dinâmicos)
 
 const TEL_LAYERS_STORAGE_KEY = 'upyou_telemetry_layers_v2';
 
@@ -13,6 +13,9 @@ let telActiveLayers = {
 };
 
 let currentTelRideIndex = -1;
+let telSelection = { startIdx: null, endIdx: null };
+let telDragState = { mode: null, anchorIdx: null };
+let telRenderMeta = null;
 
 const LAYER_META = [
   { key: 'alt', label: 'Altimetria (m)', color: '#94a3b8' },
@@ -39,6 +42,33 @@ function saveTelemetryLayers() {
     localStorage.setItem(TEL_LAYERS_STORAGE_KEY, JSON.stringify(telActiveLayers));
   } catch (e) {}
 }
+
+function formatDurationShort(totalSecs) {
+  const s = Math.max(0, Math.round(totalSecs));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}h${String(m).padStart(2, '0')}m`;
+  if (m > 0) return sec > 0 ? `${m}m${String(sec).padStart(2, '0')}s` : `${m}m`;
+  return `${sec}s`;
+}
+
+function formatAxisTime(totalSecs) {
+  const s = Math.max(0, Math.round(totalSecs));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return h > 0 ? `${h}h${String(m).padStart(2, '0')}` : `${m}m`;
+}
+
+function clearTelSelection() {
+  telSelection = { startIdx: null, endIdx: null };
+  telDragState = { mode: null, anchorIdx: null };
+}
+
+window.clearTelemetrySelection = function() {
+  clearTelSelection();
+  renderTelemetriaChart();
+};
 
 function renderTelemetryLayerButtons() {
   const container = document.getElementById('telLayerButtons');
@@ -99,6 +129,7 @@ window.stepTelRide = function(delta) {
   const nextIdx = Math.max(0, Math.min(dbActivities.length - 1, currentTelRideIndex + delta));
   if (nextIdx === currentTelRideIndex) return;
   currentTelRideIndex = nextIdx;
+  clearTelSelection();
   const slider = document.getElementById('telRideSlider');
   if (slider) slider.value = currentTelRideIndex;
   renderTelemetriaChart();
@@ -126,6 +157,106 @@ if (!window._telKeyListenerAdded) {
     if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName) && document.activeElement?.id !== 'telRideSlider') return;
     if (e.key === 'ArrowLeft') { e.preventDefault(); window.stepTelRide(-1); }
     else if (e.key === 'ArrowRight') { e.preventDefault(); window.stepTelRide(1); }
+    else if (e.key === 'Escape' && telSelection.startIdx !== null) { window.clearTelemetrySelection(); }
+  });
+}
+
+function findNearestStreamIdx(mouseX) {
+  if (!telRenderMeta || !telRenderMeta.xPositions || telRenderMeta.xPositions.length === 0) return 0;
+  const xs = telRenderMeta.xPositions;
+  let bestIdx = 0;
+  let bestDist = Infinity;
+  for (let i = 0; i < xs.length; i++) {
+    const d = Math.abs(xs[i] - mouseX);
+    if (d < bestDist) {
+      bestDist = d;
+      bestIdx = i;
+    }
+  }
+  return bestIdx;
+}
+
+function getCanvasMousePos(canvas, evt) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: evt.clientX - rect.left,
+    y: evt.clientY - rect.top
+  };
+}
+
+function attachTelemetryCanvasInteractions(canvas) {
+  if (!canvas || canvas._telSelectionBound) return;
+  canvas._telSelectionBound = true;
+
+  canvas.addEventListener('mousedown', (e) => {
+    if (!telRenderMeta || !telRenderMeta.stream || telRenderMeta.stream.length < 2) return;
+    const { x, y } = getCanvasMousePos(canvas, e);
+    const { padL, padT, drawW, drawH, xPositions } = telRenderMeta;
+    if (x < padL || x > padL + drawW || y < padT || y > padT + drawH) return;
+
+    // Verifica se clicou nas bordas da seleção atual para redimensionar
+    if (telSelection.startIdx !== null && telSelection.endIdx !== null) {
+      const x1 = xPositions[telSelection.startIdx];
+      const x2 = xPositions[telSelection.endIdx];
+      if (Math.abs(x - x1) <= 9) {
+        telDragState = { mode: 'resize-left', anchorIdx: telSelection.endIdx };
+        return;
+      }
+      if (Math.abs(x - x2) <= 9) {
+        telDragState = { mode: 'resize-right', anchorIdx: telSelection.startIdx };
+        return;
+      }
+    }
+
+    // Inicia nova seleção
+    const idx = findNearestStreamIdx(x);
+    telDragState = { mode: 'new', anchorIdx: idx };
+    telSelection = { startIdx: idx, endIdx: idx };
+  });
+
+  canvas.addEventListener('mousemove', (e) => {
+    if (!telRenderMeta || !telRenderMeta.stream || telRenderMeta.stream.length < 2) return;
+    const { x, y } = getCanvasMousePos(canvas, e);
+    const { padL, padT, drawW, drawH, xPositions } = telRenderMeta;
+
+    if (!telDragState.mode) {
+      if (x >= padL && x <= padL + drawW && y >= padT && y <= padT + drawH) {
+        if (telSelection.startIdx !== null && telSelection.endIdx !== null) {
+          const x1 = xPositions[telSelection.startIdx];
+          const x2 = xPositions[telSelection.endIdx];
+          if (Math.abs(x - x1) <= 9 || Math.abs(x - x2) <= 9) {
+            canvas.style.cursor = 'ew-resize';
+            return;
+          }
+        }
+        canvas.style.cursor = 'crosshair';
+      } else {
+        canvas.style.cursor = 'default';
+      }
+      return;
+    }
+
+    const clampedX = Math.max(padL, Math.min(padL + drawW, x));
+    const idx = findNearestStreamIdx(clampedX);
+
+    if (telDragState.mode === 'new' || telDragState.mode === 'resize-left' || telDragState.mode === 'resize-right') {
+      const a = telDragState.anchorIdx;
+      telSelection.startIdx = Math.min(a, idx);
+      telSelection.endIdx = Math.max(a, idx);
+      drawTelemetryFrame();
+    }
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (!telDragState.mode) return;
+    const mode = telDragState.mode;
+    telDragState = { mode: null, anchorIdx: null };
+
+    // Clique simples sem arrastar limpa a seleção
+    if (mode === 'new' && telSelection.startIdx === telSelection.endIdx) {
+      clearTelSelection();
+    }
+    drawTelemetryFrame();
   });
 }
 
@@ -194,6 +325,7 @@ window.initTelemetriaTab = function() {
 
 window.onTelSliderInput = function(val) {
   currentTelRideIndex = parseInt(val, 10) || 0;
+  clearTelSelection();
   renderTelemetriaChart();
 };
 
@@ -201,12 +333,7 @@ window.renderTelemetriaChart = async function() {
   ensureTelStepButtons();
   const canvas = document.getElementById('telemetriaCanvas');
   if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  const w = canvas.offsetWidth || 860, h = 410;
-  const padL = 56, padR = 64, padT = 28, padB = 42;
-  canvas.width = w;
-  canvas.height = h;
-  ctx.clearRect(0, 0, w, h);
+  attachTelemetryCanvasInteractions(canvas);
 
   if (typeof dbActivities === 'undefined' || dbActivities.length === 0) return;
 
@@ -232,6 +359,26 @@ window.renderTelemetriaChart = async function() {
     labelEl.innerText = `[#${currentTelRideIndex + 1}/${dbActivities.length}] ${act.date} — ${act.name} (${distTxt})${modeTag}`;
   }
 
+  // Atualiza layout da coluna lateral antes de medir largura do canvas
+  updateTelemetryAuditAndNeonCards(act, stream, isIndoor);
+
+  telRenderMeta = { act, stream, isIndoor };
+  drawTelemetryFrame();
+};
+
+function drawTelemetryFrame() {
+  if (!telRenderMeta) return;
+  const { act, stream, isIndoor } = telRenderMeta;
+
+  const canvas = document.getElementById('telemetriaCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.offsetWidth || 860, h = 420;
+  const padL = 56, padR = 64, padT = 28, padB = 50;
+  canvas.width = w;
+  canvas.height = h;
+  ctx.clearRect(0, 0, w, h);
+
   updateTelemetryAuditAndNeonCards(act, stream, isIndoor);
 
   if (!stream || stream.length < 2) {
@@ -250,6 +397,16 @@ window.renderTelemetriaChart = async function() {
     const xKm = (km !== undefined && km > 0) ? km : (idx / Math.max(1, stream.length - 1)) * maxKm;
     return padL + (Math.min(maxKm, xKm) / maxKm) * drawW;
   };
+
+  const xPositions = stream.map((pt, idx) => getX(pt.km, idx));
+  telRenderMeta.padL = padL;
+  telRenderMeta.padR = padR;
+  telRenderMeta.padT = padT;
+  telRenderMeta.padB = padB;
+  telRenderMeta.drawW = drawW;
+  telRenderMeta.drawH = drawH;
+  telRenderMeta.maxKm = maxKm;
+  telRenderMeta.xPositions = xPositions;
 
   let maxPwr = 300;
   let minAlt = Infinity, maxAlt = -Infinity;
@@ -276,6 +433,7 @@ window.renderTelemetriaChart = async function() {
   const getYSpd = (spd) => padT + drawH - (Math.max(0, Math.min(60, spd)) / 60) * drawH;
   const getYWind = (wnd) => (padT + drawH * 0.5) - (Math.max(-30, Math.min(30, wnd)) / 60) * drawH;
 
+  // Grade Horizontal
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
   ctx.lineWidth = 1;
   ctx.font = '10px "JetBrains Mono", monospace';
@@ -313,8 +471,8 @@ window.renderTelemetriaChart = async function() {
     }
   }
 
+  // Eixo Horizontal: Distância (km) + Tempo Decorrido (min/h)
   const kmStep = maxKm <= 15 ? 2 : (maxKm <= 40 ? 5 : (maxKm <= 90 ? 10 : 20));
-  ctx.fillStyle = '#94a3b8';
   ctx.textAlign = 'center';
   for (let k = 0; k <= maxKm; k += kmStep) {
     const x = padL + (k / maxKm) * drawW;
@@ -323,9 +481,20 @@ window.renderTelemetriaChart = async function() {
     ctx.lineTo(x, padT + drawH);
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
     ctx.stroke();
-    ctx.fillText(`${k} km`, x, padT + drawH + 18);
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '10px "JetBrains Mono", monospace';
+    ctx.fillText(`${k} km`, x, padT + drawH + 16);
+
+    // Tempo aproximado no ponto k
+    const nearIdx = findNearestStreamIdx(x);
+    const elapsedSecs = nearIdx * 15;
+    ctx.fillStyle = '#64748b';
+    ctx.font = '9px "JetBrains Mono", monospace';
+    ctx.fillText(formatAxisTime(elapsedSecs), x, padT + drawH + 30);
   }
 
+  // Altimetria
   if (telActiveLayers.alt && !isIndoor && validAltPts > 3 && (maxAlt - minAlt) >= 4) {
     ctx.save();
     const grad = ctx.createLinearGradient(0, padT + drawH * 0.35, 0, padT + drawH);
@@ -333,12 +502,12 @@ window.renderTelemetriaChart = async function() {
     grad.addColorStop(1, 'rgba(10, 14, 23, 0.04)');
 
     ctx.beginPath();
-    ctx.moveTo(getX(stream[0].km, 0), padT + drawH);
+    ctx.moveTo(xPositions[0], padT + drawH);
     stream.forEach((pt, idx) => {
       const a = (pt.alt !== null && pt.alt !== undefined) ? pt.alt : minAlt;
-      ctx.lineTo(getX(pt.km, idx), getYAlt(a));
+      ctx.lineTo(xPositions[idx], getYAlt(a));
     });
-    ctx.lineTo(getX(stream[stream.length - 1].km, stream.length - 1), padT + drawH);
+    ctx.lineTo(xPositions[stream.length - 1], padT + drawH);
     ctx.closePath();
     ctx.fillStyle = grad;
     ctx.fill();
@@ -346,7 +515,7 @@ window.renderTelemetriaChart = async function() {
     ctx.beginPath();
     stream.forEach((pt, idx) => {
       const a = (pt.alt !== null && pt.alt !== undefined) ? pt.alt : minAlt;
-      const x = getX(pt.km, idx), y = getYAlt(a);
+      const x = xPositions[idx], y = getYAlt(a);
       if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     });
     ctx.strokeStyle = 'rgba(203, 213, 225, 0.65)';
@@ -356,7 +525,7 @@ window.renderTelemetriaChart = async function() {
     ctx.fillStyle = '#cbd5e1';
     ctx.font = 'bold 10px "JetBrains Mono", monospace';
     ctx.textAlign = 'left';
-    ctx.fillText(`ALT: ${minAlt}m -> ${maxAlt}m (+${maxAlt - minAlt}m)`, padL + 8, padT + 14);
+    ctx.fillText(`ALT: ${Math.round(minAlt)}m -> ${Math.round(maxAlt)}m (+${Math.round(maxAlt - minAlt)}m)`, padL + 8, padT + 14);
     ctx.restore();
   }
 
@@ -368,7 +537,7 @@ window.renderTelemetriaChart = async function() {
     stream.forEach((pt, idx) => {
       const val = getterY(pt);
       if (val === null || isNaN(val)) return;
-      const x = getX(pt.km, idx);
+      const x = xPositions[idx];
       if (!started) { ctx.moveTo(x, val); started = true; }
       else ctx.lineTo(x, val);
     });
@@ -417,71 +586,203 @@ window.renderTelemetriaChart = async function() {
   if (telActiveLayers.pEst) {
     drawMetricCurve(pt => getYPwr(pt.pEst || 0), '#eab308', 2.0, false);
   }
-};
+
+  // Sobreposição visual do trecho selecionado
+  if (telSelection.startIdx !== null && telSelection.endIdx !== null && telSelection.endIdx > telSelection.startIdx) {
+    const x1 = xPositions[telSelection.startIdx];
+    const x2 = xPositions[telSelection.endIdx];
+    const selW = Math.max(2, x2 - x1);
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(16, 185, 129, 0.14)';
+    ctx.fillRect(x1, padT, selW, drawH);
+
+    // Bordas/Alças laterais
+    ctx.strokeStyle = '#34d399';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x1, padT); ctx.lineTo(x1, padT + drawH);
+    ctx.moveTo(x2, padT); ctx.lineTo(x2, padT + drawH);
+    ctx.stroke();
+
+    // Puxadores discretos no meio das bordas
+    ctx.fillStyle = '#34d399';
+    const midY = padT + drawH / 2;
+    ctx.fillRect(x1 - 3, midY - 14, 6, 28);
+    ctx.fillRect(x2 - 3, midY - 14, 6, 28);
+
+    // Rótulo do trecho no topo da seleção
+    const segSecs = (telSelection.endIdx - telSelection.startIdx) * 15;
+    const km1 = (stream[telSelection.startIdx].km || 0).toFixed(1);
+    const km2 = (stream[telSelection.endIdx].km || 0).toFixed(1);
+    const tag = `${km1}–${km2} km (${formatDurationShort(segSecs)})`;
+    ctx.font = 'bold 10px "JetBrains Mono", monospace';
+    const tw = ctx.measureText(tag).width + 12;
+    const tx = Math.max(padL + 2, Math.min(w - padR - tw - 2, x1 + selW / 2 - tw / 2));
+    ctx.fillStyle = 'rgba(10, 14, 23, 0.92)';
+    ctx.fillRect(tx, padT + 4, tw, 18);
+    ctx.strokeStyle = 'rgba(52, 211, 153, 0.6)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(tx, padT + 4, tw, 18);
+    ctx.fillStyle = '#34d399';
+    ctx.textAlign = 'center';
+    ctx.fillText(tag, tx + tw / 2, padT + 16);
+    ctx.restore();
+  }
+}
 
 function updateTelemetryAuditAndNeonCards(act, stream, isIndoor) {
   const auditBox = document.getElementById('telAuditCard');
   const kpiCol = document.getElementById('telNeonSidebarCards');
+  const gridEl = kpiCol ? kpiCol.closest('.telemetry-cockpit-grid') : null;
+
+  const hasSelection = Array.isArray(stream) &&
+    telSelection.startIdx !== null &&
+    telSelection.endIdx !== null &&
+    telSelection.endIdx > telSelection.startIdx &&
+    telSelection.endIdx < stream.length;
+
+  const slice = hasSelection
+    ? stream.slice(telSelection.startIdx, telSelection.endIdx + 1)
+    : (Array.isArray(stream) ? stream : []);
 
   const rm = act.realMetrics;
   const em = act.estMetrics || act.metrics;
   const m = rm || em || act.metrics || {};
   const hasReal = rm && rm.avgPwr > 15;
 
-  let sumCad = 0, cntCad = 0, sumWind = 0, cntWind = 0;
-  let sumReal = 0, sumEst = 0, movCnt = 0, sumAbsErr = 0;
+  let sumReal = 0, sumEst = 0, cntPwr = 0, sumPwr4 = 0, sumAbsErr = 0;
+  let sumHr = 0, cntHr = 0, maxHrSeg = 0;
+  let sumSpd = 0, cntSpd = 0, sumWind = 0, cntWind = 0;
+  let sumCad = 0, cntCad = 0;
   let climbDiffSum = 0, climbCnt = 0, flatDiffSum = 0, flatCnt = 0;
+  let altGain = 0, minAltSeg = Infinity, maxAltSeg = -Infinity;
 
-  if (Array.isArray(stream) && stream.length > 0) {
-    stream.forEach(pt => {
-      if (pt.cad > 20) { sumCad += pt.cad; cntCad++; }
-      if (!isIndoor && pt.wind !== null) { sumWind += pt.wind; cntWind++; }
-      if (pt.pReal > 20 || pt.pEst > 20) {
-        sumReal += pt.pReal;
-        sumEst += pt.pEst;
-        movCnt++;
-        sumAbsErr += Math.abs(pt.pEst - pt.pReal);
-        if (pt.grade >= 2.5) { climbDiffSum += (pt.pEst - pt.pReal); climbCnt++; }
-        else if (Math.abs(pt.grade) <= 1.5) { flatDiffSum += (pt.pEst - pt.pReal); flatCnt++; }
+  slice.forEach((pt, idx) => {
+    if (pt.pReal > 20 || pt.pEst > 20) {
+      sumReal += (pt.pReal || 0);
+      sumEst += (pt.pEst || 0);
+      const pRef = hasReal ? (pt.pReal || 0) : (pt.pEst || 0);
+      sumPwr4 += Math.pow(pRef, 4);
+      cntPwr++;
+      sumAbsErr += Math.abs((pt.pEst || 0) - (pt.pReal || 0));
+      if (pt.grade >= 2.5) { climbDiffSum += ((pt.pEst || 0) - (pt.pReal || 0)); climbCnt++; }
+      else if (Math.abs(pt.grade) <= 1.5) { flatDiffSum += ((pt.pEst || 0) - (pt.pReal || 0)); flatCnt++; }
+    }
+    if (pt.hr > 40) {
+      sumHr += pt.hr;
+      cntHr++;
+      if (pt.hr > maxHrSeg) maxHrSeg = pt.hr;
+    }
+    if (pt.spd !== null && pt.spd !== undefined && pt.spd > 0) { sumSpd += pt.spd; cntSpd++; }
+    if (!isIndoor && pt.wind !== null && pt.wind !== undefined) { sumWind += pt.wind; cntWind++; }
+    if (pt.cad > 20) { sumCad += pt.cad; cntCad++; }
+    if (pt.alt !== null && pt.alt !== undefined) {
+      if (pt.alt < minAltSeg) minAltSeg = pt.alt;
+      if (pt.alt > maxAltSeg) maxAltSeg = pt.alt;
+      if (idx > 0 && slice[idx - 1].alt !== null && slice[idx - 1].alt !== undefined) {
+        const diff = pt.alt - slice[idx - 1].alt;
+        if (diff > 0) altGain += diff;
       }
-    });
-  }
+    }
+  });
 
-  const realAvg = hasReal ? rm.avgPwr : 0;
-  const estAvg = movCnt > 0 ? Math.round(sumEst / movCnt) : (em?.avgPwr || 0);
+  const realAvg = hasSelection
+    ? (cntPwr > 0 ? Math.round(sumReal / cntPwr) : 0)
+    : (hasReal ? rm.avgPwr : 0);
+  const estAvg = cntPwr > 0 ? Math.round(sumEst / cntPwr) : (em?.avgPwr || 0);
   const displayPwr = hasReal ? realAvg : estAvg;
-  const displayNp = hasReal ? (rm.np || realAvg) : (em?.np || estAvg);
-  const displayHr = m.avgHr || 0;
-  const displaySpd = m.avgSpeed || '0.0';
-  const displayCad = cntCad > 0 ? Math.round(sumCad / cntCad) : (m.avgCad || 0);
+  const displayNp = hasSelection
+    ? (cntPwr > 0 ? Math.round(Math.pow(sumPwr4 / cntPwr, 0.25)) : displayPwr)
+    : (hasReal ? (rm.np || realAvg) : (em?.np || estAvg));
+  const displayHr = hasSelection
+    ? (cntHr > 0 ? Math.round(sumHr / cntHr) : 0)
+    : (m.avgHr || 0);
+  const displaySpd = hasSelection
+    ? (cntSpd > 0 ? (sumSpd / cntSpd).toFixed(1) : '0.0')
+    : (m.avgSpeed || '0.0');
+  const displayCad = cntCad > 0 ? Math.round(sumCad / cntCad) : (hasSelection ? 0 : (m.avgCad || 0));
   const avgWind = cntWind > 0 ? (sumWind / cntWind).toFixed(1) : '0.0';
 
+  const segDist = hasSelection
+    ? Math.max(0, (slice[slice.length - 1].km || 0) - (slice[0].km || 0)).toFixed(2)
+    : (m.distKm || '0.00');
+  const segSecs = hasSelection
+    ? (telSelection.endIdx - telSelection.startIdx) * 15
+    : (stream.length * 15);
+
   if (kpiCol) {
-    kpiCol.innerHTML = `
-      <div class="neon-kpi-card green">
-        <div class="neon-kpi-label">${hasReal ? 'POTÊNCIA REAL' : 'POTÊNCIA SIMULADA'}</div>
-        <div class="neon-kpi-main neon-green">${displayPwr} <span style="font-size:0.9rem;">W</span></div>
-        <div class="neon-kpi-sub">NP ${displayNp} W ${hasReal && estAvg > 0 ? `| Sim ${estAvg}W` : ''}</div>
-      </div>
+    const cards = [];
 
-      <div class="neon-kpi-card red">
-        <div class="neon-kpi-label">FREQ. CARDÍACA</div>
-        <div class="neon-kpi-main neon-red">${displayHr} <span style="font-size:0.9rem;">bpm</span></div>
-        <div class="neon-kpi-sub">VI: ${m.vi ? m.vi.toFixed(2) : '--'} | Drift: ${m.drift !== null && m.drift !== undefined ? m.drift.toFixed(1) + '%' : 'N/A'}</div>
-      </div>
+    if (hasSelection) {
+      cards.push(`
+        <div class="neon-kpi-card" style="border-left-color:#34d399; background:rgba(16,185,129,0.08);">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span class="neon-kpi-label" style="color:#34d399;">TRECHO SELECIONADO</span>
+            <button onclick="clearTelemetrySelection()" style="background:transparent; border:none; color:#94a3b8; font-size:0.7rem; cursor:pointer; font-weight:700;" title="Limpar seleção">✕</button>
+          </div>
+          <div class="neon-kpi-sub" style="color:#e2e8f0; font-weight:700; margin-top:2px;">${segDist} km &bull; ${formatDurationShort(segSecs)}</div>
+        </div>
+      `);
+    }
 
-      <div class="neon-kpi-card cyan">
-        <div class="neon-kpi-label">VELOCIDADE &amp; VENTO</div>
-        <div class="neon-kpi-main neon-cyan">${displaySpd} <span style="font-size:0.85rem;">km/h</span></div>
-        <div class="neon-kpi-sub">Vento Médio: ${avgWind > 0 ? '+' : ''}${avgWind} km/h</div>
-      </div>
+    if (telActiveLayers.pReal || telActiveLayers.pEst) {
+      cards.push(`
+        <div class="neon-kpi-card green">
+          <div class="neon-kpi-label">${hasReal && telActiveLayers.pReal ? 'POTÊNCIA REAL' : 'POTÊNCIA SIMULADA'}</div>
+          <div class="neon-kpi-main neon-green">${displayPwr} <span>W</span></div>
+          <div class="neon-kpi-sub">NP ${displayNp}W${hasReal && estAvg > 0 ? ` | Sim ${estAvg}W` : ''}</div>
+        </div>
+      `);
+    }
 
-      <div class="neon-kpi-card yellow">
-        <div class="neon-kpi-label">CADÊNCIA MÉDIA</div>
-        <div class="neon-kpi-main neon-yellow">${displayCad > 0 ? displayCad : '--'} <span style="font-size:0.9rem;">rpm</span></div>
-        <div class="neon-kpi-sub">Distância: ${m.distKm || '0.00'} km</div>
-      </div>
-    `;
+    if (telActiveLayers.hr) {
+      const hrSub = hasSelection
+        ? `Máx: ${maxHrSeg > 0 ? maxHrSeg + ' bpm' : '--'}`
+        : `VI: ${m.vi ? m.vi.toFixed(2) : '--'} | Drift: ${m.drift !== null && m.drift !== undefined ? m.drift.toFixed(1) + '%' : 'N/A'}`;
+      cards.push(`
+        <div class="neon-kpi-card red">
+          <div class="neon-kpi-label">FREQ. CARDÍACA</div>
+          <div class="neon-kpi-main neon-red">${displayHr} <span>bpm</span></div>
+          <div class="neon-kpi-sub">${hrSub}</div>
+        </div>
+      `);
+    }
+
+    if (telActiveLayers.spd || telActiveLayers.wind) {
+      cards.push(`
+        <div class="neon-kpi-card cyan">
+          <div class="neon-kpi-label">VELOCIDADE &amp; VENTO</div>
+          <div class="neon-kpi-main neon-cyan">${displaySpd} <span>km/h</span></div>
+          <div class="neon-kpi-sub">Vento: ${avgWind > 0 ? '+' : ''}${avgWind} km/h</div>
+        </div>
+      `);
+    }
+
+    if (telActiveLayers.cad) {
+      cards.push(`
+        <div class="neon-kpi-card yellow">
+          <div class="neon-kpi-label">CADÊNCIA MÉDIA</div>
+          <div class="neon-kpi-main neon-yellow">${displayCad > 0 ? displayCad : '--'} <span>rpm</span></div>
+          <div class="neon-kpi-sub">Dist: ${segDist} km</div>
+        </div>
+      `);
+    }
+
+    if (telActiveLayers.alt && !isIndoor && isFinite(minAltSeg)) {
+      cards.push(`
+        <div class="neon-kpi-card" style="border-left-color:#94a3b8;">
+          <div class="neon-kpi-label">ALTIMETRIA</div>
+          <div class="neon-kpi-main" style="color:#e2e8f0;">+${Math.round(altGain)} <span>m</span></div>
+          <div class="neon-kpi-sub">${Math.round(minAltSeg)}m &rarr; ${Math.round(maxAltSeg)}m</div>
+        </div>
+      `);
+    }
+
+    kpiCol.innerHTML = cards.join('');
+    if (gridEl) {
+      gridEl.classList.toggle('no-sidebar', cards.length === 0);
+    }
   }
 
   if (!auditBox) return;
@@ -498,14 +799,15 @@ function updateTelemetryAuditAndNeonCards(act, stream, isIndoor) {
 
   const diffW = estAvg - realAvg;
   const diffPct = realAvg > 0 ? ((diffW / realAvg) * 100).toFixed(1) : '0.0';
-  const mae = movCnt > 0 ? Math.round(sumAbsErr / movCnt) : Math.abs(diffW);
+  const mae = cntPwr > 0 ? Math.round(sumAbsErr / cntPwr) : Math.abs(diffW);
   const climbBias = climbCnt > 0 ? `${climbDiffSum >= 0 ? '+' : ''}${Math.round(climbDiffSum / climbCnt)}W` : 's/ rampa';
   const flatBias = flatCnt > 0 ? `${flatDiffSum >= 0 ? '+' : ''}${Math.round(flatDiffSum / flatCnt)}W` : `${diffW >= 0 ? '+' : ''}${diffW}W`;
   const biasColor = Math.abs(diffW) <= 12 ? '#10b981' : (Math.abs(diffW) <= 25 ? '#eab308' : '#ef4444');
+  const scopeLabel = hasSelection ? '<strong style="color:#34d399;">[TRECHO]</strong> ' : '';
 
   auditBox.innerHTML = `
     <span class="mono">
-      <strong>BIAS:</strong> <span style="color:${biasColor}; font-weight:700;">${diffW >= 0 ? '+' : ''}${diffW}W (${diffW >= 0 ? '+' : ''}${diffPct}%)</span> &bull;
+      ${scopeLabel}<strong>BIAS:</strong> <span style="color:${biasColor}; font-weight:700;">${diffW >= 0 ? '+' : ''}${diffW}W (${diffW >= 0 ? '+' : ''}${diffPct}%)</span> &bull;
       <strong>MAE (15s):</strong> &plusmn;${mae}W &bull;
       <strong>SUBIDAS:</strong> ${climbBias} &bull;
       <strong>PLANOS:</strong> ${flatBias}

@@ -95,7 +95,7 @@ body {
   width: 100%;
 }
 
-/* --- TOPBAR LIMPA (APENAS MARCA À ESQUERDA E OLÁ CRISTIANO + SAIR À DIREITA) --- */
+/* --- TOPBAR LIMPA --- */
 .topbar {
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border-subtle);
@@ -106,7 +106,7 @@ body {
   gap: 12px;
   position: sticky;
   top: 0;
-  z-index: 80;
+  z-index: 200;
 }
 
 .topbar-left {
@@ -132,7 +132,7 @@ body {
   gap: 8px;
 }
 
-/* --- MENU HOVER EM "OLÁ, CRISTIANO" --- */
+/* --- JANELA FLUTUANTE NO HOVER EM "OLÁ, CRISTIANO" --- */
 .user-hover-menu {
   position: relative;
   display: inline-block;
@@ -154,8 +154,7 @@ body {
   transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
 }
 
-.user-hover-menu:hover .user-menu-trigger,
-.user-hover-menu:focus-within .user-menu-trigger {
+.user-hover-menu:hover .user-menu-trigger {
   border-color: var(--neon-green);
   color: var(--neon-green-bright);
   background: var(--bg-elevated);
@@ -163,30 +162,20 @@ body {
 
 .user-dropdown-panel {
   display: none;
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  min-width: 245px;
-  background: var(--bg-surface);
+  position: fixed;
+  top: 46px;
+  right: 78px;
+  width: 245px;
+  background: rgba(10, 14, 23, 0.98);
+  backdrop-filter: blur(10px);
   border: 1px solid var(--border-accent);
   border-radius: 10px;
   padding: 6px;
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.75);
-  z-index: 120;
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.85);
+  z-index: 999;
 }
 
-/* Ponte invisível para não fechar o menu ao mover o mouse da trigger para o painel */
-.user-hover-menu::after {
-  content: '';
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  height: 8px;
-}
-
-.user-hover-menu:hover .user-dropdown-panel,
-.user-hover-menu:focus-within .user-dropdown-panel {
+.user-hover-menu:hover .user-dropdown-panel {
   display: block;
 }
 
@@ -204,7 +193,7 @@ body {
   font-size: 0.78rem;
   font-weight: 600;
   color: var(--text-primary);
-  cursor: default;
+  cursor: pointer;
   transition: background 0.15s ease;
 }
 
@@ -246,19 +235,19 @@ body {
   box-shadow: 0 0 8px var(--neon-green);
 }
 
-/* Submenu lateral esquerdo (em telas maiores) / abaixo (em telas estreitas) */
 .dropdown-submenu {
   display: none;
   position: absolute;
   top: 0;
-  right: calc(100% + 6px);
-  min-width: 215px;
-  background: var(--bg-card);
+  right: calc(100% + 8px);
+  min-width: 225px;
+  background: rgba(15, 21, 34, 0.99);
+  backdrop-filter: blur(10px);
   border: 1px solid var(--border-accent);
   border-radius: 10px;
   padding: 8px;
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.8);
-  z-index: 130;
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.88);
+  z-index: 1000;
 }
 
 .dropdown-branch::after {
@@ -267,7 +256,7 @@ body {
   top: 0;
   bottom: 0;
   right: 100%;
-  width: 8px;
+  width: 10px;
 }
 
 .dropdown-branch:hover > .dropdown-submenu {
@@ -315,7 +304,7 @@ body {
 }
 
 .aero-submenu {
-  min-width: 240px;
+  min-width: 245px;
 }
 
 .aero-menu-row {
@@ -849,6 +838,12 @@ body {
 @media (max-width: 720px) {
   .cockpit-tag {
     display: none;
+  }
+
+  .user-dropdown-panel {
+    right: 12px;
+    width: calc(100vw - 24px);
+    max-width: 280px;
   }
 
   .dropdown-submenu {

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>UPYOU | Telemetry Cockpit</title>
-  
+
   <!-- Fontes Modernas (Inter + JetBrains Mono para telemetria) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -12,7 +12,7 @@
 
   <!-- Biblioteca de Login do Google -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  
+
   <!-- Bibliotecas de Processamento ZIP -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
@@ -27,7 +27,7 @@
     <div class="login-card">
       <div class="brand-logo">UP<span>YOU</span></div>
       <div class="brand-sub">TELEMETRY COCKPIT &bull; PERFORMANCE INTELLIGENCE</div>
-      
+
       <div id="g_id_onload"
            data-client_id="731921508137-alvl8q48tpsvhp02531v1el2naia457g.apps.googleusercontent.com"
            data-context="signin"
@@ -35,7 +35,7 @@
            data-callback="handleCredentialResponse"
            data-auto_prompt="false">
       </div>
-      
+
       <div class="google-btn-wrapper">
         <div class="g_id_signin"
              data-type="standard"
@@ -51,113 +51,110 @@
 
   <!-- APLICAÇÃO PRINCIPAL (COCKPIT) -->
   <div id="mainApp" class="cockpit-shell" style="display: none;">
-    
-    <!-- BARRA SUPERIOR DE TELEMETRIA -->
+
+    <!-- LINHA SUPERIOR LIMPA: MARCA À ESQUERDA, MENU HOVER DO USUÁRIO + SAIR À DIREITA -->
     <header class="topbar">
       <div class="topbar-left">
         <div class="brand-logo small">UP<span>YOU</span></div>
         <span class="divider-v">|</span>
         <span class="cockpit-tag">TELEMETRY COCKPIT</span>
-        <span id="garminConnectedBadge" class="live-badge" style="display: none;">
-          <span class="pulse-dot"></span> GARMIN LINKED
-        </span>
       </div>
 
       <div class="topbar-right">
-        <div class="power-mode-pill" title="Fonte Global de Potência usada em todo o painel">
-          <span class="pill-label">FONTE:</span>
-          <select id="powerSourceSelect" onchange="updatePowerSourceMode(this.value)">
-            <option value="hybrid" selected>Híbrido (Real + Sim)</option>
-            <option value="real">Apenas Real (Sensor)</option>
-            <option value="simulated">100% Simulada</option>
-          </select>
+        <div class="user-hover-menu" tabindex="0">
+          <button type="button" class="user-menu-trigger" id="userGreetingBtn">
+            Olá, <span id="userGreeting">Cristiano</span> &#9662;
+          </button>
+
+          <div class="user-dropdown-panel">
+            <!-- Item 1: Garmin Linked (abre submenu no hover) -->
+            <div class="dropdown-branch">
+              <div class="dropdown-branch-trigger">
+                <span class="branch-left">
+                  <span id="garminConnectedBadge" class="live-badge" style="display: none;">
+                    <span class="pulse-dot"></span> GARMIN LINKED
+                  </span>
+                  <span id="garminStatusText" class="branch-title">Garmin Linked</span>
+                </span>
+                <span class="branch-arrow">&#9656;</span>
+              </div>
+
+              <div class="dropdown-submenu">
+                <button type="button" id="btnConnectGarmin" class="submenu-btn" onclick="connectGarminAccount()">
+                  Conectar Garmin
+                </button>
+                <button type="button" class="submenu-btn primary-text" onclick="syncWithGarminCloud()">
+                  &#8635; Sincronizar
+                </button>
+              </div>
+            </div>
+
+            <!-- Item 2: Equipamento & Aero (abre opções no hover) -->
+            <div class="dropdown-branch">
+              <div class="dropdown-branch-trigger">
+                <span class="branch-title">Equipamento &amp; Aero</span>
+                <span class="branch-arrow">&#9656;</span>
+              </div>
+
+              <div class="dropdown-submenu aero-submenu">
+                <div class="aero-menu-row">
+                  <label for="bikeTypeSelect">Bike</label>
+                  <select id="bikeTypeSelect" onchange="updatePowerEngineParams()">
+                    <option value="road" selected>Road</option>
+                    <option value="mtb">MTB</option>
+                  </select>
+                </div>
+
+                <div class="aero-menu-row">
+                  <label for="totalWeightInput">Peso Total</label>
+                  <div class="input-unit-compact">
+                    <input type="number" id="totalWeightInput" value="82" min="45" max="160" step="0.5" onchange="updatePowerEngineParams()">
+                    <span>kg</span>
+                  </div>
+                </div>
+
+                <div class="aero-menu-row">
+                  <label for="userHeightInput">Altura</label>
+                  <div class="input-unit-compact">
+                    <input type="number" id="userHeightInput" value="175" min="130" max="220" step="1" onchange="updatePowerEngineParams()">
+                    <span>cm</span>
+                  </div>
+                </div>
+
+                <div class="aero-menu-row">
+                  <label for="maxHrInput">FC Máx</label>
+                  <div class="input-unit-compact">
+                    <input type="number" id="maxHrInput" value="187" min="120" max="230" onchange="updateUserMaxHr(this.value)">
+                    <span>bpm</span>
+                  </div>
+                </div>
+
+                <div class="aero-menu-footer">
+                  <span id="headerAreaBadge">0.410 m² | CdA 0.328</span>
+                  <button type="button" id="btnFrontalArea" class="btn-aero-mini" onclick="openFrontalAreaModal()" title="Medir Área Frontal por Foto">&#128208; Foto</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="dropdown-divider"></div>
+
+            <!-- Ações de dados compactas no menu -->
+            <button type="button" class="submenu-btn" onclick="document.getElementById('zipInput').click()">
+              + Importar ZIP Strava
+            </button>
+            <button type="button" class="submenu-btn danger-text" onclick="clearLocalDatabase()">
+              Limpar Banco Local
+            </button>
+          </div>
         </div>
 
-        <button id="btnConnectGarmin" class="btn-cockpit outline" onclick="connectGarminAccount()">Conectar Garmin</button>
-        <button class="btn-cockpit primary" onclick="syncWithGarminCloud()">&#8635; Sincronizar</button>
-        <span class="user-pill" id="userGreeting">Ciclista</span>
-        <button class="btn-cockpit ghost" onclick="logout()">Sair</button>
+        <button type="button" class="btn-cockpit ghost" onclick="logout()">Sair</button>
       </div>
     </header>
 
-    <!-- FAIXA SUPERIOR COMPACTA: EQUIPAMENTO & AERO + ACESSO RÁPIDO (VERSÃO 1) -->
-    <section class="top-control-deck">
-      
-      <!-- 1. EQUIPAMENTO & AERO (HORIZONTAL COMPACTO) -->
-      <div class="aero-strip-bar">
-        <div class="strip-label">EQUIPAMENTO &amp; AERO</div>
-        <div class="aero-strip-fields">
-          <div class="aero-item">
-            <label>Bike</label>
-            <select id="bikeTypeSelect" onchange="updatePowerEngineParams()">
-              <option value="road" selected>Road</option>
-              <option value="mtb">MTB</option>
-            </select>
-          </div>
-
-          <div class="aero-item">
-            <label>Peso Total</label>
-            <div class="input-unit-compact">
-              <input type="number" id="totalWeightInput" value="82" min="45" max="160" step="0.5" onchange="updatePowerEngineParams()">
-              <span>kg</span>
-            </div>
-          </div>
-
-          <div class="aero-item">
-            <label>Altura</label>
-            <div class="input-unit-compact">
-              <input type="number" id="userHeightInput" value="175" min="130" max="220" step="1" onchange="updatePowerEngineParams()">
-              <span>cm</span>
-            </div>
-          </div>
-
-          <div class="aero-item">
-            <label>FC Máx</label>
-            <div class="input-unit-compact">
-              <input type="number" id="maxHrInput" value="187" min="120" max="230" onchange="updateUserMaxHr(this.value)">
-              <span>bpm</span>
-            </div>
-          </div>
-
-          <div class="aero-item aero-badge-item">
-            <label>CdA / Área</label>
-            <div class="aero-compact-readout">
-              <span id="headerAreaBadge">0.410 m² | CdA 0.328</span>
-              <button id="btnFrontalArea" class="btn-aero-mini" onclick="openFrontalAreaModal()" title="Medir Área Frontal por Foto">&#128208; Foto</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 2. ACESSO RÁPIDO & AÇÕES DE DADOS (HORIZONTAL) -->
-      <div class="quick-access-strip">
-        <div class="quick-nav-group">
-          <span class="strip-label inline">ACESSO RÁPIDO</span>
-          <button class="quick-pill-btn active" data-tab="tableTab" onclick="triggerNavByTab('tableTab')">
-            <span class="nav-ico">&#9776;</span> Histórico
-          </button>
-          <button class="quick-pill-btn" data-tab="telemetriaTab" onclick="triggerNavByTab('telemetriaTab')">
-            <span class="nav-ico">&#9889;</span> Telemetria 15s
-          </button>
-          <button class="quick-pill-btn" data-tab="curvaPotenciaTab" onclick="triggerNavByTab('curvaPotenciaTab')">
-            <span class="nav-ico">&#128200;</span> Curva Potência
-          </button>
-          <button class="quick-pill-btn" data-tab="ftpTab" onclick="triggerNavByTab('ftpTab')">
-            <span class="nav-ico">&#127942;</span> Evolução FTP
-          </button>
-        </div>
-
-        <div class="quick-data-actions">
-          <button class="btn-cockpit outline sm" onclick="document.getElementById('zipInput').click()">+ Importar ZIP</button>
-          <button class="btn-cockpit danger sm" onclick="clearLocalDatabase()">Limpar Banco</button>
-        </div>
-      </div>
-
-    </section>
-
     <!-- ÁREA CENTRAL DE TRABALHO (100% LARGURA) -->
     <main class="cockpit-main">
-      
+
       <div class="upload-area" id="uploadArea" onclick="document.getElementById('zipInput').click()">
         <p>Ainda não há dados locais ou na nuvem para a sua conta. Conecte o seu Garmin acima ou carregue o histórico do Strava.</p>
         <span class="btn-cockpit primary">Carregar ZIP do Strava</span>
@@ -165,7 +162,7 @@
       </div>
 
       <div id="statusMsg" class="status-toast"></div>
-      
+
       <div id="progressArea" class="progress-panel" style="display:none;">
         <h3>A processar telemetria histórica...</h3>
         <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
@@ -176,7 +173,7 @@
       <div id="detailArea" class="detail-panel" style="display:none; background:#0a0e17; border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:18px; margin-bottom:16px;">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:12px; margin-bottom:14px;">
           <h2 id="actTitle" style="font-size:1.05rem; color:#34d399; margin:0;">Detalhes da Atividade</h2>
-          <button class="btn-cockpit outline" onclick="showSummary()">&larr; Voltar para a Lista</button>
+          <button type="button" class="btn-cockpit outline" onclick="showSummary()">&larr; Voltar para a Lista</button>
         </div>
         <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:10px; margin-bottom:14px;">
           <div class="neon-kpi-card green"><div class="neon-kpi-label">POTÊNCIA MÉDIA</div><div class="neon-kpi-main neon-green" id="avgPwr">--</div></div>
@@ -195,22 +192,34 @@
       </div>
 
       <div id="summaryArea">
-        <!-- BARRA DE NAVEGAÇÃO HORIZONTAL LIMPA -->
-        <nav class="nav-tabs">
-          <button class="tab-btn active" data-tab="tableTab" onclick="switchDashboardTab('tableTab', this)">As Suas Pedaladas</button>
-          <button class="tab-btn" data-tab="telemetriaTab" onclick="switchDashboardTab('telemetriaTab', this)">Telemetria &amp; Calibração</button>
-          <button class="tab-btn" data-tab="curvaPotenciaTab" onclick="switchDashboardTab('curvaPotenciaTab', this)">Curva de Potência</button>
-          <button class="tab-btn" data-tab="ftpTab" onclick="switchDashboardTab('ftpTab', this)">Evolução de FTP</button>
-          <button class="tab-btn" data-tab="zonesTab" onclick="switchDashboardTab('zonesTab', this)">Assinatura Cardíaca</button>
-          <button class="tab-btn" data-tab="pwrTimeTab" onclick="switchDashboardTab('pwrTimeTab', this)">Tempo/Zona (W)</button>
-          <button class="tab-btn" data-tab="hrTimeTab" onclick="switchDashboardTab('hrTimeTab', this)">Tempo/Zona (FC)</button>
-          <button class="tab-btn" data-tab="driftChartTab" onclick="switchDashboardTab('driftChartTab', this)">Cardiac Drift</button>
-          <button class="tab-btn" data-tab="viChartTab" onclick="switchDashboardTab('viChartTab', this)">Variabilidade (VI)</button>
-          <button class="tab-btn" data-tab="structureVolTab" onclick="switchDashboardTab('structureVolTab', this)">Volume Estrutura</button>
-          <button class="tab-btn" data-tab="eficienciaTab" onclick="switchDashboardTab('eficienciaTab', this)">Eficiência (Pa:Hr)</button>
-          <button class="tab-btn" data-tab="dispersaoTab" onclick="switchDashboardTab('dispersaoTab', this)">Dispersão W vs BPM</button>
-          <button class="tab-btn" data-tab="isoPotenciaTab" onclick="switchDashboardTab('isoPotenciaTab', this)">Iso-Potência</button>
+        <!-- BARRA DE NAVEGAÇÃO DE TABS COM AUTO-AJUSTE POR FREQUÊNCIA DE ACESSO -->
+        <nav class="nav-tabs" id="dashboardNavTabs">
+          <button type="button" class="tab-btn active" data-tab="tableTab" onclick="switchDashboardTab('tableTab', this)">As Suas Pedaladas</button>
+          <button type="button" class="tab-btn" data-tab="telemetriaTab" onclick="switchDashboardTab('telemetriaTab', this)">Telemetria &amp; Calibração</button>
+          <button type="button" class="tab-btn" data-tab="curvaPotenciaTab" onclick="switchDashboardTab('curvaPotenciaTab', this)">Curva de Potência</button>
+          <button type="button" class="tab-btn" data-tab="ftpTab" onclick="switchDashboardTab('ftpTab', this)">Evolução de FTP</button>
+          <button type="button" class="tab-btn" data-tab="zonesTab" onclick="switchDashboardTab('zonesTab', this)">Assinatura Cardíaca</button>
+          <button type="button" class="tab-btn" data-tab="pwrTimeTab" onclick="switchDashboardTab('pwrTimeTab', this)">Tempo/Zona (W)</button>
+          <button type="button" class="tab-btn" data-tab="hrTimeTab" onclick="switchDashboardTab('hrTimeTab', this)">Tempo/Zona (FC)</button>
+          <button type="button" class="tab-btn" data-tab="driftChartTab" onclick="switchDashboardTab('driftChartTab', this)">Cardiac Drift</button>
+          <button type="button" class="tab-btn" data-tab="viChartTab" onclick="switchDashboardTab('viChartTab', this)">Variabilidade (VI)</button>
+          <button type="button" class="tab-btn" data-tab="structureVolTab" onclick="switchDashboardTab('structureVolTab', this)">Volume Estrutura</button>
+          <button type="button" class="tab-btn" data-tab="eficienciaTab" onclick="switchDashboardTab('eficienciaTab', this)">Eficiência (Pa:Hr)</button>
+          <button type="button" class="tab-btn" data-tab="dispersaoTab" onclick="switchDashboardTab('dispersaoTab', this)">Dispersão W vs BPM</button>
+          <button type="button" class="tab-btn" data-tab="isoPotenciaTab" onclick="switchDashboardTab('isoPotenciaTab', this)">Iso-Potência</button>
         </nav>
+
+        <!-- POSIÇÃO PRIVILEGIADA ACIMA DO GRÁFICO / CONTEÚDO, À ESQUERDA: SELETOR DE FONTE DE DADOS -->
+        <div class="chart-top-source-bar" id="chartTopSourceBar">
+          <div class="power-mode-pill privileged" title="Fonte Global de Potência usada em todo o painel">
+            <span class="pill-label">FONTE:</span>
+            <select id="powerSourceSelect" onchange="updatePowerSourceMode(this.value)">
+              <option value="hybrid" selected>Híbrido (Real + Sim)</option>
+              <option value="real">Apenas Real (Sensor)</option>
+              <option value="simulated">100% Simulada</option>
+            </select>
+          </div>
+        </div>
 
         <!-- TAB 1: TABELA DE ATIVIDADES -->
         <div id="tableTab" class="tab-panel" style="display: block;">
@@ -231,8 +240,8 @@
               <p class="panel-sub">Sobreposição de Potência Real, Simulada, FC, Cadência, Velocidade e Vento sobre o perfil altimétrico.</p>
             </div>
             <div class="panel-actions">
-              <button class="btn-cockpit primary" onclick="runHistoricalAutoCalibration()">&#127919; Auto-Calibrar Motor</button>
-              <button class="btn-cockpit outline" onclick="resetCalibrationToDefault()">&#8634; Resetar</button>
+              <button type="button" class="btn-cockpit primary" onclick="runHistoricalAutoCalibration()">&#127919; Auto-Calibrar Motor</button>
+              <button type="button" class="btn-cockpit outline" onclick="resetCalibrationToDefault()">&#8634; Resetar</button>
             </div>
           </div>
 
@@ -386,7 +395,7 @@
           <div class="chart-box"><canvas id="structureVolCanvas" style="height: 390px;"></canvas></div>
         </div>
 
-        <!-- TAB 11: EFICIÊNCIA (COM CHECKBOXES DE ZONAS RESTAURADOS) -->
+        <!-- TAB 11: EFICIÊNCIA -->
         <div id="eficienciaTab" class="tab-panel dynamic-tab" style="display: none;">
           <div class="panel-header">
             <div>
@@ -409,7 +418,7 @@
           <div class="chart-box"><canvas id="eficienciaCanvas" style="height: 390px;"></canvas></div>
         </div>
 
-        <!-- TAB 12: DISPERSÃO W vs BPM (COM CONTROLES E SLIDER RESTAURADOS) -->
+        <!-- TAB 12: DISPERSÃO W vs BPM -->
         <div id="dispersaoTab" class="tab-panel dynamic-tab" style="display: none;">
           <div class="panel-header">
             <div>
@@ -462,7 +471,7 @@
           </div>
         </div>
 
-        <!-- TAB 13: ISO-POTÊNCIA (COM CONTROLES DE 3 POTÊNCIAS RESTAURADOS) -->
+        <!-- TAB 13: ISO-POTÊNCIA -->
         <div id="isoPotenciaTab" class="tab-panel dynamic-tab" style="display: none;">
           <div class="panel-header">
             <div>

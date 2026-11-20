@@ -402,8 +402,6 @@ window.renderTelemetriaChart = async function() {
     labelEl.innerText = `[#${currentTelRideIndex + 1}/${dbActivities.length}] ${act.date} — ${act.name} (${distTxt})${modeTag}`;
   }
 
-  updateTelemetryAuditAndNeonCards(act, stream, isIndoor, stepSecs);
-
   telRenderMeta = { act, stream, isIndoor, stepSecs };
   drawTelemetryFrame();
 };
@@ -414,14 +412,17 @@ function drawTelemetryFrame() {
 
   const canvas = document.getElementById('telemetriaCanvas');
   if (!canvas) return;
+
+  // Atualiza cards/sidebar primeiro para medir a largura exata do container
+  updateTelemetryAuditAndNeonCards(act, stream, isIndoor, stepSecs);
+
   const ctx = canvas.getContext('2d');
-  const w = canvas.offsetWidth || 860, h = 420;
+  const containerW = canvas.parentElement ? (canvas.parentElement.clientWidth - 24) : 860;
+  const w = Math.max(320, containerW), h = 420;
   const padL = 56, padR = 64, padT = 28, padB = 50;
   canvas.width = w;
   canvas.height = h;
   ctx.clearRect(0, 0, w, h);
-
-  updateTelemetryAuditAndNeonCards(act, stream, isIndoor, stepSecs);
 
   if (!stream || stream.length < 2) {
     ctx.fillStyle = '#64748b';

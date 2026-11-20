@@ -1,4 +1,4 @@
-// Aba: Telemetria Multi-Camadas Matrix Neon Precision (Seleção Interativa, Eixo Tempo+Km, Cards Dinâmicos)
+// Aba: Telemetria Multi-Camadas Matrix Neon Precision (Seleção Interativa + Arraste, Eixo Tempo+Km, Resolução Dinâmica 5s/15s)
 
 const TEL_LAYERS_STORAGE_KEY = 'upyou_telemetry_layers_v2';
 
@@ -14,7 +14,7 @@ let telActiveLayers = {
 
 let currentTelRideIndex = -1;
 let telSelection = { startIdx: null, endIdx: null };
-let telDragState = { mode: null, anchorIdx: null };
+let telDragState = { mode: null, anchorIdx: null, dragStartIdx: null, origStart: null, origEnd: null };
 let telRenderMeta = null;
 
 const LAYER_META = [
@@ -43,6 +43,21 @@ function saveTelemetryLayers() {
   } catch (e) {}
 }
 
+function getStreamStepSecs(stream) {
+  if (!Array.isArray(stream) || stream.length < 2) return 15;
+  const diffs = [];
+  const limit = Math.min(stream.length - 1, 12);
+  for (let i = 0; i < limit; i++) {
+    if (stream[i + 1].sec !== undefined && stream[i].sec !== undefined) {
+      const d = stream[i + 1].sec - stream[i].sec;
+      if (d > 0 && d <= 30) diffs.push(d);
+    }
+  }
+  if (diffs.length === 0) return 15;
+  diffs.sort((a, b) => a - b);
+  return Math.round(diffs[Math.floor(diffs.length / 2)]);
+}
+
 function formatDurationShort(totalSecs) {
   const s = Math.max(0, Math.round(totalSecs));
   const h = Math.floor(s / 3600);
@@ -62,7 +77,7 @@ function formatAxisTime(totalSecs) {
 
 function clearTelSelection() {
   telSelection = { startIdx: null, endIdx: null };
-  telDragState = { mode: null, anchorIdx: null };
+  telDragState = { mode: null, anchorIdx: null, dragStartIdx: null, origStart: null, origEnd: null };
 }
 
 window.clearTelemetrySelection = function() {
@@ -194,10 +209,11 @@ function attachTelemetryCanvasInteractions(canvas) {
     const { padL, padT, drawW, drawH, xPositions } = telRenderMeta;
     if (x < padL || x > padL + drawW || y < padT || y > padT + drawH) return;
 
-    // Verifica se clicou nas bordas da seleção atual para redimensionar
-    if (telSelection.startIdx !== null && telSelection.endIdx !== null) {
+    if (telSelection.startIdx !== null && telSelection.endIdx !== null && telSelection.endIdx > telSelection.startIdx) {
       const x1 = xPositions[telSelection.startIdx];
       const x2 = xPositions[telSelection.endIdx];
+
+      // 1) Redimensionar bordas
       if (Math.abs(x - x1) <= 9) {
         telDragState = { mode: 'resize-left', anchorIdx: telSelection.endIdx };
         return;
@@ -206,9 +222,21 @@ function attachTelemetryCanvasInteractions(canvas) {
         telDragState = { mode: 'resize-right', anchorIdx: telSelection.startIdx };
         return;
       }
+
+      // 2) Mover seleção inteira para os lados
+      if (x > x1 + 9 && x < x2 - 9) {
+        telDragState = {
+          mode: 'move',
+          dragStartIdx: findNearestStreamIdx(x),
+          origStart: telSelection.startIdx,
+          origEnd: telSelection.endIdx
+        };
+        canvas.style.cursor = 'grabbing';
+        return;
+      }
     }
 
-    // Inicia nova seleção
+    // 3) Nova seleção
     const idx = findNearestStreamIdx(x);
     telDragState = { mode: 'new', anchorIdx: idx };
     telSelection = { startIdx: idx, endIdx: idx };
@@ -217,15 +245,19 @@ function attachTelemetryCanvasInteractions(canvas) {
   canvas.addEventListener('mousemove', (e) => {
     if (!telRenderMeta || !telRenderMeta.stream || telRenderMeta.stream.length < 2) return;
     const { x, y } = getCanvasMousePos(canvas, e);
-    const { padL, padT, drawW, drawH, xPositions } = telRenderMeta;
+    const { padL, padT, drawW, drawH, xPositions, stream } = telRenderMeta;
 
     if (!telDragState.mode) {
       if (x >= padL && x <= padL + drawW && y >= padT && y <= padT + drawH) {
-        if (telSelection.startIdx !== null && telSelection.endIdx !== null) {
+        if (telSelection.startIdx !== null && telSelection.endIdx !== null && telSelection.endIdx > telSelection.startIdx) {
           const x1 = xPositions[telSelection.startIdx];
           const x2 = xPositions[telSelection.endIdx];
           if (Math.abs(x - x1) <= 9 || Math.abs(x - x2) <= 9) {
             canvas.style.cursor = 'ew-resize';
+            return;
+          }
+          if (x > x1 + 9 && x < x2 - 9) {
+            canvas.style.cursor = 'grab';
             return;
           }
         }
@@ -239,7 +271,17 @@ function attachTelemetryCanvasInteractions(canvas) {
     const clampedX = Math.max(padL, Math.min(padL + drawW, x));
     const idx = findNearestStreamIdx(clampedX);
 
-    if (telDragState.mode === 'new' || telDragState.mode === 'resize-left' || telDragState.mode === 'resize-right') {
+    if (telDragState.mode === 'move') {
+      canvas.style.cursor = 'grabbing';
+      const delta = idx - telDragState.dragStartIdx;
+      const span = telDragState.origEnd - telDragState.origStart;
+      let newStart = telDragState.origStart + delta;
+      if (newStart < 0) newStart = 0;
+      if (newStart + span >= stream.length) newStart = stream.length - 1 - span;
+      telSelection.startIdx = newStart;
+      telSelection.endIdx = newStart + span;
+      drawTelemetryFrame();
+    } else if (telDragState.mode === 'new' || telDragState.mode === 'resize-left' || telDragState.mode === 'resize-right') {
       const a = telDragState.anchorIdx;
       telSelection.startIdx = Math.min(a, idx);
       telSelection.endIdx = Math.max(a, idx);
@@ -250,12 +292,12 @@ function attachTelemetryCanvasInteractions(canvas) {
   window.addEventListener('mouseup', () => {
     if (!telDragState.mode) return;
     const mode = telDragState.mode;
-    telDragState = { mode: null, anchorIdx: null };
+    telDragState = { mode: null, anchorIdx: null, dragStartIdx: null, origStart: null, origEnd: null };
 
-    // Clique simples sem arrastar limpa a seleção
     if (mode === 'new' && telSelection.startIdx === telSelection.endIdx) {
       clearTelSelection();
     }
+    canvas.style.cursor = 'default';
     drawTelemetryFrame();
   });
 }
@@ -351,6 +393,7 @@ window.renderTelemetriaChart = async function() {
 
   const stream = getSanitizedStream(act);
   const isIndoor = stream.length > 0 && stream[0].indoor;
+  const stepSecs = getStreamStepSecs(stream);
 
   const labelEl = document.getElementById('telSliderLabel');
   if (labelEl) {
@@ -359,16 +402,15 @@ window.renderTelemetriaChart = async function() {
     labelEl.innerText = `[#${currentTelRideIndex + 1}/${dbActivities.length}] ${act.date} — ${act.name} (${distTxt})${modeTag}`;
   }
 
-  // Atualiza layout da coluna lateral antes de medir largura do canvas
-  updateTelemetryAuditAndNeonCards(act, stream, isIndoor);
+  updateTelemetryAuditAndNeonCards(act, stream, isIndoor, stepSecs);
 
-  telRenderMeta = { act, stream, isIndoor };
+  telRenderMeta = { act, stream, isIndoor, stepSecs };
   drawTelemetryFrame();
 };
 
 function drawTelemetryFrame() {
   if (!telRenderMeta) return;
-  const { act, stream, isIndoor } = telRenderMeta;
+  const { act, stream, isIndoor, stepSecs } = telRenderMeta;
 
   const canvas = document.getElementById('telemetriaCanvas');
   if (!canvas) return;
@@ -379,7 +421,7 @@ function drawTelemetryFrame() {
   canvas.height = h;
   ctx.clearRect(0, 0, w, h);
 
-  updateTelemetryAuditAndNeonCards(act, stream, isIndoor);
+  updateTelemetryAuditAndNeonCards(act, stream, isIndoor, stepSecs);
 
   if (!stream || stream.length < 2) {
     ctx.fillStyle = '#64748b';
@@ -486,9 +528,9 @@ function drawTelemetryFrame() {
     ctx.font = '10px "JetBrains Mono", monospace';
     ctx.fillText(`${k} km`, x, padT + drawH + 16);
 
-    // Tempo aproximado no ponto k
     const nearIdx = findNearestStreamIdx(x);
-    const elapsedSecs = nearIdx * 15;
+    const pt = stream[nearIdx];
+    const elapsedSecs = (pt && pt.sec !== undefined) ? pt.sec : nearIdx * stepSecs;
     ctx.fillStyle = '#64748b';
     ctx.font = '9px "JetBrains Mono", monospace';
     ctx.fillText(formatAxisTime(elapsedSecs), x, padT + drawH + 30);
@@ -611,10 +653,14 @@ function drawTelemetryFrame() {
     ctx.fillRect(x1 - 3, midY - 14, 6, 28);
     ctx.fillRect(x2 - 3, midY - 14, 6, 28);
 
-    // Rótulo do trecho no topo da seleção
-    const segSecs = (telSelection.endIdx - telSelection.startIdx) * 15;
-    const km1 = (stream[telSelection.startIdx].km || 0).toFixed(1);
-    const km2 = (stream[telSelection.endIdx].km || 0).toFixed(1);
+    const pStart = stream[telSelection.startIdx];
+    const pEnd = stream[telSelection.endIdx];
+    const segSecs = (pStart.sec !== undefined && pEnd.sec !== undefined && pEnd.sec > pStart.sec)
+      ? (pEnd.sec - pStart.sec)
+      : (telSelection.endIdx - telSelection.startIdx) * stepSecs;
+
+    const km1 = (pStart.km || 0).toFixed(1);
+    const km2 = (pEnd.km || 0).toFixed(1);
     const tag = `${km1}–${km2} km (${formatDurationShort(segSecs)})`;
     ctx.font = 'bold 10px "JetBrains Mono", monospace';
     const tw = ctx.measureText(tag).width + 12;
@@ -631,7 +677,7 @@ function drawTelemetryFrame() {
   }
 }
 
-function updateTelemetryAuditAndNeonCards(act, stream, isIndoor) {
+function updateTelemetryAuditAndNeonCards(act, stream, isIndoor, stepSecs = 15) {
   const auditBox = document.getElementById('telAuditCard');
   const kpiCol = document.getElementById('telNeonSidebarCards');
   const gridEl = kpiCol ? kpiCol.closest('.telemetry-cockpit-grid') : null;
@@ -708,8 +754,10 @@ function updateTelemetryAuditAndNeonCards(act, stream, isIndoor) {
     ? Math.max(0, (slice[slice.length - 1].km || 0) - (slice[0].km || 0)).toFixed(2)
     : (m.distKm || '0.00');
   const segSecs = hasSelection
-    ? (telSelection.endIdx - telSelection.startIdx) * 15
-    : (stream.length * 15);
+    ? ((slice[0].sec !== undefined && slice[slice.length - 1].sec !== undefined && slice[slice.length - 1].sec > slice[0].sec)
+      ? (slice[slice.length - 1].sec - slice[0].sec)
+      : (telSelection.endIdx - telSelection.startIdx) * stepSecs)
+    : (stream.length > 0 && stream[stream.length - 1].sec ? stream[stream.length - 1].sec : stream.length * stepSecs);
 
   if (kpiCol) {
     const cards = [];
@@ -808,7 +856,7 @@ function updateTelemetryAuditAndNeonCards(act, stream, isIndoor) {
   auditBox.innerHTML = `
     <span class="mono">
       ${scopeLabel}<strong>BIAS:</strong> <span style="color:${biasColor}; font-weight:700;">${diffW >= 0 ? '+' : ''}${diffW}W (${diffW >= 0 ? '+' : ''}${diffPct}%)</span> &bull;
-      <strong>MAE (15s):</strong> &plusmn;${mae}W &bull;
+      <strong>MAE (${stepSecs}s):</strong> &plusmn;${mae}W &bull;
       <strong>SUBIDAS:</strong> ${climbBias} &bull;
       <strong>PLANOS:</strong> ${flatBias}
     </span>

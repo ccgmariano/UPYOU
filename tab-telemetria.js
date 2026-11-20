@@ -1,4 +1,4 @@
-// Aba: Telemetria Multi-Camadas Matrix Neon Precision (Seleção Interativa + Arraste, Eixo Tempo+Km, Resolução Dinâmica 5s/15s)
+// Aba: Telemetria Multi-Camadas Matrix Neon Precision (Seleção Mouse + Toque Mobile, Eixo Tempo+Km, Resolução Dinâmica 5s/15s)
 
 const TEL_LAYERS_STORAGE_KEY = 'upyou_telemetry_layers_v2';
 
@@ -14,8 +14,9 @@ let telActiveLayers = {
 
 let currentTelRideIndex = -1;
 let telSelection = { startIdx: null, endIdx: null };
-let telDragState = { mode: null, anchorIdx: null, dragStartIdx: null, origStart: null, origEnd: null };
+let telDragState = { mode: null, anchorIdx: null, dragStartIdx: null, origStart: null, origEnd: null, pointerId: null };
 let telRenderMeta = null;
+let telTouchSelectMode = false;
 
 const LAYER_META = [
   { key: 'alt', label: 'Altimetria (m)', color: '#94a3b8' },
@@ -77,7 +78,7 @@ function formatAxisTime(totalSecs) {
 
 function clearTelSelection() {
   telSelection = { startIdx: null, endIdx: null };
-  telDragState = { mode: null, anchorIdx: null, dragStartIdx: null, origStart: null, origEnd: null };
+  telDragState = { mode: null, anchorIdx: null, dragStartIdx: null, origStart: null, origEnd: null, pointerId: null };
 }
 
 window.clearTelemetrySelection = function() {
@@ -85,9 +86,22 @@ window.clearTelemetrySelection = function() {
   renderTelemetriaChart();
 };
 
+window.toggleTelTouchSelectMode = function() {
+  telTouchSelectMode = !telTouchSelectMode;
+  const canvas = document.getElementById('telemetriaCanvas');
+  if (canvas) {
+    canvas.style.touchAction = telTouchSelectMode ? 'none' : 'pan-y';
+  }
+  renderTelemetryLayerButtons();
+};
+
 function renderTelemetryLayerButtons() {
   const container = document.getElementById('telLayerButtons');
   if (!container) return;
+
+  const touchBtnBg = telTouchSelectMode ? 'rgba(16, 185, 129, 0.22)' : '#05070b';
+  const touchBtnBorder = telTouchSelectMode ? '#34d399' : 'rgba(255,255,255,0.14)';
+  const touchBtnColor = telTouchSelectMode ? '#34d399' : '#94a3b8';
 
   container.innerHTML = `<span class="pill-label">CAMADAS:</span>` +
     LAYER_META.map(l => {
@@ -102,7 +116,12 @@ function renderTelemetryLayerButtons() {
           ${l.label}
         </button>
       `;
-    }).join('');
+    }).join('') +
+    `
+      <button onclick="toggleTelTouchSelectMode()" style="background: ${touchBtnBg}; color: ${touchBtnColor}; border: 1px solid ${touchBtnBorder}; padding: 5px 11px; border-radius: 20px; font-size: 0.74rem; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; margin-left: 6px;">
+        &#9986; ${telTouchSelectMode ? 'Seleção Toque: ON' : 'Selecionar (Celular)'}
+      </button>
+    `;
 }
 
 window.toggleTelemetryLayer = function(key) {
@@ -191,7 +210,7 @@ function findNearestStreamIdx(mouseX) {
   return bestIdx;
 }
 
-function getCanvasMousePos(canvas, evt) {
+function getCanvasPointerPos(canvas, evt) {
   const rect = canvas.getBoundingClientRect();
   return {
     x: evt.clientX - rect.left,
@@ -202,34 +221,43 @@ function getCanvasMousePos(canvas, evt) {
 function attachTelemetryCanvasInteractions(canvas) {
   if (!canvas || canvas._telSelectionBound) return;
   canvas._telSelectionBound = true;
+  canvas.style.touchAction = telTouchSelectMode ? 'none' : 'pan-y';
 
-  canvas.addEventListener('mousedown', (e) => {
+  canvas.addEventListener('pointerdown', (e) => {
     if (!telRenderMeta || !telRenderMeta.stream || telRenderMeta.stream.length < 2) return;
-    const { x, y } = getCanvasMousePos(canvas, e);
+    // No celular/toque, só captura seleção quando o modo seleção estiver ligado
+    if (e.pointerType === 'touch' && !telTouchSelectMode) return;
+
+    const { x, y } = getCanvasPointerPos(canvas, e);
     const { padL, padT, drawW, drawH, xPositions } = telRenderMeta;
     if (x < padL || x > padL + drawW || y < padT || y > padT + drawH) return;
+
+    const hitTol = e.pointerType === 'touch' ? 22 : 9;
+
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
 
     if (telSelection.startIdx !== null && telSelection.endIdx !== null && telSelection.endIdx > telSelection.startIdx) {
       const x1 = xPositions[telSelection.startIdx];
       const x2 = xPositions[telSelection.endIdx];
 
       // 1) Redimensionar bordas
-      if (Math.abs(x - x1) <= 9) {
-        telDragState = { mode: 'resize-left', anchorIdx: telSelection.endIdx };
+      if (Math.abs(x - x1) <= hitTol) {
+        telDragState = { mode: 'resize-left', anchorIdx: telSelection.endIdx, pointerId: e.pointerId };
         return;
       }
-      if (Math.abs(x - x2) <= 9) {
-        telDragState = { mode: 'resize-right', anchorIdx: telSelection.startIdx };
+      if (Math.abs(x - x2) <= hitTol) {
+        telDragState = { mode: 'resize-right', anchorIdx: telSelection.startIdx, pointerId: e.pointerId };
         return;
       }
 
       // 2) Mover seleção inteira para os lados
-      if (x > x1 + 9 && x < x2 - 9) {
+      if (x > x1 + hitTol && x < x2 - hitTol) {
         telDragState = {
           mode: 'move',
           dragStartIdx: findNearestStreamIdx(x),
           origStart: telSelection.startIdx,
-          origEnd: telSelection.endIdx
+          origEnd: telSelection.endIdx,
+          pointerId: e.pointerId
         };
         canvas.style.cursor = 'grabbing';
         return;
@@ -238,17 +266,17 @@ function attachTelemetryCanvasInteractions(canvas) {
 
     // 3) Nova seleção
     const idx = findNearestStreamIdx(x);
-    telDragState = { mode: 'new', anchorIdx: idx };
+    telDragState = { mode: 'new', anchorIdx: idx, pointerId: e.pointerId };
     telSelection = { startIdx: idx, endIdx: idx };
   });
 
-  canvas.addEventListener('mousemove', (e) => {
+  canvas.addEventListener('pointermove', (e) => {
     if (!telRenderMeta || !telRenderMeta.stream || telRenderMeta.stream.length < 2) return;
-    const { x, y } = getCanvasMousePos(canvas, e);
+    const { x, y } = getCanvasPointerPos(canvas, e);
     const { padL, padT, drawW, drawH, xPositions, stream } = telRenderMeta;
 
     if (!telDragState.mode) {
-      if (x >= padL && x <= padL + drawW && y >= padT && y <= padT + drawH) {
+      if (e.pointerType === 'mouse' && x >= padL && x <= padL + drawW && y >= padT && y <= padT + drawH) {
         if (telSelection.startIdx !== null && telSelection.endIdx !== null && telSelection.endIdx > telSelection.startIdx) {
           const x1 = xPositions[telSelection.startIdx];
           const x2 = xPositions[telSelection.endIdx];
@@ -262,11 +290,13 @@ function attachTelemetryCanvasInteractions(canvas) {
           }
         }
         canvas.style.cursor = 'crosshair';
-      } else {
+      } else if (e.pointerType === 'mouse') {
         canvas.style.cursor = 'default';
       }
       return;
     }
+
+    if (telDragState.pointerId !== null && e.pointerId !== telDragState.pointerId) return;
 
     const clampedX = Math.max(padL, Math.min(padL + drawW, x));
     const idx = findNearestStreamIdx(clampedX);
@@ -289,17 +319,23 @@ function attachTelemetryCanvasInteractions(canvas) {
     }
   });
 
-  window.addEventListener('mouseup', () => {
+  const finishDrag = (e) => {
     if (!telDragState.mode) return;
+    if (telDragState.pointerId !== null && e.pointerId !== telDragState.pointerId) return;
+
     const mode = telDragState.mode;
-    telDragState = { mode: null, anchorIdx: null, dragStartIdx: null, origStart: null, origEnd: null };
+    try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+    telDragState = { mode: null, anchorIdx: null, dragStartIdx: null, origStart: null, origEnd: null, pointerId: null };
 
     if (mode === 'new' && telSelection.startIdx === telSelection.endIdx) {
       clearTelSelection();
     }
     canvas.style.cursor = 'default';
     drawTelemetryFrame();
-  });
+  };
+
+  canvas.addEventListener('pointerup', finishDrag);
+  canvas.addEventListener('pointercancel', finishDrag);
 }
 
 function getSanitizedStream(act) {
@@ -413,7 +449,6 @@ function drawTelemetryFrame() {
   const canvas = document.getElementById('telemetriaCanvas');
   if (!canvas) return;
 
-  // Atualiza cards/sidebar primeiro para medir a largura exata do container
   updateTelemetryAuditAndNeonCards(act, stream, isIndoor, stepSecs);
 
   const ctx = canvas.getContext('2d');
@@ -640,7 +675,6 @@ function drawTelemetryFrame() {
     ctx.fillStyle = 'rgba(16, 185, 129, 0.14)';
     ctx.fillRect(x1, padT, selW, drawH);
 
-    // Bordas/Alças laterais
     ctx.strokeStyle = '#34d399';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -648,7 +682,6 @@ function drawTelemetryFrame() {
     ctx.moveTo(x2, padT); ctx.lineTo(x2, padT + drawH);
     ctx.stroke();
 
-    // Puxadores discretos no meio das bordas
     ctx.fillStyle = '#34d399';
     const midY = padT + drawH / 2;
     ctx.fillRect(x1 - 3, midY - 14, 6, 28);

@@ -95,11 +95,11 @@ body {
   width: 100%;
 }
 
-/* --- TOPBAR LIMPA --- */
+/* --- TOPBAR LIMPA COM FONTE CENTRALIZADA --- */
 .topbar {
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border-subtle);
-  padding: 9px 18px;
+  padding: 7px 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -113,6 +113,14 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-shrink: 0;
+}
+
+.topbar-center {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .divider-v {
@@ -130,6 +138,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 /* --- JANELA FLUTUANTE NO HOVER EM "OLÁ, CRISTIANO" --- */
@@ -163,7 +172,7 @@ body {
 .user-dropdown-panel {
   display: none;
   position: fixed;
-  top: 46px;
+  top: 44px;
   right: 78px;
   width: 245px;
   background: rgba(10, 14, 23, 0.98);
@@ -443,24 +452,24 @@ body {
   background: rgba(255, 255, 255, 0.04);
 }
 
-/* --- ÁREA PRINCIPAL DE CONTEÚDO --- */
+/* --- ÁREA PRINCIPAL DE CONTEÚDO (ESPAÇO REDUZIDO ENTRE NÍVEL 1 E NÍVEL 2) --- */
 .cockpit-main {
   flex: 1;
-  padding: 14px 18px 28px;
+  padding: 6px 16px 24px;
   max-width: 1480px;
   width: 100%;
   margin: 0 auto;
 }
 
-/* --- NAVEGAÇÃO DE TABS COM AUTO-AJUSTE --- */
+/* --- NAVEGAÇÃO DE TABS COMPACTA COM AUTO-AJUSTE --- */
 .nav-tabs {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   overflow-x: auto;
   border-bottom: 1px solid var(--border-subtle);
   padding-bottom: 0;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   scrollbar-width: thin;
 }
 
@@ -469,9 +478,9 @@ body {
   border: none;
   border-bottom: 2px solid transparent;
   color: var(--text-secondary);
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   font-weight: 600;
-  padding: 8px 12px;
+  padding: 6px 9px;
   cursor: pointer;
   white-space: nowrap;
   transition: color 0.15s ease, border-color 0.15s ease;
@@ -486,27 +495,15 @@ body {
   border-bottom-color: var(--neon-green);
 }
 
-/* --- SELETOR DE FONTE EM POSIÇÃO PRIVILEGIADA ACIMA DO GRÁFICO, À ESQUERDA --- */
-.chart-top-source-bar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  margin-bottom: 12px;
-}
-
+/* --- SELETOR DE FONTE NO NÍVEL 1 --- */
 .power-mode-pill {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  padding: 5px 10px;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  padding: 4px 10px;
   border-radius: 7px;
-}
-
-.power-mode-pill.privileged {
-  border-color: rgba(16, 185, 129, 0.35);
-  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.08);
 }
 
 .pill-label {
@@ -838,6 +835,17 @@ body {
 @media (max-width: 720px) {
   .cockpit-tag {
     display: none;
+  }
+
+  .topbar {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .topbar-center {
+    order: 3;
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .user-dropdown-panel {

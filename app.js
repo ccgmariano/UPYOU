@@ -1,4 +1,4 @@
-// Núcleo Principal Otimizado (Cockpit Matrix Neon Precision, Versionamento Automático DB, Google Sign-In e Curva MMP)
+// Núcleo Principal Otimizado (Cockpit Matrix Neon Precision, Versionamento Automático DB, Google Sign-In, Curva MMP e Auto-Ordenação de Tabs)
 let dbActivities = [];
 let currentUserId = null;
 let currentUserName = "";
@@ -13,6 +13,76 @@ const GARMIN_API_URL = "https://garmin-webhook-731921508137.us-central1.run.app"
 
 // Versão atual do Schema de dados
 const CURRENT_DATA_SCHEMA_VERSION = 4;
+
+// --- AUTO-AJUSTE DA ORDEM DAS TABS POR FREQUÊNCIA DE ACESSO ---
+function getTabUsageStorageKey() {
+  return `upyou_tab_clicks_${currentUserId || 'default'}`;
+}
+
+function getTabClickCounts() {
+  try {
+    const raw = localStorage.getItem(getTabUsageStorageKey());
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveTabClickCounts(counts) {
+  try {
+    localStorage.setItem(getTabUsageStorageKey(), JSON.stringify(counts));
+  } catch (e) {}
+}
+
+function recordTabAccess(tabId) {
+  if (!tabId) return;
+  const counts = getTabClickCounts();
+  counts[tabId] = (counts[tabId] || 0) + 1;
+  saveTabClickCounts(counts);
+}
+
+function applyTabOrderByUsage(preserveScrollTabId = null) {
+  const nav = document.getElementById('dashboardNavTabs');
+  if (!nav) return;
+
+  const buttons = Array.from(nav.querySelectorAll('.tab-btn'));
+  if (buttons.length <= 1) return;
+
+  // Guarda ordem original caso não haja cliques registrados
+  buttons.forEach((btn, idx) => {
+    if (btn.dataset.origOrder === undefined) {
+      btn.dataset.origOrder = String(idx);
+    }
+  });
+
+  const counts = getTabClickCounts();
+  const hasAnyClick = buttons.some(btn => (counts[btn.dataset.tab] || 0) > 0);
+  if (!hasAnyClick) return;
+
+  const targetBtn = preserveScrollTabId
+    ? buttons.find(b => b.dataset.tab === preserveScrollTabId)
+    : null;
+  const prevLeftOffset = targetBtn ? targetBtn.getBoundingClientRect().left : null;
+
+  buttons.sort((a, b) => {
+    const tabA = a.dataset.tab;
+    const tabB = b.dataset.tab;
+    const cA = counts[tabA] || 0;
+    const cB = counts[tabB] || 0;
+    if (cB !== cA) return cB - cA;
+    return parseInt(a.dataset.origOrder, 10) - parseInt(b.dataset.origOrder, 10);
+  });
+
+  const fragment = document.createDocumentFragment();
+  buttons.forEach(btn => fragment.appendChild(btn));
+  nav.appendChild(fragment);
+
+  // Compensa a rolagem horizontal da barra para a aba clicada não parecer que fugiu do cursor
+  if (targetBtn && prevLeftOffset !== null) {
+    const newLeftOffset = targetBtn.getBoundingClientRect().left;
+    nav.scrollLeft += (newLeftOffset - prevLeftOffset);
+  }
+}
 
 // Inicialização explícita e confiável do botão Google Sign-In (Desktop & Android Chrome)
 window.initGoogleSignIn = function() {
@@ -113,6 +183,7 @@ window.addEventListener('DOMContentLoaded', () => {
       localStorage.setItem('upyou_user', JSON.stringify({ id: currentUserId, name: currentUserName }));
       loadUserPreferences();
       if (typeof loadPowerEnginePreferences === 'function') loadPowerEnginePreferences();
+      applyTabOrderByUsage();
       document.getElementById('loginScreen').style.display = 'none';
       document.getElementById('mainApp').style.display = 'flex';
       document.getElementById('userGreeting').innerText = currentUserName;
@@ -161,15 +232,16 @@ window.handleCredentialResponse = function(response) {
   const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
       return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
   }).join(''));
-  
+
   const payload = JSON.parse(jsonPayload);
-  
+
   currentUserId = payload.sub;
   currentUserName = payload.given_name || payload.name;
   localStorage.setItem('upyou_user', JSON.stringify({ id: currentUserId, name: currentUserName }));
 
   loadUserPreferences();
   if (typeof loadPowerEnginePreferences === 'function') loadPowerEnginePreferences();
+  applyTabOrderByUsage();
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('mainApp').style.display = 'flex';
   document.getElementById('userGreeting').innerText = currentUserName;
@@ -185,7 +257,7 @@ function logout() {
   if (window.google && google.accounts && google.accounts.id) {
     google.accounts.id.disableAutoSelect();
   }
-  location.href = location.pathname; 
+  location.href = location.pathname;
 }
 
 function connectGarminAccount() {
@@ -204,8 +276,10 @@ async function checkGarminConnectionStatus() {
       const status = await res.json();
       if (status.connected) {
         const badge = document.getElementById('garminConnectedBadge');
+        const statusTxt = document.getElementById('garminStatusText');
         const btn = document.getElementById('btnConnectGarmin');
         if (badge) badge.style.display = 'inline-flex';
+        if (statusTxt) statusTxt.innerText = 'Garmin Conectado';
         if (btn) btn.innerText = 'Reconectar Garmin';
       }
     }
@@ -622,11 +696,12 @@ window.triggerNavByTab = function(tabId) {
 
 window.switchDashboardTab = function(tabId, el) {
   activeDashboardTabId = tabId;
+  recordTabAccess(tabId);
+
   document.getElementById('detailArea').style.display = 'none';
   document.getElementById('summaryArea').style.display = 'block';
 
-  document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-  document.querySelectorAll('.side-nav-btn, .quick-pill-btn').forEach(btn => {
+  document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.classList.toggle('active', btn.getAttribute('data-tab') === tabId);
   });
 
@@ -638,7 +713,8 @@ window.switchDashboardTab = function(tabId, el) {
   if (el) el.classList.add('active');
   const targetSec = document.getElementById(tabId);
   if (targetSec) targetSec.style.display = 'block';
-  
+
+  applyTabOrderByUsage(tabId);
   updateDynamicCharts();
 };
 
@@ -659,14 +735,14 @@ document.getElementById('zipInput').addEventListener('change', async (event) => 
   const progressFill = document.getElementById('progressFill');
 
   msgEl.innerText = '';
-  document.body.offsetHeight; 
+  document.body.offsetHeight;
 
   setTimeout(async () => {
     try {
       progressText.innerText = "A carregar o ZIP para a memória...";
       const jszip = new JSZip();
       const zip = await jszip.loadAsync(file);
-      
+
       let csvEntry = null;
       zip.forEach((path, entry) => { if (path.toLowerCase().includes('activities.csv')) csvEntry = entry; });
       if (!csvEntry) throw new Error("O ficheiro 'activities.csv' não foi encontrado.");
@@ -681,7 +757,7 @@ document.getElementById('zipInput').addEventListener('change', async (event) => 
         let cols = [];
         let inQuote = false, val = '';
         for (let ch of line) {
-          if (inQuote) { if (ch === '"') inQuote = false; else val += ch; } 
+          if (inQuote) { if (ch === '"') inQuote = false; else val += ch; }
           else { if (ch === '"') inQuote = true; else if (ch === ',') { cols.push(val); val = ''; } else val += ch; }
         }
         cols.push(val);
@@ -714,22 +790,22 @@ document.getElementById('zipInput').addEventListener('change', async (event) => 
             }
           } catch (e) { console.warn(`Aviso: ${task.file}`); }
         }
-        if (i % 5 === 0) await new Promise(r => setTimeout(r, 1)); 
+        if (i % 5 === 0) await new Promise(r => setTimeout(r, 1));
       }
 
       document.getElementById('progressArea').style.display = 'none';
       if (typeof window.applyGlobalPowerSource === 'function') window.applyGlobalPowerSource();
       processGlobalMetrics();
-      
+
       await saveToDB(dbActivities);
-      
+
       renderSummaryTable();
       updateDynamicCharts();
 
     } catch (err) {
       msgEl.style.color = '#ef4444'; msgEl.innerText = 'Erro Crítico: ' + err.message; progressText.innerText = 'Interrompido.';
     }
-  }, 500); 
+  }, 500);
 });
 
 function parseStravaDate(str) {
@@ -1125,7 +1201,7 @@ let cachedFtpHistory = [];
 
 function processGlobalMetrics() {
   if (typeof window.applyGlobalPowerSource === 'function') window.applyGlobalPowerSource();
-  dbActivities.sort((a, b) => a.dateObj - b.dateObj); 
+  dbActivities.sort((a, b) => a.dateObj - b.dateObj);
   const daysWindow = 42;
   cachedFtpHistory = [];
 
@@ -1145,7 +1221,7 @@ function processGlobalMetrics() {
     const curr = dbActivities[i];
     const minDate = new Date(curr.dateObj.getTime() - (daysWindow * 86400000));
     const windowActs = dbActivities.filter(a => a.dateObj >= minDate && a.dateObj <= curr.dateObj);
-    
+
     const validMmps = windowActs
       .filter(a => a.metrics && (a.metrics.totalSecs >= 1200 || !a.metrics.movingSecs) && a.metrics.mmp20 >= 100)
       .map(a => a.metrics.mmp20);
@@ -1169,7 +1245,7 @@ function processGlobalMetrics() {
       if (windowBestFtp > 0) rollingFtp = windowBestFtp;
       if (windowBestLthr > 0) rollingLthr = windowBestLthr;
     }
-    
+
     curr.currentFtp = rollingFtp;
     curr.currentLthr = rollingLthr;
     cachedFtpHistory.push({ date: curr.dateObj, ftp: rollingFtp, lthr: rollingLthr });

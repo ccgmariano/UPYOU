@@ -52,12 +52,23 @@
   <!-- APLICAÇÃO PRINCIPAL (COCKPIT) -->
   <div id="mainApp" class="cockpit-shell" style="display: none;">
 
-    <!-- LINHA SUPERIOR LIMPA: MARCA À ESQUERDA, MENU HOVER DO USUÁRIO + SAIR À DIREITA -->
+    <!-- LINHA SUPERIOR LIMPA: MARCA À ESQUERDA, FONTE NO CENTRO, MENU HOVER DO USUÁRIO + SAIR À DIREITA -->
     <header class="topbar">
       <div class="topbar-left">
         <div class="brand-logo small">UP<span>YOU</span></div>
         <span class="divider-v">|</span>
         <span class="cockpit-tag">TELEMETRY COCKPIT</span>
+      </div>
+
+      <div class="topbar-center">
+        <div class="power-mode-pill" title="Fonte Global de Potência usada em todo o painel">
+          <span class="pill-label">FONTE:</span>
+          <select id="powerSourceSelect" onchange="updatePowerSourceMode(this.value)">
+            <option value="hybrid" selected>Híbrido (Real + Sim)</option>
+            <option value="real">Apenas Real (Sensor)</option>
+            <option value="simulated">100% Simulada</option>
+          </select>
+        </div>
       </div>
 
       <div class="topbar-right">
@@ -208,18 +219,6 @@
           <button type="button" class="tab-btn" data-tab="dispersaoTab" onclick="switchDashboardTab('dispersaoTab', this)">Dispersão W vs BPM</button>
           <button type="button" class="tab-btn" data-tab="isoPotenciaTab" onclick="switchDashboardTab('isoPotenciaTab', this)">Iso-Potência</button>
         </nav>
-
-        <!-- POSIÇÃO PRIVILEGIADA ACIMA DO GRÁFICO / CONTEÚDO, À ESQUERDA: SELETOR DE FONTE DE DADOS -->
-        <div class="chart-top-source-bar" id="chartTopSourceBar">
-          <div class="power-mode-pill privileged" title="Fonte Global de Potência usada em todo o painel">
-            <span class="pill-label">FONTE:</span>
-            <select id="powerSourceSelect" onchange="updatePowerSourceMode(this.value)">
-              <option value="hybrid" selected>Híbrido (Real + Sim)</option>
-              <option value="real">Apenas Real (Sensor)</option>
-              <option value="simulated">100% Simulada</option>
-            </select>
-          </div>
-        </div>
 
         <!-- TAB 1: TABELA DE ATIVIDADES -->
         <div id="tableTab" class="tab-panel" style="display: block;">

@@ -21,7 +21,7 @@ window.renderIsoPotenciaChart = function() {
   const agrupamento = document.getElementById('isoAgrupamento')?.value || 'trimestre';
   const janelaSecs = parseInt(document.getElementById('isoJanelaPonto')?.value || '15', 10);
 
-  const p1 = parseInt(document.getElementById('isoPwr1')?.value || '160', 10);
+  const p1 = parseInt(document.getElementById('isoPwr1')?.value || '140', 10);
   const p2 = parseInt(document.getElementById('isoPwr2')?.value || '200', 10);
   const p3 = parseInt(document.getElementById('isoPwr3')?.value || '240', 10);
 

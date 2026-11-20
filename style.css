@@ -37,6 +37,11 @@ body {
   font-family: 'JetBrains Mono', monospace;
 }
 
+.neon-green { color: var(--neon-green-bright); }
+.neon-red { color: var(--neon-red); }
+.neon-cyan { color: var(--neon-blue); }
+.neon-yellow { color: var(--neon-yellow); }
+
 /* --- ECRÃ DE LOGIN --- */
 .login-container {
   min-height: 100vh;
@@ -452,7 +457,7 @@ body {
   background: rgba(255, 255, 255, 0.04);
 }
 
-/* --- ÁREA PRINCIPAL DE CONTEÚDO (ESPAÇO REDUZIDO ENTRE NÍVEL 1 E NÍVEL 2) --- */
+/* --- ÁREA PRINCIPAL DE CONTEÚDO --- */
 .cockpit-main {
   flex: 1;
   padding: 6px 16px 24px;
@@ -565,20 +570,45 @@ body {
   margin-bottom: 12px;
 }
 
-/* --- GRID DA TELEMETRIA + CARDS KPI COMPACTOS --- */
+/* --- GRID DA TELEMETRIA, CONTAINERS DE GRÁFICOS & CARDS KPI COMPACTOS --- */
 .telemetry-cockpit-grid {
   display: grid;
-  grid-template-columns: 1fr 175px;
+  grid-template-columns: minmax(0, 1fr) 175px;
   gap: 10px;
   align-items: start;
 }
 
 .telemetry-cockpit-grid.no-sidebar {
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .telemetry-cockpit-grid.no-sidebar .neon-kpi-column {
   display: none;
+}
+
+.telemetry-chart-card, .chart-box {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 12px;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.telemetry-chart-card canvas, .chart-box canvas {
+  width: 100% !important;
+  display: block;
+}
+
+.audit-strip {
+  font-size: 0.73rem;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin-bottom: 10px;
 }
 
 .neon-kpi-column {
@@ -626,6 +656,7 @@ body {
   font-size: 0.63rem;
   color: var(--text-secondary);
 }
+
 /* --- NAVEGADOR DE TIMELINE (SLIDER) --- */
 .timeline-navigator {
   background: var(--bg-surface);

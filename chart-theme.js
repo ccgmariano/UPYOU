@@ -44,8 +44,18 @@ function setupTooltip(canvas) {
               html = `<strong style="color:#38bdf8">${d.key}</strong><br/>Total: ${(d.total/3600).toFixed(1)}h<hr style="border-color:#334155; margin:5px 0;" />`;
               Object.keys(d.zones).reverse().forEach(z => { html += `<b>${z}:</b> ${d.zones[z].hours}h (${d.zones[z].pct})<br/>`; });
             } else if (box.type === 'vi') {
-              const color = d.vi <= 1.10 ? '#22c55e' : '#a78bfa';
-              html = `<strong style="color:#38bdf8">${d.key}</strong><hr style="border-color:#334155; margin:5px 0;"/>VI Médio: <span style="color:${color}; font-weight:bold">${d.vi}</span><br/>Treinos: ${d.count}`;
+              const viVal = parseFloat(d.vi);
+              const viColor = viVal <= 1.12 ? '#10b981' : '#a78bfa';
+              let driftLine = '';
+              if (d.drift !== null && d.drift !== undefined) {
+                const dv = parseFloat(d.drift);
+                const dColor = dv <= 3 ? '#10b981' : (dv <= 5 ? '#eab308' : (dv <= 8 ? '#f97316' : '#ef4444'));
+                driftLine = `<br/>Drift Médio: <span style="color:${dColor}; font-weight:bold">${d.drift}%</span>`;
+              } else {
+                driftLine = `<br/>Drift Médio: <span style="color:#94a3b8">N/A</span>`;
+              }
+              const durLine = d.durMin ? `<br/>Duração Méd.: ${d.durMin} min` : '';
+              html = `<strong style="color:#38bdf8">${d.key}</strong><hr style="border-color:#334155; margin:5px 0;"/>VI Médio: <span style="color:${viColor}; font-weight:bold">${d.vi}</span>${driftLine}${durLine}<br/>Treinos: ${d.count}`;
             } else if (box.type === 'vol') {
               html = `<strong style="color:#38bdf8">${d.key}</strong><br/>Total: ${d.total}h<hr style="border-color:#334155; margin:5px 0;" />`;
               html += `<b style="color:#22c55e">Estruturado:</b> ${d.estruturado}h<br/><b style="color:#64748b">Livre:</b> ${d.livre}h`;

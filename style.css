@@ -1,4 +1,4 @@
-/* UPYOU | Telemetry Cockpit — Matrix Neon Precision (Layout Horizontal Compacto V1) */
+/* UPYOU | Telemetry Cockpit — Matrix Neon Precision */
 :root {
   --bg-void: #05070b;
   --bg-surface: #0a0e17;
@@ -71,7 +71,7 @@ body {
 }
 
 .brand-logo.small {
-  font-size: 1.2rem;
+  font-size: 1.15rem;
 }
 
 .brand-sub {
@@ -95,19 +95,18 @@ body {
   width: 100%;
 }
 
-/* --- TOPBAR --- */
+/* --- TOPBAR LIMPA (APENAS MARCA À ESQUERDA E OLÁ CRISTIANO + SAIR À DIREITA) --- */
 .topbar {
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border-subtle);
-  padding: 8px 16px;
+  padding: 9px 18px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px;
+  gap: 12px;
   position: sticky;
   top: 0;
-  z-index: 50;
+  z-index: 80;
 }
 
 .topbar-left {
@@ -127,17 +126,115 @@ body {
   color: var(--text-muted);
 }
 
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* --- MENU HOVER EM "OLÁ, CRISTIANO" --- */
+.user-hover-menu {
+  position: relative;
+  display: inline-block;
+}
+
+.user-menu-trigger {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.user-hover-menu:hover .user-menu-trigger,
+.user-hover-menu:focus-within .user-menu-trigger {
+  border-color: var(--neon-green);
+  color: var(--neon-green-bright);
+  background: var(--bg-elevated);
+}
+
+.user-dropdown-panel {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 245px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-accent);
+  border-radius: 10px;
+  padding: 6px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.75);
+  z-index: 120;
+}
+
+/* Ponte invisível para não fechar o menu ao mover o mouse da trigger para o painel */
+.user-hover-menu::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  height: 8px;
+}
+
+.user-hover-menu:hover .user-dropdown-panel,
+.user-hover-menu:focus-within .user-dropdown-panel {
+  display: block;
+}
+
+.dropdown-branch {
+  position: relative;
+}
+
+.dropdown-branch-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: default;
+  transition: background 0.15s ease;
+}
+
+.dropdown-branch:hover > .dropdown-branch-trigger {
+  background: var(--bg-elevated);
+  color: var(--neon-green-bright);
+}
+
+.branch-left {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.branch-arrow {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
 .live-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  background: rgba(16, 185, 129, 0.1);
-  border: 1px solid rgba(16, 185, 129, 0.3);
+  gap: 5px;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
   color: var(--neon-green-bright);
   font-family: 'JetBrains Mono', monospace;
-  font-size: 0.65rem;
+  font-size: 0.62rem;
   font-weight: 700;
-  padding: 2px 8px;
+  padding: 2px 7px;
   border-radius: 99px;
 }
 
@@ -149,50 +246,164 @@ body {
   box-shadow: 0 0 8px var(--neon-green);
 }
 
-.topbar-right {
+/* Submenu lateral esquerdo (em telas maiores) / abaixo (em telas estreitas) */
+.dropdown-submenu {
+  display: none;
+  position: absolute;
+  top: 0;
+  right: calc(100% + 6px);
+  min-width: 215px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-accent);
+  border-radius: 10px;
+  padding: 8px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.8);
+  z-index: 130;
+}
+
+.dropdown-branch::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 100%;
+  width: 8px;
+}
+
+.dropdown-branch:hover > .dropdown-submenu {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 6px;
 }
 
-.power-mode-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--bg-card);
+.submenu-btn {
+  width: 100%;
+  text-align: left;
+  background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
-  padding: 3px 8px;
-  border-radius: 6px;
-}
-
-.pill-label {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.66rem;
-  font-weight: 700;
-  color: var(--text-muted);
-}
-
-.power-mode-pill select {
-  background: transparent;
-  border: none;
   color: var(--text-primary);
-  font-size: 0.74rem;
-  font-weight: 600;
-  outline: none;
-  cursor: pointer;
-}
-
-.power-mode-pill select option {
-  background: var(--bg-card);
-  color: var(--text-primary);
-}
-
-.user-pill {
+  font-family: 'Inter', sans-serif;
   font-size: 0.76rem;
   font-weight: 600;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.submenu-btn:hover {
+  border-color: var(--neon-green);
+  background: var(--bg-elevated);
+}
+
+.submenu-btn.primary-text {
+  color: var(--neon-green-bright);
+}
+
+.submenu-btn.danger-text {
+  color: #fca5a5;
+}
+
+.submenu-btn.danger-text:hover {
+  border-color: var(--neon-red);
+}
+
+.dropdown-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 4px 0;
+}
+
+.aero-submenu {
+  min-width: 240px;
+}
+
+.aero-menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.74rem;
   color: var(--text-secondary);
+}
+
+.aero-menu-row label {
+  font-weight: 600;
+}
+
+.aero-menu-row select {
+  background: var(--bg-void);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.73rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 5px;
+  outline: none;
+  height: 26px;
+}
+
+.input-unit-compact {
+  display: inline-flex;
+  align-items: center;
+  background: var(--bg-void);
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
   padding: 0 6px;
+  height: 26px;
+}
+
+.input-unit-compact:focus-within {
+  border-color: var(--neon-cyan);
+}
+
+.input-unit-compact input {
+  width: 52px;
+  background: transparent;
+  border: none;
+  color: var(--neon-cyan);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-align: right;
+  outline: none;
+}
+
+.input-unit-compact span {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  margin-left: 4px;
+}
+
+.aero-menu-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 2px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-subtle);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.68rem;
+  color: var(--neon-blue);
+}
+
+.btn-aero-mini {
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: var(--neon-blue);
+  font-size: 0.66rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-aero-mini:hover {
+  background: rgba(56, 189, 248, 0.22);
 }
 
 /* --- BOTÕES DO COCKPIT --- */
@@ -200,8 +411,8 @@ body {
   font-family: 'Inter', sans-serif;
   font-size: 0.74rem;
   font-weight: 600;
-  padding: 5px 11px;
-  border-radius: 6px;
+  padding: 6px 12px;
+  border-radius: 7px;
   cursor: pointer;
   border: 1px solid transparent;
   transition: all 0.15s ease;
@@ -209,11 +420,6 @@ body {
   align-items: center;
   justify-content: center;
   gap: 5px;
-}
-
-.btn-cockpit.sm {
-  font-size: 0.7rem;
-  padding: 4px 9px;
 }
 
 .btn-cockpit.primary {
@@ -248,212 +454,16 @@ body {
   background: rgba(255, 255, 255, 0.04);
 }
 
-.btn-cockpit.danger {
-  background: rgba(239, 68, 68, 0.08);
-  border-color: rgba(239, 68, 68, 0.25);
-  color: #fca5a5;
-}
-
-.btn-cockpit.danger:hover {
-  background: rgba(239, 68, 68, 0.18);
-  border-color: var(--neon-red);
-}
-
-/* --- FAIXA SUPERIOR HORIZONTAL COMPACTA (VERSÃO 1) --- */
-.top-control-deck {
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--border-subtle);
-  padding: 8px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.strip-label {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.64rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-/* 1. Barra Horizontal Equipamento & Aero */
-.aero-strip-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 10px;
-  background: rgba(15, 21, 34, 0.65);
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  padding: 6px 12px;
-}
-
-.aero-strip-fields {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  flex: 1;
-  justify-content: flex-end;
-}
-
-.aero-item {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.aero-item label {
-  font-size: 0.64rem;
-  color: var(--text-muted);
-  font-weight: 600;
-}
-
-.aero-item select {
-  background: var(--bg-void);
-  border: 1px solid var(--border-subtle);
-  color: var(--text-primary);
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.74rem;
-  font-weight: 600;
-  padding: 3px 8px;
-  border-radius: 5px;
-  outline: none;
-  height: 26px;
-}
-
-.input-unit-compact {
-  display: inline-flex;
-  align-items: center;
-  background: var(--bg-void);
-  border: 1px solid var(--border-subtle);
-  border-radius: 5px;
-  padding: 0 6px;
-  height: 26px;
-}
-
-.input-unit-compact:focus-within {
-  border-color: var(--neon-cyan);
-}
-
-.input-unit-compact input {
-  width: 44px;
-  background: transparent;
-  border: none;
-  color: var(--neon-cyan);
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-align: right;
-  outline: none;
-}
-
-.input-unit-compact span {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.65rem;
-  color: var(--text-muted);
-  margin-left: 4px;
-}
-
-.aero-compact-readout {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--bg-void);
-  border: 1px solid var(--border-subtle);
-  border-radius: 5px;
-  padding: 0 8px;
-  height: 26px;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.7rem;
-  color: var(--neon-blue);
-}
-
-.btn-aero-mini {
-  background: rgba(56, 189, 248, 0.1);
-  border: 1px solid rgba(56, 189, 248, 0.25);
-  color: var(--neon-blue);
-  font-size: 0.65rem;
-  font-weight: 600;
-  padding: 2px 6px;
-  border-radius: 4px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.btn-aero-mini:hover {
-  background: rgba(56, 189, 248, 0.2);
-}
-
-/* 2. Barra Horizontal Acesso Rápido */
-.quick-access-strip {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.quick-nav-group {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  padding-bottom: 2px;
-}
-
-.quick-nav-group::-webkit-scrollbar {
-  display: none;
-}
-
-.quick-pill-btn {
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  color: var(--text-secondary);
-  font-size: 0.73rem;
-  font-weight: 600;
-  padding: 5px 11px;
-  border-radius: 6px;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-  transition: all 0.15s ease;
-}
-
-.quick-pill-btn:hover {
-  color: var(--text-primary);
-  border-color: rgba(255, 255, 255, 0.18);
-}
-
-.quick-pill-btn.active {
-  background: rgba(16, 185, 129, 0.12);
-  border-color: rgba(16, 185, 129, 0.45);
-  color: var(--neon-green-bright);
-}
-
-.quick-data-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
 /* --- ÁREA PRINCIPAL DE CONTEÚDO --- */
 .cockpit-main {
   flex: 1;
-  padding: 14px 16px 28px;
+  padding: 14px 18px 28px;
   max-width: 1480px;
   width: 100%;
   margin: 0 auto;
 }
 
-/* --- NAVEGAÇÃO DE ABAS HORIZONTAL --- */
+/* --- NAVEGAÇÃO DE TABS COM AUTO-AJUSTE --- */
 .nav-tabs {
   display: flex;
   align-items: center;
@@ -461,7 +471,7 @@ body {
   overflow-x: auto;
   border-bottom: 1px solid var(--border-subtle);
   padding-bottom: 0;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
   scrollbar-width: thin;
 }
 
@@ -475,7 +485,7 @@ body {
   padding: 8px 12px;
   cursor: pointer;
   white-space: nowrap;
-  transition: 0.15s;
+  transition: color 0.15s ease, border-color 0.15s ease;
 }
 
 .tab-btn:hover {
@@ -485,6 +495,51 @@ body {
 .tab-btn.active {
   color: var(--neon-green-bright);
   border-bottom-color: var(--neon-green);
+}
+
+/* --- SELETOR DE FONTE EM POSIÇÃO PRIVILEGIADA ACIMA DO GRÁFICO, À ESQUERDA --- */
+.chart-top-source-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin-bottom: 12px;
+}
+
+.power-mode-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  padding: 5px 10px;
+  border-radius: 7px;
+}
+
+.power-mode-pill.privileged {
+  border-color: rgba(16, 185, 129, 0.35);
+  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.08);
+}
+
+.pill-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.67rem;
+  font-weight: 700;
+  color: var(--neon-green-bright);
+}
+
+.power-mode-pill select {
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+}
+
+.power-mode-pill select option {
+  background: var(--bg-card);
+  color: var(--text-primary);
 }
 
 /* --- CABEÇALHO DOS PAINÉIS --- */
@@ -791,25 +846,21 @@ body {
   }
 }
 
-@media (max-width: 680px) {
-  .aero-strip-bar {
-    flex-direction: column;
-    align-items: flex-start;
-    padding: 8px 10px;
+@media (max-width: 720px) {
+  .cockpit-tag {
+    display: none;
   }
 
-  .aero-strip-fields {
-    width: 100%;
-    justify-content: space-between;
-    gap: 8px;
+  .dropdown-submenu {
+    position: static;
+    min-width: 100%;
+    margin-top: 4px;
+    margin-bottom: 6px;
+    box-shadow: none;
+    background: var(--bg-void);
   }
 
-  .aero-badge-item {
-    width: 100%;
-  }
-
-  .aero-compact-readout {
-    width: 100%;
-    justify-content: space-between;
+  .dropdown-branch:hover > .dropdown-submenu {
+    display: flex;
   }
 }

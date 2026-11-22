@@ -1,9 +1,9 @@
-// Aba: Diagnóstico & Coach (Janelas Parametrizáveis, Slider Histórico, Auditoria de Cumprimento e Treino Estruturado)
+// Aba: Diagnóstico & Coach (Janelas Parametrizáveis, Slider Histórico, FC/LTHR de Apoio, Auditoria e Treino Estruturado)
 
 const COACH_CFG_KEY = 'upyou_coach_config_v1';
 
 let coachConfig = { recentDays: 30, prevDays: 60 };
-let coachRefIdx = -1; // Índice na lista ordenada de dbActivities
+let coachRefIdx = -1;
 
 function loadCoachConfig() {
   try {
@@ -46,14 +46,35 @@ function getActBestMmp(act, sec) {
   return 0;
 }
 
+function getReferenceLthr(act, fallbackMaxHr = 187) {
+  const m = (act && act.metrics) || {};
+  if (m.lthr && m.lthr > 100 && m.lthr < 215) return Math.round(m.lthr);
+  if (act && act.lthr && act.lthr > 100 && act.lthr < 215) return Math.round(act.lthr);
+  const maxHrInput = document.getElementById('maxHrInput');
+  const maxHr = maxHrInput ? (parseInt(maxHrInput.value, 10) || fallbackMaxHr) : fallbackMaxHr;
+  return Math.round(maxHr * 0.88);
+}
+
+function classifyHrZone(hr, lthr) {
+  if (!hr || hr < 60 || !lthr || lthr <= 0) return null;
+  const ratio = hr / lthr;
+  if (ratio <= 0.68) return 'Z1';
+  if (ratio <= 0.83) return 'Z2';
+  if (ratio <= 0.94) return 'Z3';
+  if (ratio <= 1.05) return 'Z4';
+  return 'Z5';
+}
+
 function computeWindowStats(acts, daysSpan) {
   const weeks = Math.max(1 / 7, daysSpan / 7);
   let totalSecs = 0, totalDist = 0, totalTss = 0;
   let efSum = 0, efCnt = 0;
   let driftSum = 0, driftCnt = 0;
   let durabSum = 0, durabCnt = 0;
+  let lthrSum = 0, lthrCnt = 0;
 
   const zones = { Z1: 0, Z2: 0, Z3: 0, Z4: 0, Z5: 0, Z6: 0, Z7: 0, total: 0 };
+  const hrZones = { Z1: 0, Z2: 0, Z3: 0, Z4: 0, Z5: 0, total: 0 };
   const mmp = { 5: 0, 60: 0, 300: 0, 1200: 0, 3600: 0 };
   const dailyLoads = {};
 
@@ -62,11 +83,13 @@ function computeWindowStats(acts, daysSpan) {
     const dur = getActDurationSec(act);
     const ftp = act.currentFtp || 220;
     const np = m.np || m.avgPwr || 0;
+    const lthr = getReferenceLthr(act);
+    lthrSum += lthr;
+    lthrCnt++;
 
     totalSecs += dur;
     totalDist += parseFloat(m.distKm) || 0;
 
-    // TSS estimado
     const ifVal = ftp > 0 ? (np / ftp) : 0.7;
     const tss = (dur * np * ifVal) / (Math.max(100, ftp) * 36);
     totalTss += tss;
@@ -74,7 +97,6 @@ function computeWindowStats(acts, daysSpan) {
     const dayKey = act.date || act.dateObj.toISOString().slice(0, 10);
     dailyLoads[dayKey] = (dailyLoads[dayKey] || 0) + tss;
 
-    // Zonas de potência
     if (m.pwrHist && ftp > 0) {
       for (const pStr in m.pwrHist) {
         const sec = m.pwrHist[pStr];
@@ -90,7 +112,23 @@ function computeWindowStats(acts, daysSpan) {
       }
     }
 
-    // Eficiência (EF) e Drift em treinos estáveis (VI <= 1.12)
+    if (m.hrHist && lthr > 0) {
+      for (const hrStr in m.hrHist) {
+        const sec = m.hrHist[hrStr];
+        const hz = classifyHrZone(parseInt(hrStr, 10), lthr);
+        if (hz) {
+          hrZones[hz] += sec;
+          hrZones.total += sec;
+        }
+      }
+    } else if (m.avgHr > 60 && dur > 0) {
+      const hz = classifyHrZone(m.avgHr, lthr);
+      if (hz) {
+        hrZones[hz] += dur;
+        hrZones.total += dur;
+      }
+    }
+
     if (m.vi && m.vi <= 1.12 && m.avgHr > 90 && np > 80) {
       efSum += (np / m.avgHr);
       efCnt++;
@@ -98,20 +136,18 @@ function computeWindowStats(acts, daysSpan) {
     if (m.vi && m.vi <= 1.12 && m.drift !== null && m.drift !== undefined && !isNaN(m.drift)) {
       driftSum += m.drift;
       driftCnt++;
-      if (dur >= 5400) { // Pedais >= 1h30 para Razão de Durabilidade
+      if (dur >= 5400) {
         durabSum += Math.max(70, Math.min(105, 100 - m.drift));
         durabCnt++;
       }
     }
 
-    // MMP
     [5, 60, 300, 1200, 3600].forEach(sec => {
       const val = getActBestMmp(act, sec);
       if (val > mmp[sec]) mmp[sec] = val;
     });
   });
 
-  // Monotonia (média / desvio padrão das cargas diárias no período)
   const loadsArr = [];
   for (let i = 0; i < daysSpan; i++) loadsArr.push(0);
   const vals = Object.values(dailyLoads);
@@ -124,6 +160,11 @@ function computeWindowStats(acts, daysSpan) {
   const zonePct = {};
   ['Z1', 'Z2', 'Z3', 'Z4', 'Z5', 'Z6', 'Z7'].forEach(z => {
     zonePct[z] = zones.total > 0 ? (zones[z] / zones.total) * 100 : 0;
+  });
+
+  const hrZonePct = {};
+  ['Z1', 'Z2', 'Z3', 'Z4', 'Z5'].forEach(z => {
+    hrZonePct[z] = hrZones.total > 0 ? (hrZones[z] / hrZones.total) * 100 : 0;
   });
 
   const avgDrift = driftCnt > 0 ? (driftSum / driftCnt) : null;
@@ -139,14 +180,16 @@ function computeWindowStats(acts, daysSpan) {
     ef: efCnt > 0 ? (efSum / efCnt) : null,
     drift: avgDrift,
     durability,
+    lthr: lthrCnt > 0 ? Math.round(lthrSum / lthrCnt) : 165,
     zones,
+    hrZones,
     zonePct,
+    hrZonePct,
     mmp
   };
 }
 
 function buildCoachDiagnosis(rec, prev, ftp) {
-  // 1. Fadiga & Recuperação (TSB aproximado = CTL(prev) - ATL(rec))
   const tsb = Math.round(prev.tssPerDay - rec.tssPerDay);
   let readiness = 75 + tsb * 1.4 - (rec.monotony > 1.8 ? (rec.monotony - 1.8) * 18 : 0);
   if (rec.drift !== null && rec.drift > 6.5) readiness -= 10;
@@ -155,12 +198,19 @@ function buildCoachDiagnosis(rec, prev, ftp) {
   const readinessLabel = readiness >= 75 ? 'Ótima' : (readiness >= 55 ? 'Moderada' : 'Fadiga Alta');
   const readinessColor = readiness >= 75 ? '#10b981' : (readiness >= 55 ? '#eab308' : '#ef4444');
 
-  // 2. Polarização & Zonas
-  const lowPct = rec.zonePct.Z1 + rec.zonePct.Z2;
+  const lowPwrPct = rec.zonePct.Z1 + rec.zonePct.Z2;
+  const lowHrPct = rec.hrZonePct.Z1 + rec.hrZonePct.Z2;
+  const z2HrPct = rec.hrZonePct.Z2;
   const midPct = rec.zonePct.Z3;
   const highPct = rec.zonePct.Z4 + rec.zonePct.Z5 + rec.zonePct.Z6 + rec.zonePct.Z7;
+  const highHrPct = rec.hrZonePct.Z4 + rec.hrZonePct.Z5;
 
-  // 3. Perfil MMP
+  const efDelta = (rec.ef !== null && prev.ef !== null) ? (rec.ef - prev.ef) : 0;
+  const efDropPct = (rec.ef !== null && prev.ef !== null && prev.ef > 0) ? ((rec.ef - prev.ef) / prev.ef) * 100 : 0;
+  const driftDelta = (rec.drift !== null && prev.drift !== null) ? (rec.drift - prev.drift) : 0;
+
+  const lowConditioning = (efDropPct < -8) || (rec.drift !== null && rec.drift > 6.5 && lowPwrPct > 55 && z2HrPct >= 25);
+
   const r5s = ftp > 0 && rec.mmp[5] ? rec.mmp[5] / ftp : 0;
   const r5m = ftp > 0 && rec.mmp[300] ? rec.mmp[300] / ftp : 0;
   const r20m = ftp > 0 && rec.mmp[1200] ? rec.mmp[1200] / ftp : 0;
@@ -173,7 +223,6 @@ function buildCoachDiagnosis(rec, prev, ftp) {
     else mmpCaption = 'Perfil Equilibrado: evolução homogênea entre base e intensidade.';
   }
 
-  // 4. Veredito & Foco Prático
   let estado = 'Estável / Em Evolução';
   let estadoColor = '#10b981';
   let pontoForte = 'Consistência Geral';
@@ -181,9 +230,6 @@ function buildCoachDiagnosis(rec, prev, ftp) {
   let focoKey = 'vo2max';
   let focoLabel = '1x Treino VO2máx/semana';
   let texto = '';
-
-  const efDelta = (rec.ef !== null && prev.ef !== null) ? (rec.ef - prev.ef) : 0;
-  const driftDelta = (rec.drift !== null && prev.drift !== null) ? (rec.drift - prev.drift) : 0;
 
   if (readiness < 50 || (tsb < -15 && driftDelta > 1.5)) {
     estado = 'Sobrecarga / Fadiga Acumulada';
@@ -193,22 +239,30 @@ function buildCoachDiagnosis(rec, prev, ftp) {
     focoKey = 'recovery';
     focoLabel = 'Semana Regenerativa (Z1–Z2 leve)';
     texto = `Sua carga recente (${rec.hoursPerWeek.toFixed(1)}h/sem) superou a base anterior com sinais de fadiga (TSB ${tsb}, prontidão ${readiness}/100). Reduza a intensidade por 4–5 dias com giros leves em Z1/Z2 para consolidar os ganhos e baixar o Cardiac Drift.`;
-  } else if (lowPct < 55 && midPct > 28) {
+  } else if (lowConditioning) {
+    estado = 'Condicionamento em Reconstrução';
+    estadoColor = '#eab308';
+    pontoForte = z2HrPct >= 25 ? `Estímulo Aeróbico em Z2 FC (${z2HrPct.toFixed(0)}%)` : 'Constância na Pedalada';
+    lacuna = 'Eficiência W/bpm e Durabilidade';
+    focoKey = 'base_z2';
+    focoLabel = 'Base Aeróbica Guiada por FC (Z2 FC)';
+    texto = `O EF variou de ${prev.ef ? prev.ef.toFixed(2) : '--'} para ${rec.ef ? rec.ef.toFixed(2) : '--'}${rec.drift !== null ? ` com Drift de ${rec.drift.toFixed(1)}%` : ''}. Parte do esforço aeróbico está aparecendo em Watts baixos (Z1 potência) com FC em Z2 (LTHR ~${rec.lthr} bpm). Priorize base contínua controlada por FC antes de forçar picos de Watts.`;
+  } else if (lowPwrPct < 55 && lowHrPct < 55 && midPct > 28) {
     estado = 'Atenção: Excesso de Zona Cinza';
     estadoColor = '#eab308';
     pontoForte = 'Ritmo Constante (Tempo/Z3)';
     lacuna = 'Base Aeróbica Pura (Z2)';
     focoKey = 'base_z2';
     focoLabel = '2x Blocos Longos em Z2 Estável';
-    texto = `Você concentrou ${midPct.toFixed(0)}% do tempo em Z3 e apenas ${lowPct.toFixed(0)}% em Z1–Z2. Isso gera cansaço sem maximizar a adaptação aeróbica. Segure os treinos leves estritamente em Z2 (65–72% do FTP) para melhorar o EF e a durabilidade.`;
-  } else if (highPct < 6 || (prev.mmp[300] > 0 && rec.mmp[300] < prev.mmp[300] * 0.96)) {
+    texto = `Você concentrou ${midPct.toFixed(0)}% do tempo em Z3 e apenas ${lowPwrPct.toFixed(0)}% em Z1–Z2 de potência (e ${lowHrPct.toFixed(0)}% em Z1–Z2 de FC). Segure os treinos leves em Z2 para melhorar o EF e a durabilidade.`;
+  } else if ((highPct < 6 && highHrPct < 8) || (prev.mmp[300] > 0 && rec.mmp[300] < prev.mmp[300] * 0.96)) {
     estado = efDelta >= 0 ? 'Base Sólida / Pronto p/ Pico' : 'Estável / Em Evolução';
     estadoColor = '#10b981';
     pontoForte = efDelta >= 0 ? 'Eficiência Aeróbica (EF)' : 'Resistência de Base (Z2)';
     lacuna = 'Picos de VO2máx (1m–5m)';
     focoKey = 'vo2max';
     focoLabel = '1x Treino VO2máx/semana';
-    texto = `A base aeróbica está consistente (${rec.hoursPerWeek.toFixed(1)}h/sem, ${lowPct.toFixed(0)}% em Z1–Z2), mas o estímulo acima do limiar ficou baixo (${highPct.toFixed(1)}% em Z4+). Introduza 1 sessão semanal de VO2máx para elevar o teto aeróbico.`;
+    texto = `A base aeróbica está consistente (${rec.hoursPerWeek.toFixed(1)}h/sem), mas o estímulo em alta intensidade ficou baixo. Introduza 1 sessão semanal de VO2máx para elevar o teto aeróbico.`;
   } else if (rec.drift !== null && rec.drift > 5.5) {
     estado = 'Boa Intensidade / Drift Elevado';
     estadoColor = '#eab308';
@@ -216,7 +270,7 @@ function buildCoachDiagnosis(rec, prev, ftp) {
     lacuna = 'Durabilidade Aeróbica';
     focoKey = 'sweetspot';
     focoLabel = '1x Sweet Spot Contínuo (88–92% FTP)';
-    texto = `O Cardiac Drift médio ficou em ${rec.drift.toFixed(1)}% nos treinos estáveis. Para melhorar a resistência à fadiga sem perder força, trabalhe blocos contínuos de Sweet Spot (2x20min a 88–92% do FTP) com boa hidratação.`;
+    texto = `O Cardiac Drift médio ficou em ${rec.drift.toFixed(1)}% nos treinos estáveis. Trabalhe blocos contínuos de Sweet Spot (2x20min a 88–92% do FTP) com boa hidratação para melhorar a resistência à fadiga.`;
   } else {
     estado = 'Evolução Equilibrada';
     estadoColor = '#10b981';
@@ -229,48 +283,68 @@ function buildCoachDiagnosis(rec, prev, ftp) {
 
   return {
     tsb, readiness, readinessLabel, readinessColor,
-    mmpCaption, estado, estadoColor, pontoForte, lacuna, focoKey, focoLabel, texto
+    lowConditioning, mmpCaption, estado, estadoColor, pontoForte, lacuna, focoKey, focoLabel, texto
   };
 }
 
-function getSuggestedWorkout(focoKey, ftp) {
+function getSuggestedWorkout(focoKey, ftp, diag, rec) {
   const f = Math.max(120, Math.round(ftp || 220));
-  const w = (pct) => Math.round(f * pct);
+  const cautious = Boolean(diag && diag.lowConditioning);
+  const w = (pct) => Math.round(f * (cautious ? Math.min(pct, 0.92) : pct));
+  const lthr = (rec && rec.lthr) ? rec.lthr : 165;
+  const z2HrLow = Math.round(lthr * 0.72);
+  const z2HrHigh = Math.round(lthr * 0.83);
 
   const templates = {
     vo2max: {
-      title: `VO2máx Clássico — 4x4min @ ${w(1.12)}W`,
-      subtitle: `Baseado no FTP ${f}W • Duração total: 56 min`,
-      blocks: [
-        { label: 'Aquec.', mins: 12, pct: 0.62, zone: 'Z2', color: '#38bdf8' },
-        { label: '4m VO2', mins: 4, pct: 1.12, zone: 'Z5', color: '#f97316' },
-        { label: 'Rec', mins: 4, pct: 0.50, zone: 'Z1', color: '#64748b' },
-        { label: '4m VO2', mins: 4, pct: 1.12, zone: 'Z5', color: '#f97316' },
-        { label: 'Rec', mins: 4, pct: 0.50, zone: 'Z1', color: '#64748b' },
-        { label: '4m VO2', mins: 4, pct: 1.12, zone: 'Z5', color: '#f97316' },
-        { label: 'Rec', mins: 4, pct: 0.50, zone: 'Z1', color: '#64748b' },
-        { label: '4m VO2', mins: 4, pct: 1.12, zone: 'Z5', color: '#f97316' },
-        { label: 'Desaq.', mins: 16, pct: 0.55, zone: 'Z1', color: '#38bdf8' }
-      ]
+      title: cautious
+        ? `Estímulo Moderado — 3x3min @ ${w(0.92)}W`
+        : `VO2máx Clássico — 4x4min @ ${w(1.12)}W`,
+      subtitle: cautious
+        ? `Ajustado p/ condicionamento • Alvo moderado ~${w(0.92)}W (FC ≤ ${Math.round(lthr * 0.94)} bpm)`
+        : `Baseado no FTP ${f}W • Duração total: 56 min`,
+      blocks: cautious
+        ? [
+            { label: 'Aquec.', mins: 12, pct: 0.60, zone: 'Z2', color: '#38bdf8' },
+            { label: '3m Mod.', mins: 3, pct: 0.92, zone: 'Z3', color: '#22c55e' },
+            { label: 'Rec', mins: 4, pct: 0.50, zone: 'Z1', color: '#64748b' },
+            { label: '3m Mod.', mins: 3, pct: 0.92, zone: 'Z3', color: '#22c55e' },
+            { label: 'Rec', mins: 4, pct: 0.50, zone: 'Z1', color: '#64748b' },
+            { label: '3m Mod.', mins: 3, pct: 0.92, zone: 'Z3', color: '#22c55e' },
+            { label: 'Desaq.', mins: 14, pct: 0.52, zone: 'Z1', color: '#38bdf8' }
+          ]
+        : [
+            { label: 'Aquec.', mins: 12, pct: 0.62, zone: 'Z2', color: '#38bdf8' },
+            { label: '4m VO2', mins: 4, pct: 1.12, zone: 'Z5', color: '#f97316' },
+            { label: 'Rec', mins: 4, pct: 0.50, zone: 'Z1', color: '#64748b' },
+            { label: '4m VO2', mins: 4, pct: 1.12, zone: 'Z5', color: '#f97316' },
+            { label: 'Rec', mins: 4, pct: 0.50, zone: 'Z1', color: '#64748b' },
+            { label: '4m VO2', mins: 4, pct: 1.12, zone: 'Z5', color: '#f97316' },
+            { label: 'Rec', mins: 4, pct: 0.50, zone: 'Z1', color: '#64748b' },
+            { label: '4m VO2', mins: 4, pct: 1.12, zone: 'Z5', color: '#f97316' },
+            { label: 'Desaq.', mins: 16, pct: 0.55, zone: 'Z1', color: '#38bdf8' }
+          ]
     },
     base_z2: {
-      title: `Base Aeróbica Pura — 90min @ ${w(0.68)}W`,
-      subtitle: `Baseado no FTP ${f}W • Controle estrito de FC e VI ≤ 1.08`,
+      title: `Base Aeróbica por FC — ${z2HrLow}–${z2HrHigh} bpm (~${w(0.65)}W)`,
+      subtitle: `LTHR ${lthr} bpm • Mantenha a FC em Z2 mesmo que os Watts fiquem baixos`,
       blocks: [
-        { label: 'Aquec.', mins: 15, pct: 0.58, zone: 'Z1', color: '#64748b' },
-        { label: 'Z2 Contínuo', mins: 65, pct: 0.68, zone: 'Z2', color: '#38bdf8' },
-        { label: 'Desaq.', mins: 10, pct: 0.52, zone: 'Z1', color: '#64748b' }
+        { label: 'Aquec.', mins: 15, pct: 0.55, zone: 'Z1', color: '#64748b' },
+        { label: `Z2 (${z2HrLow}-${z2HrHigh}bpm)`, mins: 65, pct: 0.65, zone: 'Z2', color: '#38bdf8' },
+        { label: 'Desaq.', mins: 10, pct: 0.50, zone: 'Z1', color: '#64748b' }
       ]
     },
     sweetspot: {
-      title: `Sweet Spot Durabilidade — 2x20min @ ${w(0.90)}W`,
-      subtitle: `Baseado no FTP ${f}W • Duração total: 68 min`,
+      title: cautious
+        ? `Ritmo Estável — 2x15min @ ${w(0.85)}W`
+        : `Sweet Spot Durabilidade — 2x20min @ ${w(0.90)}W`,
+      subtitle: `LTHR ${lthr} bpm • Controle o desacoplamento cardíaco no 2º bloco`,
       blocks: [
-        { label: 'Aquec.', mins: 12, pct: 0.62, zone: 'Z2', color: '#38bdf8' },
-        { label: '20m SS', mins: 20, pct: 0.90, zone: 'Z3', color: '#22c55e' },
+        { label: 'Aquec.', mins: 12, pct: 0.60, zone: 'Z2', color: '#38bdf8' },
+        { label: '15m Ritmo', mins: 15, pct: cautious ? 0.85 : 0.90, zone: 'Z3', color: '#22c55e' },
         { label: 'Rec', mins: 6, pct: 0.55, zone: 'Z1', color: '#64748b' },
-        { label: '20m SS', mins: 20, pct: 0.90, zone: 'Z3', color: '#22c55e' },
-        { label: 'Desaq.', mins: 10, pct: 0.55, zone: 'Z1', color: '#38bdf8' }
+        { label: '15m Ritmo', mins: 15, pct: cautious ? 0.85 : 0.90, zone: 'Z3', color: '#22c55e' },
+        { label: 'Desaq.', mins: 10, pct: 0.52, zone: 'Z1', color: '#38bdf8' }
       ]
     },
     threshold: {
@@ -285,8 +359,8 @@ function getSuggestedWorkout(focoKey, ftp) {
       ]
     },
     recovery: {
-      title: `Giro Regenerativo — 45min @ ${w(0.52)}W`,
-      subtitle: `Baseado no FTP ${f}W • Cadência solta, sem forçar`,
+      title: `Giro Regenerativo — 45min @ ${w(0.52)}W (FC < ${Math.round(lthr * 0.72)} bpm)`,
+      subtitle: `LTHR ${lthr} bpm • Cadência solta, sem forçar`,
       blocks: [
         { label: 'Soltar', mins: 10, pct: 0.48, zone: 'Z1', color: '#64748b' },
         { label: 'Z1 Leve', mins: 25, pct: 0.53, zone: 'Z1', color: '#94a3b8' },
@@ -313,16 +387,23 @@ function auditCompliance(allActs, refDate, focoKey, latestDate) {
   let score = 0;
 
   if (focoKey === 'vo2max') {
-    const z5Min = (stats.zones.Z5 + stats.zones.Z6) / 60;
-    score = z5Min >= 14 ? 2 : (z5Min >= 6 ? 1 : 0);
+    const z5PwrMin = (stats.zones.Z5 + stats.zones.Z6) / 60;
+    const z45HrMin = (stats.hrZones.Z4 + stats.hrZones.Z5) / 60;
+    const bestMin = Math.max(z5PwrMin, z45HrMin * 0.8);
+    score = bestMin >= 14 ? 2 : (bestMin >= 6 ? 1 : 0);
   } else if (focoKey === 'base_z2') {
-    const z2Hrs = stats.zones.Z2 / 3600;
-    score = z2Hrs >= 2.5 ? 2 : (z2Hrs >= 1.2 ? 1 : 0);
+    const z2PwrHrs = stats.zones.Z2 / 3600;
+    const z2HrHrs = stats.hrZones.Z2 / 3600;
+    const bestHrs = Math.max(z2PwrHrs, z2HrHrs);
+    score = bestHrs >= 2.5 ? 2 : (bestHrs >= 1.2 ? 1 : 0);
   } else if (focoKey === 'sweetspot' || focoKey === 'threshold') {
-    const z34Min = (stats.zones.Z3 + stats.zones.Z4) / 60;
-    score = z34Min >= 30 ? 2 : (z34Min >= 15 ? 1 : 0);
+    const z34PwrMin = (stats.zones.Z3 + stats.zones.Z4) / 60;
+    const z34HrMin = (stats.hrZones.Z3 + stats.hrZones.Z4) / 60;
+    const bestMin = Math.max(z34PwrMin, z34HrMin);
+    score = bestMin >= 30 ? 2 : (bestMin >= 15 ? 1 : 0);
   } else if (focoKey === 'recovery') {
-    score = stats.zonePct.Z1 + stats.zonePct.Z2 >= 75 ? 2 : 1;
+    const lowPct = Math.max(stats.zonePct.Z1 + stats.zonePct.Z2, stats.hrZonePct.Z1 + stats.hrZonePct.Z2);
+    score = lowPct >= 75 ? 2 : 1;
   }
 
   if (score === 2) return { status: 'done', badge: '✅ Recomendação cumprida nos 14d seguintes', color: '#10b981' };
@@ -380,7 +461,7 @@ function renderTreinadorTab() {
   const rec = computeWindowStats(recentActs, coachConfig.recentDays);
   const prev = computeWindowStats(prevActs, coachConfig.prevDays);
   const diag = buildCoachDiagnosis(rec, prev, refFtp);
-  const workout = getSuggestedWorkout(diag.focoKey, refFtp);
+  const workout = getSuggestedWorkout(diag.focoKey, refFtp, diag, rec);
   const audit = auditCompliance(allActs, refDate, diag.focoKey, latestDate);
 
   const fmtDate = (d) => d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -390,7 +471,6 @@ function renderTreinadorTab() {
     : '';
 
   root.innerHTML = `
-    <!-- SLIDER DO HISTÓRICO -->
     <div style="background:#0f1522; border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:12px 16px; margin-bottom:12px;">
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:6px;">
         <span style="font-size:0.78rem; font-weight:700; color:#34d399;">📅 DATA DE REFERÊNCIA: ${fmtDate(refDate)} (${refAct.name})</span>
@@ -401,7 +481,6 @@ function renderTreinadorTab() {
              style="width:100%; accent-color:#10b981; cursor:pointer;">
     </div>
 
-    <!-- BARRA DE CONFIGURAÇÃO + PÍLULAS DISCRETAS -->
     <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; background:#0a0e17; border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:10px 14px; margin-bottom:14px;">
       <div style="display:flex; align-items:center; flex-wrap:wrap; gap:12px; font-size:0.78rem; color:#cbd5e1;">
         <strong style="color:#f8fafc;">CONFIGURAÇÃO:</strong>
@@ -423,9 +502,7 @@ function renderTreinadorTab() {
       </div>
     </div>
 
-    <!-- LINHA DO MEIO: 4 QUADRANTES -->
     <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(230px, 1fr)); gap:12px; margin-bottom:14px;">
-      <!-- 1. FADIGA & RECUPERAÇÃO -->
       <div style="background:#0a0e17; border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:14px;">
         <div style="font-size:0.75rem; font-weight:700; color:#94a3b8; margin-bottom:8px;">1. FADIGA &amp; RECUPERAÇÃO</div>
         <canvas id="coachGaugeCanvas" style="width:100%; height:135px;"></canvas>
@@ -436,13 +513,14 @@ function renderTreinadorTab() {
         </div>
       </div>
 
-      <!-- 2. DISTRIBUIÇÃO POR ZONAS -->
       <div style="background:#0a0e17; border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:14px;">
-        <div style="font-size:0.75rem; font-weight:700; color:#94a3b8; margin-bottom:8px;">2. DISTRIBUIÇÃO POR ZONAS (%)</div>
-        <canvas id="coachZonesCanvas" style="width:100%; height:160px;"></canvas>
+        <div style="font-size:0.75rem; font-weight:700; color:#94a3b8; margin-bottom:8px;">2. DISTRIBUIÇÃO POR ZONAS (W)</div>
+        <canvas id="coachZonesCanvas" style="width:100%; height:142px;"></canvas>
+        <div style="font-size:0.69rem; color:#94a3b8; margin-top:4px; text-align:center;">
+          Z2 FC (LTHR ~${rec.lthr} bpm): <strong style="color:#38bdf8;">${rec.hrZonePct.Z2.toFixed(0)}%</strong>
+        </div>
       </div>
 
-      <!-- 3. EFICIÊNCIA AERÓBICA (EF) & DRIFT -->
       <div style="background:#0a0e17; border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:14px; display:flex; flex-direction:column; justify-content:space-between;">
         <div style="font-size:0.75rem; font-weight:700; color:#94a3b8;">3. EFICIÊNCIA (EF) &amp; DRIFT</div>
         <div style="text-align:center; margin:6px 0;">
@@ -459,10 +537,9 @@ function renderTreinadorTab() {
             <span style="font-size:0.8rem; color:#94a3b8; font-weight:500;"> vs ${prev.drift !== null ? prev.drift.toFixed(1) + '%' : '--'}</span>
           </div>
         </div>
-        <div style="font-size:0.7rem; color:#64748b; text-align:center;">FTP Ref.: ${refFtp}W</div>
+        <div style="font-size:0.7rem; color:#64748b; text-align:center;">FTP Ref.: ${refFtp}W • LTHR: ${rec.lthr} bpm</div>
       </div>
 
-      <!-- 4. PERFIL DE POTÊNCIA (MMP) -->
       <div style="background:#0a0e17; border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:14px;">
         <div style="font-size:0.75rem; font-weight:700; color:#94a3b8; margin-bottom:4px;">4. PERFIL DE POTÊNCIA (MMP)</div>
         <canvas id="coachRadarCanvas" style="width:100%; height:132px;"></canvas>
@@ -470,9 +547,7 @@ function renderTreinadorTab() {
       </div>
     </div>
 
-    <!-- RODAPÉ DIVIDIDO EM 2 METADES -->
     <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:14px;">
-      <!-- ESQUERDA: VEREDITO COMPACTO + COACH DETALHADO -->
       <div style="background:#0a0e17; border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:16px;">
         <div style="font-size:0.76rem; font-weight:700; color:#94a3b8; margin-bottom:10px;">VEREDITO &amp; COACH DIÁRIO</div>
         <div style="display:grid; gap:6px; font-size:0.84rem; margin-bottom:12px; padding-bottom:10px; border-bottom:1px solid rgba(255,255,255,0.08);">
@@ -486,7 +561,6 @@ function renderTreinadorTab() {
         </div>
       </div>
 
-      <!-- DIREITA: SUGESTÃO DE TREINO ESTRUTURADO -->
       <div style="background:#0a0e17; border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:16px;">
         <div style="display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:6px; margin-bottom:6px;">
           <span style="font-size:0.76rem; font-weight:700; color:#94a3b8;">SUGESTÃO DE TREINO (FOCO PRÁTICO)</span>
@@ -538,7 +612,7 @@ function drawCoachZones(rec, prev) {
   const c = document.getElementById('coachZonesCanvas');
   if (!c) return;
   const ctx = c.getContext('2d');
-  const w = c.offsetWidth || 240, h = 160;
+  const w = c.offsetWidth || 240, h = 142;
   c.width = w; c.height = h;
 
   const zs = ['Z1', 'Z2', 'Z3', 'Z4', 'Z5', 'Z6', 'Z7'];
@@ -581,7 +655,6 @@ function drawCoachRadar(rec, prev) {
   const labels = ['5s', '1m', '5m', '20m', '60m'];
   const cx = w / 2, cy = h / 2 + 4, rMax = Math.min(w, h) * 0.36;
 
-  // Grade pentágono
   ctx.strokeStyle = '#1e293b';
   ctx.lineWidth = 1;
   [0.33, 0.66, 1].forEach(lvl => {

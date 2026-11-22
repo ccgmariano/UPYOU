@@ -1,4 +1,4 @@
-// Aba: Diagnóstico & Coach (Janelas Parametrizáveis, Slider Histórico, FC/LTHR de Apoio, Catálogo de Treinos e Auditoria)
+// Aba: Diagnóstico & Coach (Janelas Parametrizáveis, Slider Histórico, FC/LTHR de Apoio, Volume Real e Auditoria)
 
 const COACH_CFG_KEY = 'upyou_coach_config_v1';
 
@@ -173,6 +173,7 @@ function computeWindowStats(acts, daysSpan) {
   return {
     count: acts.length,
     hoursPerWeek: (totalSecs / 3600) / weeks,
+    avgRideMins: acts.length > 0 ? (totalSecs / 60) / acts.length : 60,
     ridesPerWeek: acts.length / weeks,
     distPerWeek: totalDist / weeks,
     tssPerDay: totalTss / Math.max(1, daysSpan),
@@ -287,6 +288,37 @@ function buildCoachDiagnosis(rec, prev, ftp) {
   };
 }
 
+function scaleWorkoutByVolume(workout, focoKey, diag, rec) {
+  const baseMins = workout.blocks.reduce((s, b) => s + b.mins, 0);
+  const avgRide = Math.max(40, Math.min(115, rec && rec.avgRideMins ? rec.avgRideMins : 60));
+
+  let volFactor = 1.0;
+  let volNote = 'mantendo média';
+  if (focoKey === 'recovery' || (diag && diag.readiness < 55)) {
+    volFactor = 0.80;
+    volNote = 'volume reduzido (-20%)';
+  } else if (diag && diag.readiness >= 75 && !diag.lowConditioning && (rec.drift === null || rec.drift <= 5)) {
+    volFactor = 1.10;
+    volNote = 'progressão suave (+10%)';
+  }
+
+  const targetMins = Math.max(35, Math.min(120, Math.round(avgRide * volFactor)));
+  const ratio = Math.max(0.7, Math.min(1.45, targetMins / Math.max(1, baseMins)));
+
+  const scaledBlocks = workout.blocks.map((b, idx) => {
+    const isEdge = idx === 0 || idx === workout.blocks.length - 1;
+    const raw = b.mins * (isEdge ? (0.5 + 0.5 * ratio) : ratio);
+    return { ...b, mins: Math.max(2, Math.round(raw)) };
+  });
+
+  const totalMins = scaledBlocks.reduce((s, b) => s + b.mins, 0);
+  return {
+    ...workout,
+    blocks: scaledBlocks,
+    subtitle: `${workout.subtitle} • Total: ${totalMins} min (${volNote}, média ${rec.hoursPerWeek.toFixed(1)}h/sem)`
+  };
+}
+
 function getSuggestedWorkout(focoKey, ftp, diag, rec, refIdx = 0) {
   const f = Math.max(120, Math.round(ftp || 220));
   const cautious = Boolean(diag && diag.lowConditioning);
@@ -299,8 +331,8 @@ function getSuggestedWorkout(focoKey, ftp, diag, rec, refIdx = 0) {
   const catalogs = {
     recovery: [
       {
-        title: `Giro Regenerativo — 45min @ ${w(0.52)}W (FC < ${Math.round(lthr * 0.72)} bpm)`,
-        subtitle: `LTHR ${lthr} bpm • Cadência solta (85–95 rpm), sem forçar`,
+        title: `Giro Regenerativo @ ${w(0.52)}W (FC < ${Math.round(lthr * 0.72)} bpm)`,
+        subtitle: `LTHR ${lthr} bpm • Cadência solta`,
         blocks: [
           { label: 'Soltar', mins: 10, pct: 0.48, zone: 'Z1', color: '#64748b' },
           { label: 'Z1 Leve', mins: 25, pct: 0.53, zone: 'Z1', color: '#94a3b8' },
@@ -308,8 +340,8 @@ function getSuggestedWorkout(focoKey, ftp, diag, rec, refIdx = 0) {
         ]
       },
       {
-        title: `Recuperação Ativa — 50min @ ${w(0.55)}W (Z1/Z2 Baixa)`,
-        subtitle: `Foco em descarga de fadiga e retorno do Cardiac Drift`,
+        title: `Recuperação Ativa @ ${w(0.55)}W (Z1/Z2 Baixa)`,
+        subtitle: `Descarga de fadiga e retorno do Drift`,
         blocks: [
           { label: 'Aquec.', mins: 10, pct: 0.48, zone: 'Z1', color: '#64748b' },
           { label: 'Z1-Z2', mins: 30, pct: 0.56, zone: 'Z2', color: '#38bdf8' },
@@ -320,29 +352,29 @@ function getSuggestedWorkout(focoKey, ftp, diag, rec, refIdx = 0) {
     base_z2: [
       {
         title: `Base Aeróbica por FC — ${z2HrLow}–${z2HrHigh} bpm (~${w(0.65)}W)`,
-        subtitle: `LTHR ${lthr} bpm • Mantenha a FC em Z2 mesmo que os Watts fiquem baixos`,
+        subtitle: `LTHR ${lthr} bpm • Guie pela FC em Z2`,
         blocks: [
-          { label: 'Aquec.', mins: 15, pct: 0.55, zone: 'Z1', color: '#64748b' },
-          { label: `Z2 (${z2HrLow}-${z2HrHigh}bpm)`, mins: 65, pct: 0.65, zone: 'Z2', color: '#38bdf8' },
+          { label: 'Aquec.', mins: 12, pct: 0.55, zone: 'Z1', color: '#64748b' },
+          { label: `Z2 FC`, mins: 50, pct: 0.65, zone: 'Z2', color: '#38bdf8' },
           { label: 'Desaq.', mins: 10, pct: 0.50, zone: 'Z1', color: '#64748b' }
         ]
       },
       {
-        title: `Endurance Contínua — 75min @ ${w(0.68)}W (Z2 Estável)`,
-        subtitle: `Ritmo contínuo sem picos para consolidar eficiência aeróbica`,
+        title: `Endurance Contínua @ ${w(0.68)}W (Z2 Estável)`,
+        subtitle: `Ritmo contínuo sem picos`,
         blocks: [
           { label: 'Aquec.', mins: 10, pct: 0.55, zone: 'Z1', color: '#64748b' },
-          { label: 'Z2 Estável', mins: 55, pct: 0.68, zone: 'Z2', color: '#38bdf8' },
+          { label: 'Z2 Estável', mins: 50, pct: 0.68, zone: 'Z2', color: '#38bdf8' },
           { label: 'Desaq.', mins: 10, pct: 0.52, zone: 'Z1', color: '#64748b' }
         ]
       },
       {
-        title: `Base com Cadência — 60min @ ${w(0.66)}W (90–98 rpm)`,
-        subtitle: `Trabalha recrutamento muscular leve em Z2 sem sobrecarregar articulações`,
+        title: `Base com Cadência @ ${w(0.66)}W (90–98 rpm)`,
+        subtitle: `Recrutamento leve em Z2`,
         blocks: [
-          { label: 'Aquec.', mins: 12, pct: 0.54, zone: 'Z1', color: '#64748b' },
-          { label: 'Cad. Alta', mins: 36, pct: 0.66, zone: 'Z2', color: '#38bdf8' },
-          { label: 'Desaq.', mins: 12, pct: 0.50, zone: 'Z1', color: '#64748b' }
+          { label: 'Aquec.', mins: 10, pct: 0.54, zone: 'Z1', color: '#64748b' },
+          { label: 'Cad. Alta', mins: 40, pct: 0.66, zone: 'Z2', color: '#38bdf8' },
+          { label: 'Desaq.', mins: 10, pct: 0.50, zone: 'Z1', color: '#64748b' }
         ]
       }
     ],
@@ -358,12 +390,12 @@ function getSuggestedWorkout(focoKey, ftp, diag, rec, refIdx = 0) {
               { label: '3m Mod.', mins: 3, pct: 0.92, zone: 'Z3', color: '#22c55e' },
               { label: 'Rec', mins: 4, pct: 0.50, zone: 'Z1', color: '#64748b' },
               { label: '3m Mod.', mins: 3, pct: 0.92, zone: 'Z3', color: '#22c55e' },
-              { label: 'Desaq.', mins: 14, pct: 0.52, zone: 'Z1', color: '#38bdf8' }
+              { label: 'Desaq.', mins: 12, pct: 0.52, zone: 'Z1', color: '#38bdf8' }
             ]
           }
         : {
             title: `VO2máx Clássico — 4x4min @ ${w(1.12)}W`,
-            subtitle: `Baseado no FTP ${f}W • Recuperação ativa de 4min entre séries`,
+            subtitle: `FTP ${f}W • Recuperação ativa entre séries`,
             blocks: [
               { label: 'Aquec.', mins: 12, pct: 0.62, zone: 'Z2', color: '#38bdf8' },
               { label: '4m VO2', mins: 4, pct: 1.12, zone: 'Z5', color: '#f97316' },
@@ -373,12 +405,12 @@ function getSuggestedWorkout(focoKey, ftp, diag, rec, refIdx = 0) {
               { label: '4m VO2', mins: 4, pct: 1.12, zone: 'Z5', color: '#f97316' },
               { label: 'Rec', mins: 4, pct: 0.50, zone: 'Z1', color: '#64748b' },
               { label: '4m VO2', mins: 4, pct: 1.12, zone: 'Z5', color: '#f97316' },
-              { label: 'Desaq.', mins: 16, pct: 0.55, zone: 'Z1', color: '#38bdf8' }
+              { label: 'Desaq.', mins: 12, pct: 0.55, zone: 'Z1', color: '#38bdf8' }
             ]
           },
       {
         title: `VO2máx Curto — 2x(8x30s @ ${w(1.20)}W / 30s)`,
-        subtitle: `Baseado no FTP ${f}W • Alta qualidade em tiros curtos de 30s`,
+        subtitle: `FTP ${f}W • Tiros curtos de alta qualidade`,
         blocks: [
           { label: 'Aquec.', mins: 12, pct: 0.62, zone: 'Z2', color: '#38bdf8' },
           { label: '8x30s', mins: 8, pct: 1.20, zone: 'Z6', color: '#ef4444' },
@@ -389,7 +421,7 @@ function getSuggestedWorkout(focoKey, ftp, diag, rec, refIdx = 0) {
       },
       {
         title: `VO2máx Sustentado — 3x5min @ ${w(1.08)}W`,
-        subtitle: `Baseado no FTP ${f}W • Foco em potência aeróbica máxima contínua`,
+        subtitle: `FTP ${f}W • Potência aeróbica máxima`,
         blocks: [
           { label: 'Aquec.', mins: 12, pct: 0.62, zone: 'Z2', color: '#38bdf8' },
           { label: '5m VO2', mins: 5, pct: 1.08, zone: 'Z5', color: '#f97316' },
@@ -404,7 +436,7 @@ function getSuggestedWorkout(focoKey, ftp, diag, rec, refIdx = 0) {
     sweetspot: [
       {
         title: `Sweet Spot Contínuo — 2x20min @ ${w(0.90)}W`,
-        subtitle: `LTHR ${lthr} bpm • Melhora durabilidade e resistência à fadiga`,
+        subtitle: `LTHR ${lthr} bpm • Durabilidade e controle de drift`,
         blocks: [
           { label: 'Aquec.', mins: 12, pct: 0.60, zone: 'Z2', color: '#38bdf8' },
           { label: '20m SS', mins: 20, pct: 0.90, zone: 'Z3', color: '#22c55e' },
@@ -415,7 +447,7 @@ function getSuggestedWorkout(focoKey, ftp, diag, rec, refIdx = 0) {
       },
       {
         title: `Ritmo Estendido — 3x15min @ ${w(0.88)}W`,
-        subtitle: `Baseado no FTP ${f}W • Intervalos curtos de recuperação de 4min`,
+        subtitle: `FTP ${f}W • Blocos sustentados em Sweet Spot`,
         blocks: [
           { label: 'Aquec.', mins: 10, pct: 0.60, zone: 'Z2', color: '#38bdf8' },
           { label: '15m SS', mins: 15, pct: 0.88, zone: 'Z3', color: '#22c55e' },
@@ -430,7 +462,7 @@ function getSuggestedWorkout(focoKey, ftp, diag, rec, refIdx = 0) {
     threshold: [
       {
         title: `Limiar Funcional — 2x15min @ ${w(1.00)}W`,
-        subtitle: `Baseado no FTP ${f}W • Sustentação próxima ao limiar anaeróbico`,
+        subtitle: `FTP ${f}W • Sustentação no limiar`,
         blocks: [
           { label: 'Aquec.', mins: 12, pct: 0.65, zone: 'Z2', color: '#38bdf8' },
           { label: '15m FTP', mins: 15, pct: 1.00, zone: 'Z4', color: '#eab308' },
@@ -440,23 +472,24 @@ function getSuggestedWorkout(focoKey, ftp, diag, rec, refIdx = 0) {
         ]
       },
       {
-        title: `Over-Unders Limiar — 2x12min (${w(0.88)}W / ${w(1.06)}W)`,
-        subtitle: `Alternância entre Sweet Spot e acima do limiar para tolerância ao lactato`,
+        title: `Over-Unders Limiar — (${w(0.88)}W / ${w(1.06)}W)`,
+        subtitle: `Alternância Sweet Spot e acima do FTP`,
         blocks: [
           { label: 'Aquec.', mins: 12, pct: 0.62, zone: 'Z2', color: '#38bdf8' },
-          { label: '4m SS', mins: 4, pct: 0.88, zone: 'Z3', color: '#22c55e' },
-          { label: '2m >FTP', mins: 2, pct: 1.06, zone: 'Z5', color: '#f97316' },
-          { label: '4m SS', mins: 4, pct: 0.88, zone: 'Z3', color: '#22c55e' },
-          { label: '2m >FTP', mins: 2, pct: 1.06, zone: 'Z5', color: '#f97316' },
+          { label: 'SS', mins: 4, pct: 0.88, zone: 'Z3', color: '#22c55e' },
+          { label: '>FTP', mins: 2, pct: 1.06, zone: 'Z5', color: '#f97316' },
+          { label: 'SS', mins: 4, pct: 0.88, zone: 'Z3', color: '#22c55e' },
+          { label: '>FTP', mins: 2, pct: 1.06, zone: 'Z5', color: '#f97316' },
           { label: 'Rec', mins: 6, pct: 0.52, zone: 'Z1', color: '#64748b' },
-          { label: '12m O/U', mins: 12, pct: 0.95, zone: 'Z4', color: '#eab308' },
+          { label: 'O/U', mins: 12, pct: 0.95, zone: 'Z4', color: '#eab308' },
           { label: 'Desaq.', mins: 10, pct: 0.54, zone: 'Z1', color: '#38bdf8' }
         ]
       }
     ]
   };
 
-  return pick(catalogs[focoKey] || catalogs.vo2max);
+  const chosen = pick(catalogs[focoKey] || catalogs.vo2max);
+  return scaleWorkoutByVolume(chosen, focoKey, diag, rec);
 }
 
 function auditCompliance(allActs, refDate, focoKey, latestDate) {
@@ -655,7 +688,7 @@ function renderTreinadorTab() {
           <span style="font-size:0.72rem; color:#38bdf8; font-weight:600;">${workout.title}</span>
         </div>
         <div style="font-size:0.72rem; color:#64748b; margin-bottom:8px;">${workout.subtitle}</div>
-        <canvas id="coachWorkoutCanvas" style="width:100%; height:180px;"></canvas>
+        <canvas id="coachWorkoutCanvas" style="width:100%; height:190px;"></canvas>
       </div>
     </div>
   `;
@@ -789,33 +822,70 @@ function drawCoachWorkout(workout, ftp) {
   const c = document.getElementById('coachWorkoutCanvas');
   if (!c) return;
   const ctx = c.getContext('2d');
-  const w = c.offsetWidth || 420, h = 180;
+  const w = c.offsetWidth || 420, h = 190;
   c.width = w; c.height = h;
 
-  const padL = 10, padR = 10, padT = 26, padB = 24;
+  const padL = 10, padR = 10, padT = 34, padB = 26;
   const drawW = w - padL - padR, drawH = h - padT - padB;
   const totalMins = workout.blocks.reduce((s, b) => s + b.mins, 0);
   const maxPct = Math.max(1.2, ...workout.blocks.map(b => b.pct));
 
+  const hitboxes = [];
   let curX = padL;
-  workout.blocks.forEach(b => {
-    const bw = Math.max(8, (b.mins / totalMins) * drawW);
+
+  workout.blocks.forEach((b, idx) => {
+    const bw = (b.mins / Math.max(1, totalMins)) * drawW;
     const bh = (b.pct / maxPct) * drawH;
     const y = padT + drawH - bh;
+    const watts = Math.round(b.pct * ftp);
 
     ctx.fillStyle = b.color;
     ctx.fillRect(curX + 1, y, Math.max(2, bw - 2), bh);
 
-    if (bw >= 26) {
-      ctx.fillStyle = '#f8fafc';
-      ctx.font = 'bold 9.5px "JetBrains Mono", monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText(`${Math.round(b.pct * ftp)}W`, curX + bw / 2, y - 5);
+    // Rótulo de Watts sempre visível (alterna altura em blocos estreitos para não encavalar)
+    const isNarrow = bw < 32;
+    const yOff = isNarrow && (idx % 2 === 1) ? 17 : 6;
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = isNarrow ? 'bold 8.5px "JetBrains Mono", monospace' : 'bold 9.5px "JetBrains Mono", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${watts}W`, curX + bw / 2, Math.max(11, y - yOff));
 
-      ctx.fillStyle = '#94a3b8';
-      ctx.font = '9px sans-serif';
-      ctx.fillText(`${b.mins}m`, curX + bw / 2, h - 7);
-    }
+    // Rótulo de duração sempre visível
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = isNarrow ? '8px sans-serif' : '9px sans-serif';
+    ctx.fillText(`${b.mins}m`, curX + bw / 2, h - 8);
+
+    hitboxes.push({ x: curX, y: padT, w: bw, h: drawH, label: b.label, zone: b.zone, mins: b.mins, watts, color: b.color });
     curX += bw;
   });
+
+  if (!c._workoutTipBound) {
+    c._workoutTipBound = true;
+    const tip = document.createElement('div');
+    Object.assign(tip.style, {
+      position: 'absolute', background: 'rgba(10,14,23,0.96)', border: '1px solid #475569',
+      padding: '8px 10px', borderRadius: '6px', color: '#f1f5f9', pointerEvents: 'none',
+      display: 'none', zIndex: '130', fontSize: '12px', fontFamily: '"JetBrains Mono", monospace'
+    });
+    document.body.appendChild(tip);
+    c._workoutTip = tip;
+
+    c.addEventListener('mousemove', (e) => {
+      const rect = c.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const boxes = c._workoutHitboxes || [];
+      const hit = boxes.find(b => mx >= b.x && mx <= b.x + b.w);
+      if (!hit) { tip.style.display = 'none'; return; }
+      tip.innerHTML = `<strong style="color:${hit.color};">${hit.label} (${hit.zone})</strong><br/>Alvo: <b>${hit.watts}W</b> • Duração: <b>${hit.mins} min</b>`;
+      if (typeof window.positionTooltipSmart === 'function') {
+        window.positionTooltipSmart(tip, e.clientX, e.clientY, e.pageX, e.pageY);
+      } else {
+        tip.style.display = 'block';
+        tip.style.left = `${e.pageX + 12}px`;
+        tip.style.top = `${e.pageY + 12}px`;
+      }
+    });
+    c.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+  }
+  c._workoutHitboxes = hitboxes;
 }

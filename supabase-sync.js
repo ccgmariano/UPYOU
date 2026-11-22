@@ -195,3 +195,29 @@ window.deleteActivityFromSupabase = async function(activityKey) {
     }
   }).catch(() => {});
 };
+
+window.syncLocalTelemetryToSupabase = async function(onProgress = null) {
+  if (!currentUserId || typeof initDB !== "function") return 0;
+  const db = await initDB();
+  const tx = db.transaction(TELEMETRY_STORE, "readonly");
+  const store = tx.objectStore(TELEMETRY_STORE);
+
+  const allRecords = await new Promise((resolve) => {
+    const req = store.getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => resolve([]);
+  });
+
+  const prefix = `${currentUserId}_`;
+  const userStreams = allRecords.filter((r) => r.id && r.id.startsWith(prefix) && Array.isArray(r.stream) && r.stream.length > 0);
+
+  let uploaded = 0;
+  for (let i = 0; i < userStreams.length; i++) {
+    const item = userStreams[i];
+    const actKey = item.id.slice(prefix.length);
+    const ok = await window.uploadTelemetryStreamToSupabase(actKey, item.stream);
+    if (ok) uploaded++;
+    if (typeof onProgress === "function") onProgress(i + 1, userStreams.length);
+  }
+  return uploaded;
+};

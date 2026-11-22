@@ -88,7 +88,7 @@ window.downloadTelemetryStreamFromSupabase = async function(activityKey) {
 window.upsertActivitiesToSupabase = async function(activities, onProgress = null) {
   if (!currentUserId || !Array.isArray(activities) || activities.length === 0) return;
 
-  const batchSize = 50;
+  const batchSize = 20;
   for (let i = 0; i < activities.length; i += batchSize) {
     const chunk = activities.slice(i, i + batchSize);
     const rows = chunk.map(act => {
@@ -104,6 +104,7 @@ window.upsertActivitiesToSupabase = async function(activities, onProgress = null
       }
 
       const dObj = act.dateObj instanceof Date ? act.dateObj : new Date(act.dateObj || Date.now());
+      const cleanPayload = JSON.parse(JSON.stringify(serializeActivityForCloud({ ...act, hasSavedTelemetry: hasTel })));
 
       return {
         google_id: String(currentUserId),
@@ -111,7 +112,7 @@ window.upsertActivitiesToSupabase = async function(activities, onProgress = null
         date_obj: isNaN(dObj.getTime()) ? new Date().toISOString() : dObj.toISOString(),
         source: act.source || (act.garminId ? "garmin" : "strava"),
         has_telemetry: hasTel,
-        payload: serializeActivityForCloud({ ...act, hasSavedTelemetry: hasTel }),
+        payload: cleanPayload,
         updated_at: new Date().toISOString()
       };
     });
@@ -125,7 +126,7 @@ window.upsertActivitiesToSupabase = async function(activities, onProgress = null
 
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
-      throw new Error(`Supabase upsert falhou (${res.status}): ${errText}`);
+      console.warn(`Lote ${i} Supabase falhou (${res.status}): ${errText}`);
     }
 
     if (typeof onProgress === "function") {

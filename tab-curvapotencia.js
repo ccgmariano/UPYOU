@@ -1,4 +1,4 @@
-// Aba: Curva de Potência Máxima Média (MMP: 5s, 15s, 1m, 5m, 15m, 20m, 60m, 120m) Multi-Anos e Histórico por Marca
+// Aba: Curva de Potência Máxima Média (MMP: 5s, 15s, 1m, 5m, 15m, 20m, 60m, 120m) — Exclusiva com Dados Reais de Sensor
 
 const MMP_DURATIONS = [
   { sec: 5, label: '5s', title: '5 Segundos (Sprint Neuromuscular)' },
@@ -15,14 +15,32 @@ const CURVE_PALETTE = [
   '#f97316', '#38bdf8', '#22c55e', '#eab308', '#a855f7', '#ec4899', '#14b8a6', '#f43f5e', '#84cc16', '#6366f1'
 ];
 
-let selectedMmpYears = ['all']; // Pode conter 'all' e/ou anos específicos como '2026', '2025'
-let selectedMmpDurationSec = 1200; // Abre por padrão no card de 20 min
-let mmpHistorySortMode = 'date_desc'; // 'date_desc' (Mais recente -> Mais antiga) ou 'pwr_desc' (Maior Potência)
+let selectedMmpYears = ['all'];
+let selectedMmpDurationSec = 1200;
+let mmpHistorySortMode = 'date_desc';
 
-// Extrai o melhor valor de potência de uma atividade para uma duração (usa mmpCurve exata ou reconstrói de dispWindows se for cache antigo)
+// Retorna apenas o objeto de métricas reais do sensor (ignora potência simulada/estimada)
+function getRealSensorMetrics(act) {
+  if (!act) return null;
+  if (act.realMetrics && !act.realMetrics.isEstimated && (act.realMetrics.avgPwr > 0 || act.realMetrics.mmp20 > 0)) {
+    return act.realMetrics;
+  }
+  if (act.metrics && !act.metrics.isEstimated && (act.metrics.avgPwr > 0 || act.metrics.mmp20 > 0)) {
+    return act.metrics;
+  }
+  return null;
+}
+
+function getRealSensorActivities() {
+  if (typeof dbActivities === 'undefined' || !Array.isArray(dbActivities)) return [];
+  return dbActivities.filter(a => getRealSensorMetrics(a) !== null);
+}
+
+// Extrai o melhor valor de potência REAL do sensor de uma atividade para uma duração
 window.getActivityMmpForDuration = function(act, sec) {
-  if (!act || !act.metrics) return 0;
-  const m = act.metrics;
+  const m = getRealSensorMetrics(act);
+  if (!m) return 0;
+
   const totalDur = m.movingSecs || m.totalSecs || 0;
   if (totalDur < sec * 0.90) return 0;
 
@@ -32,7 +50,6 @@ window.getActivityMmpForDuration = function(act, sec) {
 
   if (sec === 1200 && m.mmp20 && m.mmp20 > 0) return Math.round(m.mmp20);
 
-  // Fallback imediato para atividades já salvas antes da criação do mmpCurve
   const dw = m.dispWindows || {};
   if (dw[sec] && Array.isArray(dw[sec]) && dw[sec].length > 0) {
     let best = 0;
@@ -80,13 +97,11 @@ window.getActivityMmpForDuration = function(act, sec) {
 
 function getAvailableYearsFromActivities() {
   const yearsSet = new Set();
-  if (typeof dbActivities !== 'undefined') {
-    dbActivities.forEach(a => {
-      if (a.dateObj instanceof Date && !isNaN(a.dateObj.getTime())) {
-        yearsSet.add(String(a.dateObj.getFullYear()));
-      }
-    });
-  }
+  getRealSensorActivities().forEach(a => {
+    if (a.dateObj instanceof Date && !isNaN(a.dateObj.getTime())) {
+      yearsSet.add(String(a.dateObj.getFullYear()));
+    }
+  });
   return Array.from(yearsSet).sort((a, b) => parseInt(b) - parseInt(a));
 }
 
@@ -95,10 +110,10 @@ function renderMmpYearSelector() {
   if (!container) return;
 
   const years = getAvailableYearsFromActivities();
-  const options = [{ key: 'all', label: '🌐 Todo o Histórico' }, ...years.map(y => ({ key: y, label: y }))];
+  const options = [{ key: 'all', label: '🌐 Todo o Histórico (Sensor)' }, ...years.map(y => ({ key: y, label: y }))];
 
-  container.innerHTML = `<span style="font-size: 0.8rem; color: #94a3b8; font-weight: bold; display: flex; align-items: center; margin-right: 6px;">Períodos no Gráfico:</span>` +
-    options.map((opt, idx) => {
+  container.innerHTML = `<span style="font-size: 0.8rem; color: #94a3b8; font-weight: bold; display: flex; align-items: center; margin-right: 6px;">Períodos (Apenas Sensor Real):</span>` +
+    options.map((opt) => {
       const isSelected = selectedMmpYears.includes(opt.key);
       const colorIdx = selectedMmpYears.indexOf(opt.key);
       const col = isSelected ? CURVE_PALETTE[colorIdx % CURVE_PALETTE.length] : '#475569';
@@ -131,15 +146,15 @@ window.toggleMmpYear = function(yearKey) {
 };
 
 function filterActivitiesBySelectedYears(yearKey) {
-  if (typeof dbActivities === 'undefined') return [];
-  if (yearKey === 'all') return dbActivities;
-  return dbActivities.filter(a => a.dateObj instanceof Date && String(a.dateObj.getFullYear()) === String(yearKey));
+  const realActs = getRealSensorActivities();
+  if (yearKey === 'all') return realActs;
+  return realActs.filter(a => a.dateObj instanceof Date && String(a.dateObj.getFullYear()) === String(yearKey));
 }
 
 function getCombinedActivitiesForActiveSelection() {
-  if (typeof dbActivities === 'undefined') return [];
-  if (selectedMmpYears.includes('all')) return dbActivities;
-  return dbActivities.filter(a => a.dateObj instanceof Date && selectedMmpYears.includes(String(a.dateObj.getFullYear())));
+  const realActs = getRealSensorActivities();
+  if (selectedMmpYears.includes('all')) return realActs;
+  return realActs.filter(a => a.dateObj instanceof Date && selectedMmpYears.includes(String(a.dateObj.getFullYear())));
 }
 
 window.initCurvaPotenciaTab = function() {
@@ -159,12 +174,12 @@ window.renderCurvaPotenciaChart = function() {
   canvas.height = h;
   ctx.clearRect(0, 0, w, h);
 
-  if (typeof dbActivities === 'undefined' || dbActivities.length === 0) return;
+  const realActs = getRealSensorActivities();
+  if (realActs.length === 0) return;
 
   const drawW = w - padL - padR;
   const drawH = h - padT - padB;
 
-  // Calcula as curvas para cada período selecionado
   const seriesList = selectedMmpYears.map((yKey, sIdx) => {
     const acts = filterActivitiesBySelectedYears(yKey);
     const points = MMP_DURATIONS.map((d, dIdx) => {
@@ -194,7 +209,6 @@ window.renderCurvaPotenciaChart = function() {
   const getX = (dIdx) => padL + (dIdx / (MMP_DURATIONS.length - 1)) * drawW;
   const getY = (watts) => padT + drawH - (Math.max(0, Math.min(maxWatts, watts)) / maxWatts) * drawH;
 
-  // Grade Horizontal (Watts)
   ctx.strokeStyle = '#1e293b';
   ctx.lineWidth = 1;
   ctx.font = '11px sans-serif';
@@ -211,7 +225,6 @@ window.renderCurvaPotenciaChart = function() {
     ctx.fillText(`${Math.round(frac * maxWatts)} W`, padL - 8, y + 4);
   }
 
-  // Grade Vertical (8 durações MMP)
   MMP_DURATIONS.forEach((d, dIdx) => {
     const x = getX(dIdx);
     const isSel = d.sec === selectedMmpDurationSec;
@@ -228,12 +241,10 @@ window.renderCurvaPotenciaChart = function() {
     ctx.fillText(d.label, x, padT + drawH + 22);
   });
 
-  // Desenha cada Curva Selecionada
   seriesList.forEach((s, sIdx) => {
     const validPts = s.points.filter(p => p.watts > 0);
     if (validPts.length === 0) return;
 
-    // Preenchimento translúcido suave para a primeira curva ativa
     if (sIdx === 0) {
       ctx.save();
       const grad = ctx.createLinearGradient(0, padT, 0, padT + drawH);
@@ -249,7 +260,6 @@ window.renderCurvaPotenciaChart = function() {
       ctx.restore();
     }
 
-    // Linha principal
     ctx.save();
     ctx.beginPath();
     validPts.forEach((p, i) => {
@@ -263,7 +273,6 @@ window.renderCurvaPotenciaChart = function() {
     ctx.stroke();
     ctx.restore();
 
-    // Pontos e Rótulos de Watts
     validPts.forEach(p => {
       const x = getX(p.dIdx), y = getY(p.watts);
       ctx.beginPath();
@@ -304,7 +313,7 @@ function renderMmpBestCards() {
     const borderCol = isSelected ? '#fb923c' : '#334155';
     const bgCol = isSelected ? '#1e293b' : '#0f172a';
     const shadow = isSelected ? '0 0 12px rgba(251, 146, 60, 0.35)' : 'none';
-    const dateSub = bestAct ? bestAct.date : 'Sem registo';
+    const dateSub = bestAct ? bestAct.date : 'Sem registo real';
 
     return `
       <div onclick="selectMmpDurationCard(${d.sec})" style="background: ${bgCol}; border: 2px solid ${borderCol}; box-shadow: ${shadow}; border-radius: 8px; padding: 10px 8px; text-align: center; cursor: pointer; transition: 0.15s;">
@@ -343,11 +352,9 @@ function renderMmpHistoryTable() {
     }
   });
 
-  // Descobre o recorde absoluto da lista para destacar com medalha
   let maxRecordW = 0;
   records.forEach(r => { if (r.watts > maxRecordW) maxRecordW = r.watts; });
 
-  // Ordenação padrão solicitada: Da mais recente para a mais antiga (com botão para alternar para Maior Potência)
   if (mmpHistorySortMode === 'pwr_desc') {
     records.sort((a, b) => b.watts - a.watts || b.dateObj - a.dateObj);
   } else {
@@ -359,8 +366,8 @@ function renderMmpHistoryTable() {
   container.innerHTML = `
     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; border-bottom: 1px solid #1e293b; padding-bottom: 10px;">
       <div>
-        <h4 style="margin: 0; color: #fb923c; font-size: 0.95rem;">📋 Histórico de Marcas — ${dMeta.title}</h4>
-        <span style="font-size: 0.76rem; color: #94a3b8;">Total de ${records.length} pedalada(s) elegíveis nos períodos selecionados (Recorde do filtro: <strong style="color:#22c55e;">${maxRecordW} W</strong>)</span>
+        <h4 style="margin: 0; color: #fb923c; font-size: 0.95rem;">📋 Histórico de Marcas Reais (Sensor) — ${dMeta.title}</h4>
+        <span style="font-size: 0.76rem; color: #94a3b8;">Total de ${records.length} pedalada(s) com sensor real nos períodos selecionados (Recorde: <strong style="color:#22c55e;">${maxRecordW} W</strong>)</span>
       </div>
       <div style="display: flex; gap: 8px;">
         <button onclick="toggleMmpHistorySort('date_desc')" style="background: ${mmpHistorySortMode === 'date_desc' ? '#fb923c' : '#1e293b'}; color: ${mmpHistorySortMode === 'date_desc' ? '#020617' : '#cbd5e1'}; border: 1px solid #475569; padding: 5px 10px; border-radius: 6px; font-size: 0.76rem; font-weight: bold; cursor: pointer;">
@@ -379,15 +386,15 @@ function renderMmpHistoryTable() {
             <th>Data</th>
             <th>Pedalada</th>
             <th>Marca (${dMeta.label})</th>
-            <th>Pot. Média / NP</th>
+            <th>Pot. Média / NP (Sensor)</th>
             <th>Distância</th>
             <th>Ação</th>
           </tr>
         </thead>
         <tbody>
-          ${displayed.length === 0 ? `<tr><td colspan="6" style="text-align:center; color:#64748b; padding:16px;">Nenhuma atividade com duração suficiente para ${dMeta.label}.</td></tr>` : displayed.map(r => {
+          ${displayed.length === 0 ? `<tr><td colspan="6" style="text-align:center; color:#64748b; padding:16px;">Nenhuma atividade com sensor real e duração suficiente para ${dMeta.label}.</td></tr>` : displayed.map(r => {
             const a = r.act;
-            const m = a.metrics || {};
+            const m = getRealSensorMetrics(a) || {};
             const uKey = typeof window.getActivityUniqueKey === 'function' ? window.getActivityUniqueKey(a).replace(/'/g, "\\'") : '';
             const isRecord = r.watts === maxRecordW;
             const badge = isRecord ? `<span style="background:#eab308; color:#020617; font-size:0.65rem; font-weight:bold; padding:2px 5px; border-radius:4px; margin-left:6px;">🏆 RECORDE</span>` : '';

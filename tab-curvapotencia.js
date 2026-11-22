@@ -1,4 +1,4 @@
-// Aba: Curva de Potência Máxima Média (MMP: 5s, 15s, 1m, 5m, 15m, 20m, 60m, 120m) — Exclusiva com Dados Reais de Sensor
+// Aba: Curva de Potência Máxima Média (MMP: 5s, 15s, 1m, 5m, 15m, 20m, 60m, 120m) — Exclusiva com Dados Reais de Sensor + Tooltip Interpolado
 
 const MMP_DURATIONS = [
   { sec: 5, label: '5s', title: '5 Segundos (Sprint Neuromuscular)' },
@@ -18,8 +18,112 @@ const CURVE_PALETTE = [
 let selectedMmpYears = ['all'];
 let selectedMmpDurationSec = 1200;
 let mmpHistorySortMode = 'date_desc';
+let lastMmpRenderMeta = null;
 
-// Retorna apenas o objeto de métricas reais do sensor (ignora potência simulada/estimada)
+function formatDurationLabelFromSec(sec) {
+  const s = Math.max(1, Math.round(sec));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) {
+    const mins = s / 60;
+    return Number.isInteger(mins) ? `${mins}min` : `${mins.toFixed(1)}min`;
+  }
+  const hrs = s / 3600;
+  return Number.isInteger(hrs) ? `${hrs}h` : `${hrs.toFixed(1)}h`;
+}
+
+function getMmpTooltipEl(canvas) {
+  if (!canvas._mmpTooltipDiv) {
+    const div = document.createElement('div');
+    Object.assign(div.style, {
+      position: 'absolute',
+      background: 'rgba(10, 14, 23, 0.96)',
+      border: '1px solid #475569',
+      padding: '10px 12px',
+      borderRadius: '7px',
+      color: '#f1f5f9',
+      pointerEvents: 'none',
+      display: 'none',
+      zIndex: '120',
+      fontSize: '12px',
+      fontFamily: '"JetBrains Mono", monospace',
+      lineHeight: '1.5',
+      boxShadow: '0 10px 25px rgba(0,0,0,0.65)'
+    });
+    document.body.appendChild(div);
+    canvas._mmpTooltipDiv = div;
+  }
+  return canvas._mmpTooltipDiv;
+}
+
+function attachMmpTooltipInteractions(canvas) {
+  if (!canvas || canvas._mmpTooltipBound) return;
+  canvas._mmpTooltipBound = true;
+
+  const tipEl = getMmpTooltipEl(canvas);
+
+  canvas.addEventListener('mousemove', (e) => {
+    if (!lastMmpRenderMeta || !Array.isArray(lastMmpRenderMeta.seriesList) || lastMmpRenderMeta.seriesList.length === 0) {
+      tipEl.style.display = 'none';
+      return;
+    }
+
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const { padL, padT, drawW, drawH, seriesList } = lastMmpRenderMeta;
+
+    if (mx < padL || mx > padL + drawW || my < padT || my > padT + drawH) {
+      tipEl.style.display = 'none';
+      return;
+    }
+
+    const nDur = MMP_DURATIONS.length;
+    const exactSlot = Math.max(0, Math.min(nDur - 1, ((mx - padL) / drawW) * (nDur - 1)));
+    const i0 = Math.floor(exactSlot);
+    const i1 = Math.min(nDur - 1, i0 + 1);
+    const t = i1 === i0 ? 0 : (exactSlot - i0);
+
+    const sec0 = MMP_DURATIONS[i0].sec;
+    const sec1 = MMP_DURATIONS[i1].sec;
+    const interpSec = Math.round(sec0 + t * (sec1 - sec0));
+
+    const nearFixed = Math.abs(exactSlot - Math.round(exactSlot)) < 0.14;
+    const fixedMeta = nearFixed ? MMP_DURATIONS[Math.round(exactSlot)] : null;
+    const headerTitle = fixedMeta ? `${fixedMeta.label} — ${fixedMeta.title}` : `Intervalo ~${formatDurationLabelFromSec(interpSec)} (interpolado)`;
+
+    const rows = seriesList.map(s => {
+      const p0 = s.points[i0]?.watts || 0;
+      const p1 = s.points[i1]?.watts || 0;
+      let val = 0;
+      if (p0 > 0 && p1 > 0) val = Math.round(p0 + t * (p1 - p0));
+      else if (p0 > 0 && t < 0.5) val = p0;
+      else if (p1 > 0 && t >= 0.5) val = p1;
+
+      if (val <= 0) return null;
+      return `<span style="color:${s.color};">● ${s.name}:</span> <b>${val} W</b>`;
+    }).filter(Boolean);
+
+    if (rows.length === 0) {
+      tipEl.style.display = 'none';
+      return;
+    }
+
+    tipEl.innerHTML = `<div style="color:#fb923c; font-weight:700; margin-bottom:4px;">${headerTitle}</div>${rows.join('<br/>')}`;
+
+    if (typeof window.positionTooltipSmart === 'function') {
+      window.positionTooltipSmart(tipEl, e.clientX, e.clientY, e.pageX, e.pageY);
+    } else {
+      tipEl.style.display = 'block';
+      tipEl.style.left = `${e.pageX + 14}px`;
+      tipEl.style.top = `${e.pageY + 14}px`;
+    }
+  });
+
+  canvas.addEventListener('mouseleave', () => {
+    tipEl.style.display = 'none';
+  });
+}
+
 function getRealSensorMetrics(act) {
   if (!act) return null;
   if (act.realMetrics && !act.realMetrics.isEstimated && (act.realMetrics.avgPwr > 0 || act.realMetrics.mmp20 > 0)) {
@@ -36,7 +140,6 @@ function getRealSensorActivities() {
   return dbActivities.filter(a => getRealSensorMetrics(a) !== null);
 }
 
-// Extrai o melhor valor de potência REAL do sensor de uma atividade para uma duração
 window.getActivityMmpForDuration = function(act, sec) {
   const m = getRealSensorMetrics(act);
   if (!m) return 0;
@@ -167,6 +270,8 @@ window.initCurvaPotenciaTab = function() {
 window.renderCurvaPotenciaChart = function() {
   const canvas = document.getElementById('curvaPotenciaCanvas');
   if (!canvas) return;
+  attachMmpTooltipInteractions(canvas);
+
   const ctx = canvas.getContext('2d');
   const w = canvas.offsetWidth || 920, h = 390;
   const padL = 55, padR = 35, padT = 30, padB = 45;
@@ -201,6 +306,8 @@ window.renderCurvaPotenciaChart = function() {
       points
     };
   });
+
+  lastMmpRenderMeta = { padL, padR, padT, padB, drawW, drawH, seriesList };
 
   let maxWatts = 350;
   seriesList.forEach(s => s.points.forEach(p => { if (p.watts > maxWatts) maxWatts = p.watts; }));

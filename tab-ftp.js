@@ -1,9 +1,10 @@
-// Aba 2: Evolução de FTP + Zoom Ancorado à Direita
+// Aba 2: Evolução de FTP + Zoom Ancorado à Direita + Tooltip
 
 let ftpZoomState = { startFrac: 0, endFrac: 1 };
 let ftpPanState = { active: false, startX: 0, origStart: 0, origEnd: 1 };
 let ftpPinchState = { active: false, startDist: 0, origStart: 0, origEnd: 1 };
 let lastFtpChartData = [];
+let lastFtpRenderMeta = null;
 
 function applyFtpRightZoom(zoomFactor) {
   const span = ftpZoomState.endFrac - ftpZoomState.startFrac;
@@ -15,10 +16,94 @@ function applyFtpRightZoom(zoomFactor) {
   renderFtpChart(lastFtpChartData);
 }
 
+function getFtpTooltipEl(canvas) {
+  if (!canvas._ftpTooltipDiv) {
+    const div = document.createElement('div');
+    Object.assign(div.style, {
+      position: 'absolute',
+      background: 'rgba(10, 14, 23, 0.96)',
+      border: '1px solid #475569',
+      padding: '10px 12px',
+      borderRadius: '7px',
+      color: '#f1f5f9',
+      pointerEvents: 'none',
+      display: 'none',
+      zIndex: '120',
+      fontSize: '12px',
+      fontFamily: '"JetBrains Mono", monospace',
+      lineHeight: '1.5',
+      boxShadow: '0 10px 25px rgba(0,0,0,0.65)'
+    });
+    document.body.appendChild(div);
+    canvas._ftpTooltipDiv = div;
+  }
+  return canvas._ftpTooltipDiv;
+}
+
 function attachFtpZoomInteractions(canvas) {
   if (!canvas || canvas._ftpZoomBound) return;
   canvas._ftpZoomBound = true;
   canvas.style.touchAction = 'none';
+
+  const tipEl = getFtpTooltipEl(canvas);
+
+  canvas.addEventListener('mousemove', (e) => {
+    if (!lastFtpRenderMeta || !Array.isArray(lastFtpRenderMeta.points) || lastFtpRenderMeta.points.length === 0) {
+      tipEl.style.display = 'none';
+      return;
+    }
+
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const { pad, w, h, points } = lastFtpRenderMeta;
+
+    if (mx < pad || mx > w - pad || my < pad || my > h - pad) {
+      tipEl.style.display = 'none';
+      return;
+    }
+
+    let nearest = points[0];
+    let bestDist = Infinity;
+    for (let i = 0; i < points.length; i++) {
+      const d = Math.abs(points[i].x - mx);
+      if (d < bestDist) {
+        bestDist = d;
+        nearest = points[i];
+      }
+    }
+
+    const tolX = Math.max(16, ((w - pad * 2) / Math.max(1, points.length)) * 0.8);
+    if (bestDist > tolX) {
+      tipEl.style.display = 'none';
+      return;
+    }
+
+    const dateLabel = nearest.date instanceof Date && !isNaN(nearest.date.getTime())
+      ? nearest.date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
+      : '--';
+
+    const lthrLine = nearest.lthr
+      ? `<br/><span style="color:#ef4444;">● LTHR:</span> <b>${Math.round(nearest.lthr)} bpm</b>`
+      : '';
+
+    tipEl.innerHTML = `
+      <div style="color:#38bdf8; font-weight:700; margin-bottom:4px;">${dateLabel}</div>
+      <span style="color:#fc5200;">● FTP:</span> <b>${Math.round(nearest.ftp)} W</b>${lthrLine}
+    `;
+
+    if (typeof window.positionTooltipSmart === 'function') {
+      window.positionTooltipSmart(tipEl, e.clientX, e.clientY, e.pageX, e.pageY);
+    } else {
+      tipEl.style.display = 'block';
+      tipEl.style.left = `${e.pageX + 14}px`;
+      tipEl.style.top = `${e.pageY + 14}px`;
+    }
+  });
+
+  canvas.addEventListener('mouseleave', () => {
+    tipEl.style.display = 'none';
+  });
 
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
@@ -134,7 +219,10 @@ function renderFtpChart(data) {
 
   const ctx = canvas.getContext('2d');
   const w = canvas.offsetWidth || 900, h = 350; canvas.width = w; canvas.height = h; ctx.clearRect(0, 0, w, h);
-  if (!Array.isArray(data) || data.length < 2) return;
+  if (!Array.isArray(data) || data.length < 2) {
+    lastFtpRenderMeta = null;
+    return;
+  }
 
   const total = data.length;
   const startIdx = Math.max(0, Math.floor(ftpZoomState.startFrac * (total - 1)));
@@ -159,10 +247,15 @@ function renderFtpChart(data) {
     const y = getY(f); ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(w - pad, y); ctx.stroke();
     ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right'; ctx.fillText(`${f}W`, pad - 6, y + 3);
   }
+
+  const points = [];
   ctx.beginPath(); ctx.strokeStyle = '#fc5200'; ctx.lineWidth = 2.5;
   viewData.forEach((pt, idx) => {
     const x = getX(pt.date.getTime()), y = getY(pt.ftp);
+    points.push({ x, y, date: pt.date, ftp: pt.ftp, lthr: pt.lthr });
     if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
   });
   ctx.stroke();
+
+  lastFtpRenderMeta = { pad, w, h, points };
 }

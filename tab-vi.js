@@ -1,15 +1,24 @@
-// Aba 7: Índice de Variabilidade (VI) + Mapa Térmico de Cardiac Drift + Zoom/Pan Nativo
+// Aba 7: Índice de Variabilidade (VI) + Mapa Térmico de Cardiac Drift + Zoom Ancorado à Direita
 
 let viZoomState = { startFrac: 0, endFrac: 1 };
 let viPanState = { active: false, startX: 0, origStart: 0, origEnd: 1 };
 let viPinchState = { active: false, startDist: 0, origStart: 0, origEnd: 1 };
 
 function getDriftColor(drift) {
-  if (drift === null || drift === undefined || isNaN(drift)) return '#94a3b8'; // Sem dados de FC/Drift
-  if (drift <= 3) return '#10b981';   // Excelente (Verde/Esmeralda)
-  if (drift <= 5) return '#eab308';   // Ideal (Amarelo)
-  if (drift <= 8) return '#f97316';   // Alerta (Laranja)
-  return '#ef4444';                   // Alto Drift (Vermelho)
+  if (drift === null || drift === undefined || isNaN(drift)) return '#94a3b8';
+  if (drift <= 3) return '#10b981';
+  if (drift <= 5) return '#eab308';
+  if (drift <= 8) return '#f97316';
+  return '#ef4444';
+}
+
+function applyRightAnchoredZoom(zoomFactor) {
+  const span = viZoomState.endFrac - viZoomState.startFrac;
+  const newSpan = Math.max(0.03, Math.min(1, span * zoomFactor));
+  const newEnd = 1;
+  const newStart = Math.max(0, 1 - newSpan);
+  viZoomState = { startFrac: newStart, endFrac: newEnd };
+  renderViChart();
 }
 
 function attachViZoomInteractions(canvas) {
@@ -17,27 +26,11 @@ function attachViZoomInteractions(canvas) {
   canvas._viZoomBound = true;
   canvas.style.touchAction = 'none';
 
-  // Zoom com roda do mouse
+  // Zoom com roda do mouse ancorado na extrema direita
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
-    const rect = canvas.getBoundingClientRect();
-    const padL = 50, padR = 20;
-    const drawW = Math.max(1, rect.width - padL - padR);
-    const mouseFrac = Math.max(0, Math.min(1, (e.clientX - rect.left - padL) / drawW));
-
-    const span = viZoomState.endFrac - viZoomState.startFrac;
     const zoomFactor = e.deltaY < 0 ? 0.8 : 1.25;
-    const newSpan = Math.max(0.03, Math.min(1, span * zoomFactor));
-
-    const focus = viZoomState.startFrac + mouseFrac * span;
-    let newStart = focus - mouseFrac * newSpan;
-    let newEnd = newStart + newSpan;
-
-    if (newStart < 0) { newStart = 0; newEnd = newSpan; }
-    if (newEnd > 1) { newEnd = 1; newStart = Math.max(0, 1 - newSpan); }
-
-    viZoomState = { startFrac: newStart, endFrac: newEnd };
-    renderViChart();
+    applyRightAnchoredZoom(zoomFactor);
   }, { passive: false });
 
   // Arrastar (Pan) com mouse
@@ -80,7 +73,7 @@ function attachViZoomInteractions(canvas) {
     renderViChart();
   });
 
-  // Pinça (Zoom) e Arraste (Pan) no celular
+  // Pinça (Zoom ancorado à direita) e Arraste (Pan) no celular
   canvas.addEventListener('touchstart', (e) => {
     if (e.touches.length === 2) {
       const dx = e.touches[0].clientX - e.touches[1].clientX;
@@ -111,12 +104,8 @@ function attachViZoomInteractions(canvas) {
       const scale = viPinchState.startDist / dist;
       const origSpan = viPinchState.origEnd - viPinchState.origStart;
       const newSpan = Math.max(0.03, Math.min(1, origSpan * scale));
-      const mid = (viPinchState.origStart + viPinchState.origEnd) / 2;
-
-      let newStart = mid - newSpan / 2;
-      let newEnd = mid + newSpan / 2;
-      if (newStart < 0) { newStart = 0; newEnd = newSpan; }
-      if (newEnd > 1) { newEnd = 1; newStart = Math.max(0, 1 - newSpan); }
+      const newEnd = 1;
+      const newStart = Math.max(0, 1 - newSpan);
 
       viZoomState = { startFrac: newStart, endFrac: newEnd };
       renderViChart();
@@ -179,7 +168,6 @@ function renderViChart() {
   const allKeys = Object.keys(groups).sort();
   if (allKeys.length === 0) return;
 
-  // Aplica janela de zoom
   const total = allKeys.length;
   const startIdx = Math.max(0, Math.floor(viZoomState.startFrac * (total - 1)));
   const endIdx = Math.min(total - 1, Math.ceil(viZoomState.endFrac * (total - 1)));
@@ -190,7 +178,6 @@ function renderViChart() {
   const minVi = 1.0, maxVi = 1.5;
   const getY = (val) => padT + drawH - ((Math.min(Math.max(val, minVi), maxVi) - minVi) / (maxVi - minVi)) * drawH;
 
-  // Legenda térmica de Drift no topo
   const legendItems = [
     { label: 'VI≤1.12 Drift ≤3%', color: '#10b981' },
     { label: '3–5%', color: '#eab308' },
@@ -215,14 +202,12 @@ function renderViChart() {
   if (viZoomState.endFrac - viZoomState.startFrac < 0.999) {
     ctx.fillStyle = '#38bdf8';
     ctx.textAlign = 'right';
-    ctx.fillText('Zoom ativo (duplo clique para resetar)', w - padR, 18);
+    ctx.fillText('Zoom à direita (duplo clique para resetar)', w - padR, 18);
   }
 
-  // Faixa de controle constante (VI <= 1.12)
   ctx.fillStyle = 'rgba(16, 185, 129, 0.08)';
   ctx.fillRect(padL, getY(1.12), drawW, getY(1.0) - getY(1.12));
 
-  // Grade horizontal
   ctx.strokeStyle = '#334155';
   ctx.fillStyle = '#64748b';
   ctx.font = '10px sans-serif';
@@ -236,7 +221,6 @@ function renderViChart() {
     ctx.fillText(v.toFixed(1), padL - 5, y + 3);
   }
 
-  // Linha tracejada em 1.12
   ctx.save();
   ctx.setLineDash([4, 4]);
   ctx.strokeStyle = 'rgba(52, 211, 153, 0.45)';
@@ -257,14 +241,12 @@ function renderViChart() {
     const x = sortedKeys.length === 1 ? padL + drawW / 2 : padL + idx * pointSpacing;
     const y = getY(avgVi);
 
-    // Rótulo eixo X
     if (sortedKeys.length < 35 || idx % Math.ceil(sortedKeys.length / 18) === 0) {
       ctx.fillStyle = '#94a3b8';
       ctx.textAlign = 'center';
       ctx.fillText(k, x, h - 15);
     }
 
-    // Raio proporcional à duração (entre 3.5px e 7px)
     const radius = Math.max(3.5, Math.min(7, 3.2 + (avgDurMin / 45)));
 
     canvas.chartHitboxes.push({

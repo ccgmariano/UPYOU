@@ -1,4 +1,4 @@
-// Aba: Diagnóstico & Coach (Janelas Parametrizáveis, Slider Histórico, FC/LTHR de Apoio, Auditoria e Treino Estruturado)
+// Aba: Diagnóstico & Coach (Janelas Parametrizáveis, Slider Histórico, FC/LTHR de Apoio, Catálogo de Treinos e Auditoria)
 
 const COACH_CFG_KEY = 'upyou_coach_config_v1';
 
@@ -238,7 +238,7 @@ function buildCoachDiagnosis(rec, prev, ftp) {
     lacuna = 'Recuperação e Regeneração';
     focoKey = 'recovery';
     focoLabel = 'Semana Regenerativa (Z1–Z2 leve)';
-    texto = `Sua carga recente (${rec.hoursPerWeek.toFixed(1)}h/sem) superou a base anterior com sinais de fadiga (TSB ${tsb}, prontidão ${readiness}/100). Reduza a intensidade por 4–5 dias com giros leves em Z1/Z2 para consolidar os ganhos e baixar o Cardiac Drift.`;
+    texto = `Sua carga recente (${rec.hoursPerWeek.toFixed(1)}h/sem) superou a base anterior com sinais de fadiga (TSB ${tsb}, prontidão ${readiness}/100). Reduza a intensidade com giros leves em Z1/Z2 para consolidar os ganhos e baixar o Cardiac Drift.`;
   } else if (lowConditioning) {
     estado = 'Condicionamento em Reconstrução';
     estadoColor = '#eab308';
@@ -269,16 +269,16 @@ function buildCoachDiagnosis(rec, prev, ftp) {
     pontoForte = 'Potência em Limiar / Alta Intensidade';
     lacuna = 'Durabilidade Aeróbica';
     focoKey = 'sweetspot';
-    focoLabel = '1x Sweet Spot Contínuo (88–92% FTP)';
-    texto = `O Cardiac Drift médio ficou em ${rec.drift.toFixed(1)}% nos treinos estáveis. Trabalhe blocos contínuos de Sweet Spot (2x20min a 88–92% do FTP) com boa hidratação para melhorar a resistência à fadiga.`;
+    focoLabel = '1x Sweet Spot / Ritmo Estável';
+    texto = `O Cardiac Drift médio ficou em ${rec.drift.toFixed(1)}% nos treinos estáveis. Trabalhe blocos contínuos de Sweet Spot / ritmo estável com boa hidratação para melhorar a resistência à fadiga.`;
   } else {
     estado = 'Evolução Equilibrada';
     estadoColor = '#10b981';
     pontoForte = 'Equilíbrio Base vs. Intensidade';
     lacuna = 'Sustentação no Limiar (FTP)';
     focoKey = 'threshold';
-    focoLabel = '1x Limiar (2x15min a 98–102% FTP)';
-    texto = `Excelente distribuição entre volume (${rec.hoursPerWeek.toFixed(1)}h/sem), eficiência (EF ${rec.ef ? rec.ef.toFixed(2) : '--'}) e recuperação (${readiness}/100). Mantenha a consistência e aplique 1 sessão semanal de Limiar para empurrar o FTP para cima.`;
+    focoLabel = '1x Limiar / Over-Unders';
+    texto = `Excelente distribuição entre volume (${rec.hoursPerWeek.toFixed(1)}h/sem), eficiência (EF ${rec.ef ? rec.ef.toFixed(2) : '--'}) e recuperação (${readiness}/100). Mantenha a consistência e aplique 1 sessão semanal no limiar para empurrar o FTP para cima.`;
   }
 
   return {
@@ -287,88 +287,176 @@ function buildCoachDiagnosis(rec, prev, ftp) {
   };
 }
 
-function getSuggestedWorkout(focoKey, ftp, diag, rec) {
+function getSuggestedWorkout(focoKey, ftp, diag, rec, refIdx = 0) {
   const f = Math.max(120, Math.round(ftp || 220));
   const cautious = Boolean(diag && diag.lowConditioning);
   const w = (pct) => Math.round(f * (cautious ? Math.min(pct, 0.92) : pct));
   const lthr = (rec && rec.lthr) ? rec.lthr : 165;
   const z2HrLow = Math.round(lthr * 0.72);
   const z2HrHigh = Math.round(lthr * 0.83);
+  const pick = (arr) => arr[Math.abs(refIdx) % arr.length];
 
-  const templates = {
-    vo2max: {
-      title: cautious
-        ? `Estímulo Moderado — 3x3min @ ${w(0.92)}W`
-        : `VO2máx Clássico — 4x4min @ ${w(1.12)}W`,
-      subtitle: cautious
-        ? `Ajustado p/ condicionamento • Alvo moderado ~${w(0.92)}W (FC ≤ ${Math.round(lthr * 0.94)} bpm)`
-        : `Baseado no FTP ${f}W • Duração total: 56 min`,
-      blocks: cautious
-        ? [
-            { label: 'Aquec.', mins: 12, pct: 0.60, zone: 'Z2', color: '#38bdf8' },
-            { label: '3m Mod.', mins: 3, pct: 0.92, zone: 'Z3', color: '#22c55e' },
-            { label: 'Rec', mins: 4, pct: 0.50, zone: 'Z1', color: '#64748b' },
-            { label: '3m Mod.', mins: 3, pct: 0.92, zone: 'Z3', color: '#22c55e' },
-            { label: 'Rec', mins: 4, pct: 0.50, zone: 'Z1', color: '#64748b' },
-            { label: '3m Mod.', mins: 3, pct: 0.92, zone: 'Z3', color: '#22c55e' },
-            { label: 'Desaq.', mins: 14, pct: 0.52, zone: 'Z1', color: '#38bdf8' }
-          ]
-        : [
-            { label: 'Aquec.', mins: 12, pct: 0.62, zone: 'Z2', color: '#38bdf8' },
-            { label: '4m VO2', mins: 4, pct: 1.12, zone: 'Z5', color: '#f97316' },
-            { label: 'Rec', mins: 4, pct: 0.50, zone: 'Z1', color: '#64748b' },
-            { label: '4m VO2', mins: 4, pct: 1.12, zone: 'Z5', color: '#f97316' },
-            { label: 'Rec', mins: 4, pct: 0.50, zone: 'Z1', color: '#64748b' },
-            { label: '4m VO2', mins: 4, pct: 1.12, zone: 'Z5', color: '#f97316' },
-            { label: 'Rec', mins: 4, pct: 0.50, zone: 'Z1', color: '#64748b' },
-            { label: '4m VO2', mins: 4, pct: 1.12, zone: 'Z5', color: '#f97316' },
-            { label: 'Desaq.', mins: 16, pct: 0.55, zone: 'Z1', color: '#38bdf8' }
-          ]
-    },
-    base_z2: {
-      title: `Base Aeróbica por FC — ${z2HrLow}–${z2HrHigh} bpm (~${w(0.65)}W)`,
-      subtitle: `LTHR ${lthr} bpm • Mantenha a FC em Z2 mesmo que os Watts fiquem baixos`,
-      blocks: [
-        { label: 'Aquec.', mins: 15, pct: 0.55, zone: 'Z1', color: '#64748b' },
-        { label: `Z2 (${z2HrLow}-${z2HrHigh}bpm)`, mins: 65, pct: 0.65, zone: 'Z2', color: '#38bdf8' },
-        { label: 'Desaq.', mins: 10, pct: 0.50, zone: 'Z1', color: '#64748b' }
-      ]
-    },
-    sweetspot: {
-      title: cautious
-        ? `Ritmo Estável — 2x15min @ ${w(0.85)}W`
-        : `Sweet Spot Durabilidade — 2x20min @ ${w(0.90)}W`,
-      subtitle: `LTHR ${lthr} bpm • Controle o desacoplamento cardíaco no 2º bloco`,
-      blocks: [
-        { label: 'Aquec.', mins: 12, pct: 0.60, zone: 'Z2', color: '#38bdf8' },
-        { label: '15m Ritmo', mins: 15, pct: cautious ? 0.85 : 0.90, zone: 'Z3', color: '#22c55e' },
-        { label: 'Rec', mins: 6, pct: 0.55, zone: 'Z1', color: '#64748b' },
-        { label: '15m Ritmo', mins: 15, pct: cautious ? 0.85 : 0.90, zone: 'Z3', color: '#22c55e' },
-        { label: 'Desaq.', mins: 10, pct: 0.52, zone: 'Z1', color: '#38bdf8' }
-      ]
-    },
-    threshold: {
-      title: `Limiar Funcional — 2x15min @ ${w(1.00)}W`,
-      subtitle: `Baseado no FTP ${f}W • Duração total: 60 min`,
-      blocks: [
-        { label: 'Aquec.', mins: 12, pct: 0.65, zone: 'Z2', color: '#38bdf8' },
-        { label: '15m FTP', mins: 15, pct: 1.00, zone: 'Z4', color: '#eab308' },
-        { label: 'Rec', mins: 8, pct: 0.52, zone: 'Z1', color: '#64748b' },
-        { label: '15m FTP', mins: 15, pct: 1.00, zone: 'Z4', color: '#eab308' },
-        { label: 'Desaq.', mins: 10, pct: 0.55, zone: 'Z1', color: '#38bdf8' }
-      ]
-    },
-    recovery: {
-      title: `Giro Regenerativo — 45min @ ${w(0.52)}W (FC < ${Math.round(lthr * 0.72)} bpm)`,
-      subtitle: `LTHR ${lthr} bpm • Cadência solta, sem forçar`,
-      blocks: [
-        { label: 'Soltar', mins: 10, pct: 0.48, zone: 'Z1', color: '#64748b' },
-        { label: 'Z1 Leve', mins: 25, pct: 0.53, zone: 'Z1', color: '#94a3b8' },
-        { label: 'Desaq.', mins: 10, pct: 0.45, zone: 'Z1', color: '#64748b' }
-      ]
-    }
+  const catalogs = {
+    recovery: [
+      {
+        title: `Giro Regenerativo — 45min @ ${w(0.52)}W (FC < ${Math.round(lthr * 0.72)} bpm)`,
+        subtitle: `LTHR ${lthr} bpm • Cadência solta (85–95 rpm), sem forçar`,
+        blocks: [
+          { label: 'Soltar', mins: 10, pct: 0.48, zone: 'Z1', color: '#64748b' },
+          { label: 'Z1 Leve', mins: 25, pct: 0.53, zone: 'Z1', color: '#94a3b8' },
+          { label: 'Desaq.', mins: 10, pct: 0.45, zone: 'Z1', color: '#64748b' }
+        ]
+      },
+      {
+        title: `Recuperação Ativa — 50min @ ${w(0.55)}W (Z1/Z2 Baixa)`,
+        subtitle: `Foco em descarga de fadiga e retorno do Cardiac Drift`,
+        blocks: [
+          { label: 'Aquec.', mins: 10, pct: 0.48, zone: 'Z1', color: '#64748b' },
+          { label: 'Z1-Z2', mins: 30, pct: 0.56, zone: 'Z2', color: '#38bdf8' },
+          { label: 'Desaq.', mins: 10, pct: 0.46, zone: 'Z1', color: '#64748b' }
+        ]
+      }
+    ],
+    base_z2: [
+      {
+        title: `Base Aeróbica por FC — ${z2HrLow}–${z2HrHigh} bpm (~${w(0.65)}W)`,
+        subtitle: `LTHR ${lthr} bpm • Mantenha a FC em Z2 mesmo que os Watts fiquem baixos`,
+        blocks: [
+          { label: 'Aquec.', mins: 15, pct: 0.55, zone: 'Z1', color: '#64748b' },
+          { label: `Z2 (${z2HrLow}-${z2HrHigh}bpm)`, mins: 65, pct: 0.65, zone: 'Z2', color: '#38bdf8' },
+          { label: 'Desaq.', mins: 10, pct: 0.50, zone: 'Z1', color: '#64748b' }
+        ]
+      },
+      {
+        title: `Endurance Contínua — 75min @ ${w(0.68)}W (Z2 Estável)`,
+        subtitle: `Ritmo contínuo sem picos para consolidar eficiência aeróbica`,
+        blocks: [
+          { label: 'Aquec.', mins: 10, pct: 0.55, zone: 'Z1', color: '#64748b' },
+          { label: 'Z2 Estável', mins: 55, pct: 0.68, zone: 'Z2', color: '#38bdf8' },
+          { label: 'Desaq.', mins: 10, pct: 0.52, zone: 'Z1', color: '#64748b' }
+        ]
+      },
+      {
+        title: `Base com Cadência — 60min @ ${w(0.66)}W (90–98 rpm)`,
+        subtitle: `Trabalha recrutamento muscular leve em Z2 sem sobrecarregar articulações`,
+        blocks: [
+          { label: 'Aquec.', mins: 12, pct: 0.54, zone: 'Z1', color: '#64748b' },
+          { label: 'Cad. Alta', mins: 36, pct: 0.66, zone: 'Z2', color: '#38bdf8' },
+          { label: 'Desaq.', mins: 12, pct: 0.50, zone: 'Z1', color: '#64748b' }
+        ]
+      }
+    ],
+    vo2max: [
+      cautious
+        ? {
+            title: `Estímulo Moderado — 3x3min @ ${w(0.92)}W`,
+            subtitle: `Ajustado p/ condicionamento • FC ≤ ${Math.round(lthr * 0.94)} bpm`,
+            blocks: [
+              { label: 'Aquec.', mins: 12, pct: 0.60, zone: 'Z2', color: '#38bdf8' },
+              { label: '3m Mod.', mins: 3, pct: 0.92, zone: 'Z3', color: '#22c55e' },
+              { label: 'Rec', mins: 4, pct: 0.50, zone: 'Z1', color: '#64748b' },
+              { label: '3m Mod.', mins: 3, pct: 0.92, zone: 'Z3', color: '#22c55e' },
+              { label: 'Rec', mins: 4, pct: 0.50, zone: 'Z1', color: '#64748b' },
+              { label: '3m Mod.', mins: 3, pct: 0.92, zone: 'Z3', color: '#22c55e' },
+              { label: 'Desaq.', mins: 14, pct: 0.52, zone: 'Z1', color: '#38bdf8' }
+            ]
+          }
+        : {
+            title: `VO2máx Clássico — 4x4min @ ${w(1.12)}W`,
+            subtitle: `Baseado no FTP ${f}W • Recuperação ativa de 4min entre séries`,
+            blocks: [
+              { label: 'Aquec.', mins: 12, pct: 0.62, zone: 'Z2', color: '#38bdf8' },
+              { label: '4m VO2', mins: 4, pct: 1.12, zone: 'Z5', color: '#f97316' },
+              { label: 'Rec', mins: 4, pct: 0.50, zone: 'Z1', color: '#64748b' },
+              { label: '4m VO2', mins: 4, pct: 1.12, zone: 'Z5', color: '#f97316' },
+              { label: 'Rec', mins: 4, pct: 0.50, zone: 'Z1', color: '#64748b' },
+              { label: '4m VO2', mins: 4, pct: 1.12, zone: 'Z5', color: '#f97316' },
+              { label: 'Rec', mins: 4, pct: 0.50, zone: 'Z1', color: '#64748b' },
+              { label: '4m VO2', mins: 4, pct: 1.12, zone: 'Z5', color: '#f97316' },
+              { label: 'Desaq.', mins: 16, pct: 0.55, zone: 'Z1', color: '#38bdf8' }
+            ]
+          },
+      {
+        title: `VO2máx Curto — 2x(8x30s @ ${w(1.20)}W / 30s)`,
+        subtitle: `Baseado no FTP ${f}W • Alta qualidade em tiros curtos de 30s`,
+        blocks: [
+          { label: 'Aquec.', mins: 12, pct: 0.62, zone: 'Z2', color: '#38bdf8' },
+          { label: '8x30s', mins: 8, pct: 1.20, zone: 'Z6', color: '#ef4444' },
+          { label: 'Pausa', mins: 6, pct: 0.52, zone: 'Z1', color: '#64748b' },
+          { label: '8x30s', mins: 8, pct: 1.20, zone: 'Z6', color: '#ef4444' },
+          { label: 'Desaq.', mins: 12, pct: 0.54, zone: 'Z1', color: '#38bdf8' }
+        ]
+      },
+      {
+        title: `VO2máx Sustentado — 3x5min @ ${w(1.08)}W`,
+        subtitle: `Baseado no FTP ${f}W • Foco em potência aeróbica máxima contínua`,
+        blocks: [
+          { label: 'Aquec.', mins: 12, pct: 0.62, zone: 'Z2', color: '#38bdf8' },
+          { label: '5m VO2', mins: 5, pct: 1.08, zone: 'Z5', color: '#f97316' },
+          { label: 'Rec', mins: 4, pct: 0.52, zone: 'Z1', color: '#64748b' },
+          { label: '5m VO2', mins: 5, pct: 1.08, zone: 'Z5', color: '#f97316' },
+          { label: 'Rec', mins: 4, pct: 0.52, zone: 'Z1', color: '#64748b' },
+          { label: '5m VO2', mins: 5, pct: 1.08, zone: 'Z5', color: '#f97316' },
+          { label: 'Desaq.', mins: 12, pct: 0.54, zone: 'Z1', color: '#38bdf8' }
+        ]
+      }
+    ],
+    sweetspot: [
+      {
+        title: `Sweet Spot Contínuo — 2x20min @ ${w(0.90)}W`,
+        subtitle: `LTHR ${lthr} bpm • Melhora durabilidade e resistência à fadiga`,
+        blocks: [
+          { label: 'Aquec.', mins: 12, pct: 0.60, zone: 'Z2', color: '#38bdf8' },
+          { label: '20m SS', mins: 20, pct: 0.90, zone: 'Z3', color: '#22c55e' },
+          { label: 'Rec', mins: 6, pct: 0.55, zone: 'Z1', color: '#64748b' },
+          { label: '20m SS', mins: 20, pct: 0.90, zone: 'Z3', color: '#22c55e' },
+          { label: 'Desaq.', mins: 10, pct: 0.52, zone: 'Z1', color: '#38bdf8' }
+        ]
+      },
+      {
+        title: `Ritmo Estendido — 3x15min @ ${w(0.88)}W`,
+        subtitle: `Baseado no FTP ${f}W • Intervalos curtos de recuperação de 4min`,
+        blocks: [
+          { label: 'Aquec.', mins: 10, pct: 0.60, zone: 'Z2', color: '#38bdf8' },
+          { label: '15m SS', mins: 15, pct: 0.88, zone: 'Z3', color: '#22c55e' },
+          { label: 'Rec', mins: 4, pct: 0.54, zone: 'Z1', color: '#64748b' },
+          { label: '15m SS', mins: 15, pct: 0.88, zone: 'Z3', color: '#22c55e' },
+          { label: 'Rec', mins: 4, pct: 0.54, zone: 'Z1', color: '#64748b' },
+          { label: '15m SS', mins: 15, pct: 0.88, zone: 'Z3', color: '#22c55e' },
+          { label: 'Desaq.', mins: 10, pct: 0.52, zone: 'Z1', color: '#38bdf8' }
+        ]
+      }
+    ],
+    threshold: [
+      {
+        title: `Limiar Funcional — 2x15min @ ${w(1.00)}W`,
+        subtitle: `Baseado no FTP ${f}W • Sustentação próxima ao limiar anaeróbico`,
+        blocks: [
+          { label: 'Aquec.', mins: 12, pct: 0.65, zone: 'Z2', color: '#38bdf8' },
+          { label: '15m FTP', mins: 15, pct: 1.00, zone: 'Z4', color: '#eab308' },
+          { label: 'Rec', mins: 8, pct: 0.52, zone: 'Z1', color: '#64748b' },
+          { label: '15m FTP', mins: 15, pct: 1.00, zone: 'Z4', color: '#eab308' },
+          { label: 'Desaq.', mins: 10, pct: 0.55, zone: 'Z1', color: '#38bdf8' }
+        ]
+      },
+      {
+        title: `Over-Unders Limiar — 2x12min (${w(0.88)}W / ${w(1.06)}W)`,
+        subtitle: `Alternância entre Sweet Spot e acima do limiar para tolerância ao lactato`,
+        blocks: [
+          { label: 'Aquec.', mins: 12, pct: 0.62, zone: 'Z2', color: '#38bdf8' },
+          { label: '4m SS', mins: 4, pct: 0.88, zone: 'Z3', color: '#22c55e' },
+          { label: '2m >FTP', mins: 2, pct: 1.06, zone: 'Z5', color: '#f97316' },
+          { label: '4m SS', mins: 4, pct: 0.88, zone: 'Z3', color: '#22c55e' },
+          { label: '2m >FTP', mins: 2, pct: 1.06, zone: 'Z5', color: '#f97316' },
+          { label: 'Rec', mins: 6, pct: 0.52, zone: 'Z1', color: '#64748b' },
+          { label: '12m O/U', mins: 12, pct: 0.95, zone: 'Z4', color: '#eab308' },
+          { label: 'Desaq.', mins: 10, pct: 0.54, zone: 'Z1', color: '#38bdf8' }
+        ]
+      }
+    ]
   };
-  return templates[focoKey] || templates.vo2max;
+
+  return pick(catalogs[focoKey] || catalogs.vo2max);
 }
 
 function auditCompliance(allActs, refDate, focoKey, latestDate) {
@@ -461,7 +549,7 @@ function renderTreinadorTab() {
   const rec = computeWindowStats(recentActs, coachConfig.recentDays);
   const prev = computeWindowStats(prevActs, coachConfig.prevDays);
   const diag = buildCoachDiagnosis(rec, prev, refFtp);
-  const workout = getSuggestedWorkout(diag.focoKey, refFtp, diag, rec);
+  const workout = getSuggestedWorkout(diag.focoKey, refFtp, diag, rec, coachRefIdx);
   const audit = auditCompliance(allActs, refDate, diag.focoKey, latestDate);
 
   const fmtDate = (d) => d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });

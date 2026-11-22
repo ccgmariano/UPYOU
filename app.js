@@ -1,4 +1,4 @@
-// Núcleo Principal Otimizado (Cockpit Matrix Neon Precision, Versionamento Automático DB, Google Sign-In, Curva MMP e Auto-Ordenação de Tabs)
+// Núcleo Principal Otimizado (Cloud-First via Supabase, Sincronização Contínua Garmin, Importação Sob Demanda de ZIP)
 let dbActivities = [];
 let currentUserId = null;
 let currentUserName = "";
@@ -11,7 +11,6 @@ const STORE_NAME = "activitiesStore";
 const TELEMETRY_STORE = "telemetryStore";
 const GARMIN_API_URL = "https://garmin-webhook-731921508137.us-central1.run.app";
 
-// Versão atual do Schema de dados
 const CURRENT_DATA_SCHEMA_VERSION = 4;
 
 // --- AUTO-AJUSTE DA ORDEM DAS TABS POR FREQUÊNCIA DE ACESSO ---
@@ -147,13 +146,13 @@ window.deleteActivityByKey = async function(uKey) {
 
   addDeletedActivityKey(uKey);
   if (typeof window.deleteActivityFromSupabase === 'function') {
-    window.deleteActivityFromSupabase(uKey).catch(() => {});
+    await window.deleteActivityFromSupabase(uKey).catch(() => {});
   }
 
   if (act.garminId) {
     addDeletedActivityKey(String(act.garminId));
     if (typeof window.deleteActivityFromSupabase === 'function') {
-      window.deleteActivityFromSupabase(String(act.garminId)).catch(() => {});
+      await window.deleteActivityFromSupabase(String(act.garminId)).catch(() => {});
     }
     try {
       fetch(`${GARMIN_API_URL}?action=delete&google_id=${encodeURIComponent(currentUserId)}&id=${encodeURIComponent(act.garminId)}`, { method: 'DELETE' }).catch(() => {});
@@ -161,7 +160,7 @@ window.deleteActivityByKey = async function(uKey) {
   }
 
   dbActivities.splice(idx, 1);
-  await saveToDB(dbActivities);
+  await saveToDB(dbActivities, false);
 
   if (typeof window.applyGlobalPowerSource === 'function') window.applyGlobalPowerSource();
   processGlobalMetrics();
@@ -323,25 +322,28 @@ function initDB() {
   });
 }
 
+// Cache local efêmero da sessão para telemetria sob demanda; a fonte de verdade é o Supabase
 async function saveToDB(activities, syncCloud = true) {
   if (!currentUserId) return;
-  const db = await initDB();
-  const tx = db.transaction([STORE_NAME, TELEMETRY_STORE], "readwrite");
-  const mainStore = tx.objectStore(STORE_NAME);
-  const telStore = tx.objectStore(TELEMETRY_STORE);
+  try {
+    const db = await initDB();
+    const tx = db.transaction([STORE_NAME, TELEMETRY_STORE], "readwrite");
+    const mainStore = tx.objectStore(STORE_NAME);
+    const telStore = tx.objectStore(TELEMETRY_STORE);
 
-  const lightActivities = activities.map(act => {
-    const uKey = typeof window.getActivityUniqueKey === 'function' ? window.getActivityUniqueKey(act) : String(act.garminId || act.file || Math.random());
-    if (Array.isArray(act.telemetry15s) && act.telemetry15s.length > 0) {
-      telStore.put({ id: `${currentUserId}_${uKey}`, stream: act.telemetry15s });
-      act.hasSavedTelemetry = true;
-    }
-    const { telemetry15s, ...lightCopy } = act;
-    return lightCopy;
-  });
+    const lightActivities = activities.map(act => {
+      const uKey = typeof window.getActivityUniqueKey === 'function' ? window.getActivityUniqueKey(act) : String(act.garminId || act.file || Math.random());
+      if (Array.isArray(act.telemetry15s) && act.telemetry15s.length > 0) {
+        telStore.put({ id: `${currentUserId}_${uKey}`, stream: act.telemetry15s });
+        act.hasSavedTelemetry = true;
+      }
+      const { telemetry15s, ...lightCopy } = act;
+      return lightCopy;
+    });
 
-  mainStore.put({ id: currentUserId, data: lightActivities });
-  await new Promise(resolve => tx.oncomplete = resolve);
+    mainStore.put({ id: currentUserId, data: lightActivities });
+    await new Promise(resolve => tx.oncomplete = resolve);
+  } catch (e) {}
 
   if (syncCloud && typeof window.upsertActivitiesToSupabase === 'function') {
     try {
@@ -352,21 +354,18 @@ async function saveToDB(activities, syncCloud = true) {
   }
 }
 
-async function loadFromDB() {
-  if (!currentUserId) return null;
-  const db = await initDB();
-  const tx = db.transaction(STORE_NAME, "readonly");
-  const store = tx.objectStore(STORE_NAME);
-  const request = store.get(currentUserId);
-  return new Promise(resolve => {
-    request.onsuccess = () => resolve(request.result ? request.result.data : null);
-    request.onerror = () => resolve(null);
-  });
-}
-
 window.loadTelemetryForActivityOnDemand = async function(act) {
   if (!act || (Array.isArray(act.telemetry15s) && act.telemetry15s.length > 0)) return act?.telemetry15s || [];
   const uKey = typeof window.getActivityUniqueKey === 'function' ? window.getActivityUniqueKey(act) : String(act.garminId || act.file);
+
+  if (typeof window.downloadTelemetryStreamFromSupabase === 'function') {
+    const cloudStream = await window.downloadTelemetryStreamFromSupabase(uKey);
+    if (Array.isArray(cloudStream) && cloudStream.length > 0) {
+      act.telemetry15s = cloudStream;
+      act.hasSavedTelemetry = true;
+      return act.telemetry15s;
+    }
+  }
 
   try {
     const db = await initDB();
@@ -383,32 +382,18 @@ window.loadTelemetryForActivityOnDemand = async function(act) {
     }
   } catch (e) {}
 
-  if (typeof window.downloadTelemetryStreamFromSupabase === 'function') {
-    const cloudStream = await window.downloadTelemetryStreamFromSupabase(uKey);
-    if (Array.isArray(cloudStream) && cloudStream.length > 0) {
-      act.telemetry15s = cloudStream;
-      act.hasSavedTelemetry = true;
-      try {
-        const db = await initDB();
-        const tx = db.transaction(TELEMETRY_STORE, "readwrite");
-        tx.objectStore(TELEMETRY_STORE).put({ id: `${currentUserId}_${uKey}`, stream: cloudStream });
-      } catch (e) {}
-      return act.telemetry15s;
-    }
-  }
-
   return [];
 };
 
 async function clearLocalDatabase() {
-  if(confirm("Tem a certeza que deseja apagar o histórico local? As atividades na nuvem serão recarregadas na próxima sincronização.")) {
-    localStorage.removeItem(getDeletedIdsKey());
-    const db = await initDB();
-    const tx = db.transaction([STORE_NAME, TELEMETRY_STORE], "readwrite");
-    tx.objectStore(STORE_NAME).delete(currentUserId);
-    document.getElementById('summaryArea').style.display = 'none';
-    document.getElementById('uploadArea').style.display = 'block';
-    dbActivities = [];
+  if (confirm("Tem a certeza que deseja limpar o cache local deste navegador? Seus dados permanecem salvos na nuvem Supabase.")) {
+    try {
+      const db = await initDB();
+      const tx = db.transaction([STORE_NAME, TELEMETRY_STORE], "readwrite");
+      tx.objectStore(STORE_NAME).delete(currentUserId);
+      await new Promise(resolve => tx.oncomplete = resolve);
+    } catch (e) {}
+    await syncWithSupabaseCloud();
   }
 }
 
@@ -430,90 +415,74 @@ async function syncWithSupabaseCloud() {
       return !deletedKeys.includes(k) && (!a.garminId || !deletedKeys.includes(String(a.garminId)));
     });
 
-    const localMap = new Map();
-    dbActivities.forEach(a => localMap.set(getKey(a), a));
+    const mergedMap = new Map();
+    validCloudActs.forEach(a => mergedMap.set(getKey(a), a));
+    dbActivities.forEach(a => {
+      const k = getKey(a);
+      if (!mergedMap.has(k)) mergedMap.set(k, a);
+    });
 
-    let addedFromCloud = 0;
-    for (const cAct of validCloudActs) {
-      const k = getKey(cAct);
-      if (!localMap.has(k)) {
-        localMap.set(k, cAct);
-        addedFromCloud++;
-      }
-    }
+    dbActivities = Array.from(mergedMap.values());
+    if (typeof window.applyGlobalPowerSource === 'function') window.applyGlobalPowerSource();
 
-    const mergedList = Array.from(localMap.values());
-    const cloudKeySet = new Set(validCloudActs.map(getKey));
-    const missingInCloud = mergedList.filter(a => !cloudKeySet.has(getKey(a)));
+    const loadingEl = document.getElementById('loadingCloudArea');
+    if (loadingEl) loadingEl.style.display = 'none';
 
-    if (addedFromCloud > 0) {
-      dbActivities = mergedList;
-      if (typeof window.applyGlobalPowerSource === 'function') window.applyGlobalPowerSource();
-      await saveToDB(dbActivities, false);
-      document.getElementById('uploadArea').style.display = 'none';
+    if (dbActivities.length > 0) {
+      document.getElementById('summaryArea').style.display = 'block';
       processGlobalMetrics();
       renderSummaryTable();
       updateDynamicCharts();
-      if (msgEl) {
-        msgEl.style.color = '#10b981';
-        msgEl.innerText = `${addedFromCloud} atividade(s) sincronizada(s) da nuvem Supabase!`;
-        setTimeout(() => { if (msgEl.innerText.includes('Supabase')) msgEl.innerText = ''; }, 4000);
-      }
     }
+
+    const cloudKeySet = new Set(validCloudActs.map(getKey));
+    const missingInCloud = dbActivities.filter(a => !cloudKeySet.has(getKey(a)));
 
     if (missingInCloud.length > 0 && typeof window.upsertActivitiesToSupabase === 'function') {
       const totalMissing = missingInCloud.length;
       if (msgEl) {
         msgEl.style.color = '#38bdf8';
-        msgEl.innerText = `A enviar ${totalMissing} atividade(s) pendente(s) para o Supabase...`;
+        msgEl.innerText = `A enviar ${totalMissing} atividade(s) para o Supabase...`;
       }
       await window.upsertActivitiesToSupabase(missingInCloud, (done, total) => {
         if (msgEl) msgEl.innerText = `A enviar para o Supabase: ${done} de ${total}...`;
       });
-      if (msgEl) {
-        msgEl.style.color = '#10b981';
-        msgEl.innerText = `Sincronização completa! ${totalMissing} atividade(s) enviadas para a nuvem.`;
-        setTimeout(() => { if (msgEl.innerText.includes('Sincronização completa')) msgEl.innerText = ''; }, 4000);
-      }
+    }
+
+    if (msgEl) {
+      msgEl.innerText = '';
     }
   } catch (e) {
     console.warn('Erro ao sincronizar com Supabase:', e);
+    const loadingEl = document.getElementById('loadingCloudArea');
+    if (loadingEl) loadingEl.innerText = 'Não foi possível carregar as atividades da nuvem.';
   }
 }
 
 async function initializeAppForUser() {
-  const savedData = await loadFromDB();
-  if (savedData && savedData.length > 0) {
-    const deletedKeys = getDeletedActivityKeys();
-    let needsMigration = false;
-
-    dbActivities = savedData.filter(a => {
-      const k = typeof window.getActivityUniqueKey === 'function' ? window.getActivityUniqueKey(a) : String(a.garminId || a.file);
-      if (Array.isArray(a.telemetry15s) && a.telemetry15s.length > 0) needsMigration = true;
-      return !deletedKeys.includes(k) && !deletedKeys.includes(String(a.garminId));
-    });
-
-    dbActivities.forEach(a => a.dateObj = new Date(a.dateObj));
-    document.getElementById('uploadArea').style.display = 'none';
-    if (typeof window.applyGlobalPowerSource === 'function') window.applyGlobalPowerSource();
-    processGlobalMetrics();
-    renderSummaryTable();
-
-    if (needsMigration) {
-      setTimeout(() => saveToDB(dbActivities, false), 800);
-    }
+  const loadingEl = document.getElementById('loadingCloudArea');
+  if (loadingEl) {
+    loadingEl.innerText = 'Aguardando carregamento das atividades...';
+    loadingEl.style.display = 'block';
   }
+  document.getElementById('summaryArea').style.display = 'none';
 
   await syncWithSupabaseCloud();
   await checkGarminConnectionStatus();
   await syncWithGarminCloud();
+
+  if (loadingEl) loadingEl.style.display = 'none';
+  if (dbActivities.length > 0) {
+    document.getElementById('summaryArea').style.display = 'block';
+    processGlobalMetrics();
+    renderSummaryTable();
+    updateDynamicCharts();
+  }
 }
 
 async function syncWithGarminCloud() {
   if (!currentUserId) return;
   const msgEl = document.getElementById('statusMsg');
-  msgEl.style.color = '#38bdf8';
-  msgEl.innerText = 'A sincronizar atividades e telemetria com a nuvem Garmin...';
 
   try {
     const res = await fetch(`${GARMIN_API_URL}?google_id=${encodeURIComponent(currentUserId)}&t=${Date.now()}`);
@@ -561,39 +530,35 @@ async function syncWithGarminCloud() {
 
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('garmin') === 'ok') {
-      msgEl.style.color = '#10b981';
-      msgEl.innerText = 'Conta Garmin vinculada com sucesso!';
+      if (msgEl) {
+        msgEl.style.color = '#10b981';
+        msgEl.innerText = 'Conta Garmin vinculada com sucesso!';
+      }
       window.history.replaceState({}, document.title, window.location.pathname);
-    } else if (newCount > 0 || updatedCount > 0) {
+    } else if ((newCount > 0 || updatedCount > 0) && msgEl) {
       msgEl.style.color = '#10b981';
-      msgEl.innerText = `${newCount} nova(s) e ${updatedCount} atividade(s) atualizada(s) da nuvem Garmin!`;
-    } else if (dbActivities.length > 0) {
-      msgEl.style.color = '#10b981';
-      msgEl.innerText = 'Histórico atualizado com a nuvem Garmin.';
-    } else {
-      msgEl.innerText = '';
+      msgEl.innerText = `${newCount} nova(s) e ${updatedCount} atividade(s) sincronizada(s) com a nuvem!`;
+    }
+
+    if (touchedActs.length > 0 && typeof window.upsertActivitiesToSupabase === 'function') {
+      await window.upsertActivitiesToSupabase(touchedActs).catch(() => {});
     }
 
     if (dbActivities.length > 0) {
       if (typeof window.applyGlobalPowerSource === 'function') window.applyGlobalPowerSource();
-      await saveToDB(dbActivities, false);
-      if (touchedActs.length > 0 && typeof window.upsertActivitiesToSupabase === 'function') {
-        window.upsertActivitiesToSupabase(touchedActs).catch(() => {});
-      }
-      document.getElementById('uploadArea').style.display = 'none';
+      document.getElementById('summaryArea').style.display = 'block';
       processGlobalMetrics();
       renderSummaryTable();
       updateDynamicCharts();
-    } else {
-      document.getElementById('uploadArea').style.display = 'block';
-      document.getElementById('summaryArea').style.display = 'none';
     }
   } catch (err) {
     console.warn('Erro ao sincronizar Garmin:', err);
-    msgEl.style.color = '#ef4444';
-    msgEl.innerText = 'Modo offline: não foi possível verificar novas atividades na nuvem.';
   }
-  setTimeout(() => { if (msgEl.innerText.includes('sincronizada') || msgEl.innerText.includes('atualizada') || msgEl.innerText.includes('atualizado') || msgEl.innerText.includes('vinculada')) msgEl.innerText = ''; }, 4000);
+  setTimeout(() => {
+    if (msgEl && (msgEl.innerText.includes('sincronizada') || msgEl.innerText.includes('vinculada'))) {
+      msgEl.innerText = '';
+    }
+  }, 4000);
 }
 
 async function buildDualMetricsFromRecords(records, dateObj) {
@@ -827,7 +792,6 @@ document.getElementById('zipInput').addEventListener('change', async (event) => 
   const file = event.target.files[0];
   if (!file) return;
 
-  document.getElementById('uploadArea').style.display = 'none';
   document.getElementById('summaryArea').style.display = 'none';
   document.getElementById('progressArea').style.display = 'block';
   const msgEl = document.getElementById('statusMsg');
@@ -865,8 +829,12 @@ document.getElementById('zipInput').addEventListener('change', async (event) => 
         if (filePath) queue.push({ date: cols[1] || 'Data', name: cols[2] || 'Pedalada', file: filePath });
       }
 
-      const garminActs = dbActivities.filter(a => a.source === 'garmin');
-      dbActivities = [...garminActs];
+      const existingByKey = new Map();
+      const getKey = (a) => typeof window.getActivityUniqueKey === 'function'
+        ? window.getActivityUniqueKey(a)
+        : String(a.garminId || a.file || `${a.date}_${a.name}`);
+      dbActivities.forEach(a => existingByKey.set(getKey(a), a));
+
       const importedZipActs = [];
 
       for (let i = 0; i < queue.length; i++) {
@@ -888,7 +856,7 @@ document.getElementById('zipInput').addEventListener('change', async (event) => 
             const activeMetrics = realMetrics || estMetrics;
             if (activeMetrics) {
               const actObj = { ...task, metrics: activeMetrics, realMetrics, estMetrics, telemetry15s, hasSavedTelemetry: telemetry15s.length > 0, dateObj, source: 'strava' };
-              dbActivities.push(actObj);
+              existingByKey.set(getKey(actObj), actObj);
               importedZipActs.push(actObj);
             }
           } catch (e) { console.warn(`Aviso: ${task.file}`); }
@@ -896,11 +864,10 @@ document.getElementById('zipInput').addEventListener('change', async (event) => 
         if (i % 5 === 0) await new Promise(r => setTimeout(r, 1));
       }
 
+      dbActivities = Array.from(existingByKey.values());
       document.getElementById('progressArea').style.display = 'none';
       if (typeof window.applyGlobalPowerSource === 'function') window.applyGlobalPowerSource();
       processGlobalMetrics();
-
-      await saveToDB(dbActivities, false);
 
       if (importedZipActs.length > 0 && typeof window.upsertActivitiesToSupabase === 'function') {
         progressText.innerText = "A enviar histórico para a nuvem Supabase...";
@@ -912,8 +879,10 @@ document.getElementById('zipInput').addEventListener('change', async (event) => 
         document.getElementById('progressArea').style.display = 'none';
       }
 
+      document.getElementById('summaryArea').style.display = 'block';
       renderSummaryTable();
       updateDynamicCharts();
+      event.target.value = '';
 
     } catch (err) {
       msgEl.style.color = '#ef4444'; msgEl.innerText = 'Erro Crítico: ' + err.message; progressText.innerText = 'Interrompido.';

@@ -1,8 +1,9 @@
-// Módulo de Evolução Histórica Iso-Potência + Zoom Ancorado à Direita
+// Módulo de Evolução Histórica Iso-Potência + Zoom Ancorado à Direita + Tooltip
 
 let isoZoomState = { startFrac: 0, endFrac: 1 };
 let isoPanState = { active: false, startX: 0, origStart: 0, origEnd: 1 };
 let isoPinchState = { active: false, startDist: 0, origStart: 0, origEnd: 1 };
+let lastIsoRenderMeta = null;
 
 function applyIsoRightZoom(zoomFactor) {
   const span = isoZoomState.endFrac - isoZoomState.startFrac;
@@ -14,10 +15,92 @@ function applyIsoRightZoom(zoomFactor) {
   renderIsoPotenciaChart();
 }
 
+function getIsoTooltipEl(canvas) {
+  if (!canvas._isoTooltipDiv) {
+    const div = document.createElement('div');
+    Object.assign(div.style, {
+      position: 'absolute',
+      background: 'rgba(10, 14, 23, 0.96)',
+      border: '1px solid #475569',
+      padding: '10px 12px',
+      borderRadius: '7px',
+      color: '#f1f5f9',
+      pointerEvents: 'none',
+      display: 'none',
+      zIndex: '120',
+      fontSize: '12px',
+      fontFamily: '"JetBrains Mono", monospace',
+      lineHeight: '1.5',
+      boxShadow: '0 10px 25px rgba(0,0,0,0.65)'
+    });
+    document.body.appendChild(div);
+    canvas._isoTooltipDiv = div;
+  }
+  return canvas._isoTooltipDiv;
+}
+
 function attachIsoZoomInteractions(canvas) {
   if (!canvas || canvas._isoZoomBound) return;
   canvas._isoZoomBound = true;
   canvas.style.touchAction = 'none';
+
+  const tipEl = getIsoTooltipEl(canvas);
+
+  canvas.addEventListener('mousemove', (e) => {
+    if (!lastIsoRenderMeta || !Array.isArray(lastIsoRenderMeta.series) || lastIsoRenderMeta.series.length === 0) {
+      tipEl.style.display = 'none';
+      return;
+    }
+
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const { padL, padT, drawW, drawH, series, p1, p2, p3 } = lastIsoRenderMeta;
+
+    if (mx < padL || mx > padL + drawW || my < padT || my > padT + drawH) {
+      tipEl.style.display = 'none';
+      return;
+    }
+
+    let nearestIdx = 0;
+    let bestDist = Infinity;
+    series.forEach((s, idx) => {
+      const sx = series.length === 1 ? padL + drawW / 2 : padL + (idx / (series.length - 1)) * drawW;
+      const d = Math.abs(sx - mx);
+      if (d < bestDist) {
+        bestDist = d;
+        nearestIdx = idx;
+      }
+    });
+
+    const tolX = Math.max(18, (drawW / Math.max(1, series.length)) * 0.6);
+    if (bestDist > tolX) {
+      tipEl.style.display = 'none';
+      return;
+    }
+
+    const item = series[nearestIdx];
+    tipEl.innerHTML = `
+      <div style="color:#38bdf8; font-weight:700; margin-bottom:4px;">${item.key}</div>
+      <span style="color:#22c55e;">● ${p1}W:</span> <b>${Math.round(item.hr1)} bpm</b><br/>
+      <span style="color:#06b6d4;">● ${p2}W:</span> <b>${Math.round(item.hr2)} bpm</b><br/>
+      <span style="color:#eab308;">● ${p3}W:</span> <b>${Math.round(item.hr3)} bpm</b>
+      <hr style="border:none; border-top:1px solid #334155; margin:5px 0;"/>
+      <span style="color:#94a3b8;">Volume:</span> <b>${item.hours}h</b> <span style="color:#64748b;">(${item.ptsCount} pts)</span>
+    `;
+
+    if (typeof window.positionTooltipSmart === 'function') {
+      window.positionTooltipSmart(tipEl, e.clientX, e.clientY, e.pageX, e.pageY);
+    } else {
+      tipEl.style.display = 'block';
+      tipEl.style.left = `${e.pageX + 14}px`;
+      tipEl.style.top = `${e.pageY + 14}px`;
+    }
+  });
+
+  canvas.addEventListener('mouseleave', () => {
+    tipEl.style.display = 'none';
+  });
 
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
@@ -201,6 +284,7 @@ window.renderIsoPotenciaChart = function() {
   });
 
   if (fullSeries.length === 0) {
+    lastIsoRenderMeta = null;
     ctx.fillStyle = '#94a3b8'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center';
     ctx.fillText('Dados insuficientes para traçar a evolução com os parâmetros selecionados.', w / 2, h / 2);
     return;
@@ -213,6 +297,7 @@ window.renderIsoPotenciaChart = function() {
 
   const padL = 52, padR = 48, padT = 25, padB = 45;
   const drawW = w - padL - padR, drawH = h - padT - padB;
+  lastIsoRenderMeta = { padL, padR, padT, padB, drawW, drawH, series, p1, p2, p3 };
 
   let minHr = 200, maxHr = 100, maxHours = 1;
   series.forEach(s => {

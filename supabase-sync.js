@@ -136,20 +136,32 @@ window.upsertActivitiesToSupabase = async function(activities, onProgress = null
 
 window.fetchActivitiesFromSupabase = async function() {
   if (!currentUserId) return [];
-  const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_ACTIVITIES_TABLE}?google_id=eq.${encodeURIComponent(String(currentUserId))}&order=date_obj.asc&select=activity_key,date_obj,source,has_telemetry,payload`;
-  const res = await fetch(url, {
-    method: "GET",
-    headers: getSupabaseHeaders()
-  });
+  const pageSize = 1000;
+  let from = 0;
+  let allRows = [];
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => "");
-    throw new Error(`Supabase fetch falhou (${res.status}): ${errText}`);
+  while (true) {
+    const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_ACTIVITIES_TABLE}?google_id=eq.${encodeURIComponent(String(currentUserId))}&order=date_obj.asc&select=activity_key,date_obj,source,has_telemetry,payload`;
+    const res = await fetch(url, {
+      method: "GET",
+      headers: getSupabaseHeaders({
+        Range: `${from}-${from + pageSize - 1}`
+      })
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      throw new Error(`Supabase fetch falhou (${res.status}): ${errText}`);
+    }
+
+    const rows = await res.json();
+    if (!Array.isArray(rows) || rows.length === 0) break;
+    allRows = allRows.concat(rows);
+    if (rows.length < pageSize) break;
+    from += pageSize;
   }
 
-  const rows = await res.json();
-  if (!Array.isArray(rows)) return [];
-  return rows.map(deserializeActivityFromCloud);
+  return allRows.map(deserializeActivityFromCloud);
 };
 
 window.deleteActivityFromSupabase = async function(activityKey) {

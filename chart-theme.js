@@ -19,12 +19,52 @@ function isActivityStructured(m) {
   return m.vi <= 1.10;
 }
 
+window.positionTooltipSmart = function(tooltipEl, clientX, clientY, pageX, pageY) {
+  if (!tooltipEl) return;
+  const offset = 15;
+  const margin = 12;
+
+  tooltipEl.style.display = 'block';
+  tooltipEl.style.maxWidth = `${Math.max(160, window.innerWidth - margin * 2)}px`;
+
+  const rect = tooltipEl.getBoundingClientRect();
+  const tipW = rect.width || 200;
+  const tipH = rect.height || 120;
+
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const scrollX = window.scrollX || window.pageXOffset || 0;
+  const scrollY = window.scrollY || window.pageYOffset || 0;
+
+  const px = (typeof pageX === 'number') ? pageX : (clientX + scrollX);
+  const py = (typeof pageY === 'number') ? pageY : (clientY + scrollY);
+
+  let left = px + offset;
+  if (clientX + offset + tipW > vw - margin) {
+    left = px - tipW - offset;
+  }
+  const minLeft = scrollX + margin;
+  const maxLeft = scrollX + vw - tipW - margin;
+  left = Math.max(minLeft, Math.min(maxLeft, left));
+
+  let top = py + offset;
+  if (clientY + offset + tipH > vh - margin) {
+    top = py - tipH - offset;
+  }
+  const minTop = scrollY + margin;
+  const maxTop = scrollY + vh - tipH - margin;
+  top = Math.max(minTop, Math.min(maxTop, top));
+
+  tooltipEl.style.left = `${Math.round(left)}px`;
+  tooltipEl.style.top = `${Math.round(top)}px`;
+};
+
 function setupTooltip(canvas) {
   if (!canvas.tooltipDiv) {
     canvas.tooltipDiv = document.createElement('div');
     Object.assign(canvas.tooltipDiv.style, {
-      position: 'absolute', background: 'rgba(15, 23, 42, 0.95)', border: '1px solid #475569',
-      padding: '10px', borderRadius: '6px', color: '#fff', pointerEvents: 'none', display: 'none', zIndex: '100', fontSize: '12px'
+      position: 'absolute', background: 'rgba(15, 23, 42, 0.96)', border: '1px solid #475569',
+      padding: '10px', borderRadius: '6px', color: '#fff', pointerEvents: 'none', display: 'none', zIndex: '120', fontSize: '12px'
     });
     document.body.appendChild(canvas.tooltipDiv);
 
@@ -61,8 +101,8 @@ function setupTooltip(canvas) {
               html += `<b style="color:#22c55e">Estruturado:</b> ${d.estruturado}h<br/><b style="color:#64748b">Livre:</b> ${d.livre}h`;
             }
             canvas.tooltipDiv.innerHTML = html;
-            canvas.tooltipDiv.style.left = (e.pageX + 15) + 'px'; canvas.tooltipDiv.style.top = (e.pageY + 15) + 'px';
-            canvas.tooltipDiv.style.display = 'block'; found = true; break;
+            window.positionTooltipSmart(canvas.tooltipDiv, e.clientX, e.clientY, e.pageX, e.pageY);
+            found = true; break;
           }
         }
       }

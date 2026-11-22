@@ -1,4 +1,124 @@
-// Módulo de Evolução Histórica Iso-Potência (Conceito 1: FC estimada por Regressão Linear em 3 Potências Fixas + Volume ao fundo)
+// Módulo de Evolução Histórica Iso-Potência + Zoom Ancorado à Direita
+
+let isoZoomState = { startFrac: 0, endFrac: 1 };
+let isoPanState = { active: false, startX: 0, origStart: 0, origEnd: 1 };
+let isoPinchState = { active: false, startDist: 0, origStart: 0, origEnd: 1 };
+
+function applyIsoRightZoom(zoomFactor) {
+  const span = isoZoomState.endFrac - isoZoomState.startFrac;
+  const newSpan = Math.max(0.05, Math.min(1, span * zoomFactor));
+  isoZoomState = {
+    startFrac: Math.max(0, 1 - newSpan),
+    endFrac: 1
+  };
+  renderIsoPotenciaChart();
+}
+
+function attachIsoZoomInteractions(canvas) {
+  if (!canvas || canvas._isoZoomBound) return;
+  canvas._isoZoomBound = true;
+  canvas.style.touchAction = 'none';
+
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    applyIsoRightZoom(e.deltaY < 0 ? 0.8 : 1.25);
+  }, { passive: false });
+
+  canvas.addEventListener('mousedown', (e) => {
+    if (isoZoomState.endFrac - isoZoomState.startFrac >= 0.999) return;
+    isoPanState = {
+      active: true,
+      startX: e.clientX,
+      origStart: isoZoomState.startFrac,
+      origEnd: isoZoomState.endFrac
+    };
+    canvas.style.cursor = 'grabbing';
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!isoPanState.active) return;
+    const rect = canvas.getBoundingClientRect();
+    const drawW = Math.max(1, rect.width - 100);
+    const span = isoPanState.origEnd - isoPanState.origStart;
+    const deltaFrac = -((e.clientX - isoPanState.startX) / drawW) * span;
+
+    let newStart = isoPanState.origStart + deltaFrac;
+    let newEnd = isoPanState.origEnd + deltaFrac;
+    if (newStart < 0) { newStart = 0; newEnd = span; }
+    if (newEnd > 1) { newEnd = 1; newStart = 1 - span; }
+
+    isoZoomState = { startFrac: newStart, endFrac: newEnd };
+    renderIsoPotenciaChart();
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (!isoPanState.active) return;
+    isoPanState.active = false;
+    canvas.style.cursor = (isoZoomState.endFrac - isoZoomState.startFrac < 0.999) ? 'grab' : 'default';
+  });
+
+  canvas.addEventListener('dblclick', () => {
+    isoZoomState = { startFrac: 0, endFrac: 1 };
+    renderIsoPotenciaChart();
+  });
+
+  canvas.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      isoPinchState = {
+        active: true,
+        startDist: Math.hypot(dx, dy) || 1,
+        origStart: isoZoomState.startFrac,
+        origEnd: isoZoomState.endFrac
+      };
+      isoPanState.active = false;
+    } else if (e.touches.length === 1 && isoZoomState.endFrac - isoZoomState.startFrac < 0.999) {
+      isoPanState = {
+        active: true,
+        startX: e.touches[0].clientX,
+        origStart: isoZoomState.startFrac,
+        origEnd: isoZoomState.endFrac
+      };
+    }
+  }, { passive: true });
+
+  canvas.addEventListener('touchmove', (e) => {
+    if (isoPinchState.active && e.touches.length === 2) {
+      e.preventDefault();
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.hypot(dx, dy) || 1;
+      const scale = isoPinchState.startDist / dist;
+      const origSpan = isoPinchState.origEnd - isoPinchState.origStart;
+      const newSpan = Math.max(0.05, Math.min(1, origSpan * scale));
+      isoZoomState = {
+        startFrac: Math.max(0, 1 - newSpan),
+        endFrac: 1
+      };
+      renderIsoPotenciaChart();
+    } else if (isoPanState.active && e.touches.length === 1) {
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const drawW = Math.max(1, rect.width - 100);
+      const span = isoPanState.origEnd - isoPanState.origStart;
+      const deltaFrac = -((e.touches[0].clientX - isoPanState.startX) / drawW) * span;
+
+      let newStart = isoPanState.origStart + deltaFrac;
+      let newEnd = isoPanState.origEnd + deltaFrac;
+      if (newStart < 0) { newStart = 0; newEnd = span; }
+      if (newEnd > 1) { newEnd = 1; newStart = 1 - span; }
+
+      isoZoomState = { startFrac: newStart, endFrac: newEnd };
+      renderIsoPotenciaChart();
+    }
+  }, { passive: false });
+
+  canvas.addEventListener('touchend', () => {
+    isoPinchState.active = false;
+    isoPanState.active = false;
+  });
+}
 
 window.initIsoPotenciaTab = function() {
   renderIsoPotenciaChart();
@@ -7,6 +127,8 @@ window.initIsoPotenciaTab = function() {
 window.renderIsoPotenciaChart = function() {
   const canvas = document.getElementById('isoPotenciaCanvas');
   if (!canvas) return;
+  attachIsoZoomInteractions(canvas);
+
   const ctx = canvas.getContext('2d');
   const w = canvas.offsetWidth || 900, h = 420;
   canvas.width = w; canvas.height = h;
@@ -25,7 +147,6 @@ window.renderIsoPotenciaChart = function() {
   const p2 = parseInt(document.getElementById('isoPwr2')?.value || '200', 10);
   const p3 = parseInt(document.getElementById('isoPwr3')?.value || '240', 10);
 
-  // Agrupa pontos e horas em movimento por período
   const periodData = {};
 
   dbActivities.forEach(act => {
@@ -48,12 +169,11 @@ window.renderIsoPotenciaChart = function() {
   });
 
   const sortedKeys = Object.keys(periodData).sort();
-  const series = [];
+  const fullSeries = [];
 
   sortedKeys.forEach(k => {
     const d = periodData[k];
     const pts = d.pts;
-    // Exige amostra mínima no período para calcular regressão confiável
     if (pts.length >= 8) {
       let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0, n = pts.length;
       for (let i = 0; i < n; i++) {
@@ -65,10 +185,9 @@ window.renderIsoPotenciaChart = function() {
         const slope = (n * sumXY - sumX * sumY) / denom;
         const intercept = (sumY - slope * sumX) / n;
 
-        // Filtra regressões válidas (inclinação positiva fisiológica)
         if (slope > 0.03 && slope < 0.85) {
           const clampHr = (val) => Math.max(85, Math.min(205, val));
-          series.push({
+          fullSeries.push({
             key: k,
             hours: +(d.movingSecs / 3600).toFixed(1),
             ptsCount: n,
@@ -81,13 +200,17 @@ window.renderIsoPotenciaChart = function() {
     }
   });
 
-  if (series.length === 0) {
+  if (fullSeries.length === 0) {
     ctx.fillStyle = '#94a3b8'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center';
     ctx.fillText('Dados insuficientes para traçar a evolução com os parâmetros selecionados.', w / 2, h / 2);
     return;
   }
 
-  // Margens e escalas dinâmicas de BPM
+  const total = fullSeries.length;
+  const startIdx = Math.max(0, Math.floor(isoZoomState.startFrac * (total - 1)));
+  const endIdx = Math.min(total - 1, Math.ceil(isoZoomState.endFrac * (total - 1)));
+  const series = fullSeries.slice(startIdx, Math.max(startIdx + 1, endIdx + 1));
+
   const padL = 52, padR = 48, padT = 25, padB = 45;
   const drawW = w - padL - padR, drawH = h - padT - padB;
 
@@ -108,7 +231,6 @@ window.renderIsoPotenciaChart = function() {
   };
   const getY = (hr) => padT + drawH - ((hr - minHr) / (maxHr - minHr)) * drawH;
 
-  // 1. Grid Horizontal (BPM - Eixo Esquerdo)
   ctx.strokeStyle = '#1e293b'; ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif';
   ctx.textAlign = 'right';
   const stepHr = (maxHr - minHr) > 60 ? 15 : 10;
@@ -118,7 +240,6 @@ window.renderIsoPotenciaChart = function() {
     ctx.fillText(`${hr} bpm`, padL - 8, y + 3);
   }
 
-  // Eixo Direito (Escala de Horas do Volume)
   ctx.textAlign = 'left';
   ctx.fillStyle = '#475569';
   for (let i = 0; i <= 4; i++) {
@@ -127,7 +248,13 @@ window.renderIsoPotenciaChart = function() {
     ctx.fillText(`${hVal}h`, w - padR + 8, y + 3);
   }
 
-  // 2. Barras Verticais de Volume ao Fundo (Azul Escuro Translucido estilo Conceito 1)
+  if (isoZoomState.endFrac - isoZoomState.startFrac < 0.999) {
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText('Zoom à direita (duplo clique para resetar)', w - padR, 14);
+  }
+
   const barW = Math.max(4, Math.min(34, (drawW / series.length) * 0.62));
   series.forEach((s, idx) => {
     const x = getX(idx);
@@ -144,7 +271,6 @@ window.renderIsoPotenciaChart = function() {
     ctx.strokeRect(x - barW / 2, y, barW, barH);
   });
 
-  // 3. Rótulos do Eixo X (Períodos)
   ctx.fillStyle = '#94a3b8'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
   const labelSkip = Math.max(1, Math.ceil(series.length / 12));
   series.forEach((s, idx) => {
@@ -156,7 +282,6 @@ window.renderIsoPotenciaChart = function() {
     }
   });
 
-  // 4. Função para desenhar curvas suaves (Spline Catmull-Rom / Bezier) com efeito Glow (Conceito 1)
   function drawSmoothGlowCurve(keyProp, color, glowColor) {
     if (series.length === 0) return;
     const pts = series.map((s, idx) => ({ x: getX(idx), y: getY(s[keyProp]), val: Math.round(s[keyProp]) }));
@@ -187,20 +312,17 @@ window.renderIsoPotenciaChart = function() {
       }
     }
 
-    // Camada de brilho (Glow)
     ctx.strokeStyle = glowColor;
     ctx.lineWidth = 7;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.stroke();
 
-    // Linha principal
     ctx.strokeStyle = color;
     ctx.lineWidth = 2.8;
     ctx.stroke();
     ctx.restore();
 
-    // Pequenos pontos nos vértices e valor no último período
     pts.forEach((pt, idx) => {
       const isLast = (idx === pts.length - 1);
       ctx.beginPath();
@@ -216,7 +338,6 @@ window.renderIsoPotenciaChart = function() {
     });
   }
 
-  // Desenha as 3 curvas: Verde (P1), Ciano (P2) e Amarela (P3)
   drawSmoothGlowCurve('hr1', '#22c55e', 'rgba(34, 197, 94, 0.22)');
   drawSmoothGlowCurve('hr2', '#06b6d4', 'rgba(6, 182, 212, 0.22)');
   drawSmoothGlowCurve('hr3', '#eab308', 'rgba(234, 179, 8, 0.22)');

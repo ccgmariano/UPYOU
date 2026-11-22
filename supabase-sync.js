@@ -150,7 +150,7 @@ window.upsertActivitiesToSupabase = async function(activities, onProgress = null
 
 window.fetchActivitiesFromSupabase = async function() {
   if (!currentUserId) return [];
-  const pageSize = 50;
+  const pageSize = 250;
   let from = 0;
   let allRows = [];
   const msgEl = document.getElementById("statusMsg");

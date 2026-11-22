@@ -150,12 +150,18 @@ window.upsertActivitiesToSupabase = async function(activities, onProgress = null
 
 window.fetchActivitiesFromSupabase = async function() {
   if (!currentUserId) return [];
-  const pageSize = 250;
+  const pageSize = 50;
   let from = 0;
   let allRows = [];
+  const msgEl = document.getElementById("statusMsg");
 
   while (true) {
-    const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_ACTIVITIES_TABLE}?google_id=eq.${encodeURIComponent(String(currentUserId))}&order=date_obj.asc&select=activity_key,date_obj,source,has_telemetry,payload`;
+    if (msgEl) {
+      msgEl.style.color = "#38bdf8";
+      msgEl.innerText = `Baixando histórico da nuvem: ${allRows.length} atividades...`;
+    }
+
+    const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_ACTIVITIES_TABLE}?google_id=eq.${encodeURIComponent(String(currentUserId))}&order=date_obj.desc&select=activity_key,date_obj,source,has_telemetry,payload`;
     const res = await fetch(url, {
       method: "GET",
       headers: getSupabaseHeaders({
@@ -165,6 +171,10 @@ window.fetchActivitiesFromSupabase = async function() {
 
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
+      if (msgEl) {
+        msgEl.style.color = "#ef4444";
+        msgEl.innerText = `Erro Supabase (${res.status}): ${errText}`;
+      }
       throw new Error(`Supabase fetch falhou (${res.status}): ${errText}`);
     }
 

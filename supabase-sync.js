@@ -88,7 +88,10 @@ window.downloadTelemetryStreamFromSupabase = async function(activityKey) {
 window.upsertActivitiesToSupabase = async function(activities, onProgress = null) {
   if (!currentUserId || !Array.isArray(activities) || activities.length === 0) return;
 
-  const batchSize = 20;
+  const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_ACTIVITIES_TABLE}?on_conflict=google_id,activity_key`;
+  const headers = getSupabaseHeaders({ Prefer: "resolution=merge-duplicates,return=minimal" });
+  const batchSize = 5;
+
   for (let i = 0; i < activities.length; i += batchSize) {
     const chunk = activities.slice(i, i + batchSize);
     const rows = chunk.map(act => {
@@ -117,16 +120,26 @@ window.upsertActivitiesToSupabase = async function(activities, onProgress = null
       };
     });
 
-    const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_ACTIVITIES_TABLE}?on_conflict=google_id,activity_key`;
     const res = await fetch(url, {
       method: "POST",
-      headers: getSupabaseHeaders({ Prefer: "resolution=merge-duplicates,return=minimal" }),
+      headers,
       body: JSON.stringify(rows)
     });
 
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
-      console.warn(`Lote ${i} Supabase falhou (${res.status}): ${errText}`);
+      console.warn(`Lote ${i} falhou (${res.status}), tentando individualmente:`, errText);
+      for (const singleRow of rows) {
+        const singleRes = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify([singleRow])
+        });
+        if (!singleRes.ok) {
+          const singleErr = await singleRes.text().catch(() => "");
+          console.error(`Falha na atividade ${singleRow.activity_key} (${singleRes.status}):`, singleErr);
+        }
+      }
     }
 
     if (typeof onProgress === "function") {
@@ -137,7 +150,7 @@ window.upsertActivitiesToSupabase = async function(activities, onProgress = null
 
 window.fetchActivitiesFromSupabase = async function() {
   if (!currentUserId) return [];
-  const pageSize = 1000;
+  const pageSize = 250;
   let from = 0;
   let allRows = [];
 

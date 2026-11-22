@@ -1,4 +1,4 @@
-// Aba: Telemetria Multi-Camadas Matrix Neon Precision (Seleção Mouse + Toque Mobile, Eixo Tempo+Km, Resolução Dinâmica 5s/15s)
+// Aba: Telemetria Multi-Camadas Matrix Neon Precision (Seleção Mouse + Toque Mobile, Eixo Tempo+Km, Resolução Dinâmica 5s/15s + Tooltip Pontual)
 
 const TEL_LAYERS_STORAGE_KEY = 'upyou_telemetry_layers_v2';
 
@@ -17,6 +17,7 @@ let telSelection = { startIdx: null, endIdx: null };
 let telDragState = { mode: null, anchorIdx: null, dragStartIdx: null, origStart: null, origEnd: null, pointerId: null };
 let telRenderMeta = null;
 let telTouchSelectMode = false;
+let telHoverIdx = null;
 
 const LAYER_META = [
   { key: 'alt', label: 'Altimetria (m)', color: '#94a3b8' },
@@ -164,6 +165,8 @@ window.stepTelRide = function(delta) {
   if (nextIdx === currentTelRideIndex) return;
   currentTelRideIndex = nextIdx;
   clearTelSelection();
+  telHoverIdx = null;
+  hideTelemetryTooltip();
   const slider = document.getElementById('telRideSlider');
   if (slider) slider.value = currentTelRideIndex;
   renderTelemetriaChart();
@@ -195,6 +198,101 @@ if (!window._telKeyListenerAdded) {
   });
 }
 
+function getTelemetryTooltipEl(canvas) {
+  if (!canvas._telTooltipDiv) {
+    const div = document.createElement('div');
+    Object.assign(div.style, {
+      position: 'absolute',
+      background: 'rgba(10, 14, 23, 0.96)',
+      border: '1px solid rgba(52, 211, 153, 0.45)',
+      padding: '9px 11px',
+      borderRadius: '7px',
+      color: '#f1f5f9',
+      pointerEvents: 'none',
+      display: 'none',
+      zIndex: '120',
+      fontSize: '11.5px',
+      fontFamily: '"JetBrains Mono", monospace',
+      lineHeight: '1.5',
+      boxShadow: '0 10px 25px rgba(0,0,0,0.65)'
+    });
+    document.body.appendChild(div);
+    canvas._telTooltipDiv = div;
+  }
+  return canvas._telTooltipDiv;
+}
+
+function hideTelemetryTooltip() {
+  const canvas = document.getElementById('telemetriaCanvas');
+  if (canvas && canvas._telTooltipDiv) {
+    canvas._telTooltipDiv.style.display = 'none';
+  }
+}
+
+function placeTooltipSafe(tipEl, clientX, clientY, pageX, pageY) {
+  if (typeof window.positionTooltipSmart === 'function') {
+    window.positionTooltipSmart(tipEl, clientX, clientY, pageX, pageY);
+  } else {
+    tipEl.style.display = 'block';
+    tipEl.style.left = `${pageX + 14}px`;
+    tipEl.style.top = `${pageY + 14}px`;
+  }
+}
+
+function updateTelemetryPointTooltip(canvas, idx, clientX, clientY, pageX, pageY) {
+  if (!telRenderMeta || !telRenderMeta.stream || idx === null || idx < 0 || idx >= telRenderMeta.stream.length) {
+    hideTelemetryTooltip();
+    return;
+  }
+
+  const { act, stream, isIndoor, stepSecs } = telRenderMeta;
+  const pt = stream[idx];
+  const tipEl = getTelemetryTooltipEl(canvas);
+
+  const kmVal = (pt.km !== undefined && pt.km !== null) ? Number(pt.km).toFixed(2) : '0.00';
+  const elapsedSecs = (pt.sec !== undefined && pt.sec !== null) ? pt.sec : idx * stepSecs;
+  const timeTxt = formatDurationShort(elapsedSecs);
+
+  const lines = [];
+  const hasReal = act && act.realMetrics && act.realMetrics.avgPwr > 15;
+
+  if (telActiveLayers.pReal && hasReal) {
+    lines.push(`<span style="color:#10b981;">● Real:</span> <b>${Math.round(pt.pReal || 0)} W</b>`);
+  }
+  if (telActiveLayers.pEst) {
+    lines.push(`<span style="color:#eab308;">● Simulada:</span> <b>${Math.round(pt.pEst || 0)} W</b>`);
+  }
+  if (telActiveLayers.hr && pt.hr > 40) {
+    lines.push(`<span style="color:#ef4444;">● FC:</span> <b>${Math.round(pt.hr)} bpm</b>`);
+  }
+  if (telActiveLayers.cad && pt.cad > 15) {
+    lines.push(`<span style="color:#06b6d4;">● Cadência:</span> <b>${Math.round(pt.cad)} rpm</b>`);
+  }
+  if (telActiveLayers.spd && pt.spd !== null && pt.spd !== undefined) {
+    lines.push(`<span style="color:#38bdf8;">● Velocidade:</span> <b>${Number(pt.spd).toFixed(1)} km/h</b>`);
+  }
+  if (telActiveLayers.wind && !isIndoor && pt.wind !== null && pt.wind !== undefined) {
+    const wNum = Number(pt.wind);
+    lines.push(`<span style="color:#a855f7;">● Vento:</span> <b>${wNum > 0 ? '+' : ''}${wNum.toFixed(1)} km/h</b>`);
+  }
+  if (telActiveLayers.alt && !isIndoor && pt.alt !== null && pt.alt !== undefined && !isNaN(pt.alt)) {
+    const gradeTxt = (pt.grade !== null && pt.grade !== undefined && !isNaN(pt.grade))
+      ? ` (${Number(pt.grade) >= 0 ? '+' : ''}${Number(pt.grade).toFixed(1)}%)`
+      : '';
+    lines.push(`<span style="color:#cbd5e1;">● Alt:</span> <b>${Math.round(pt.alt)} m</b>${gradeTxt}`);
+  }
+
+  if (lines.length === 0) {
+    lines.push(`<span style="color:#94a3b8;">Sem camadas ativas neste ponto</span>`);
+  }
+
+  tipEl.innerHTML = `
+    <div style="color:#34d399; font-weight:700; margin-bottom:4px;">${kmVal} km &bull; ${timeTxt}</div>
+    ${lines.join('<br/>')}
+  `;
+  placeTooltipSafe(tipEl, clientX, clientY, pageX, pageY);
+}
+
 function findNearestStreamIdx(mouseX) {
   if (!telRenderMeta || !telRenderMeta.xPositions || telRenderMeta.xPositions.length === 0) return 0;
   const xs = telRenderMeta.xPositions;
@@ -223,9 +321,14 @@ function attachTelemetryCanvasInteractions(canvas) {
   canvas._telSelectionBound = true;
   canvas.style.touchAction = telTouchSelectMode ? 'none' : 'pan-y';
 
+  canvas.addEventListener('pointerleave', () => {
+    telHoverIdx = null;
+    hideTelemetryTooltip();
+    drawTelemetryFrame();
+  });
+
   canvas.addEventListener('pointerdown', (e) => {
     if (!telRenderMeta || !telRenderMeta.stream || telRenderMeta.stream.length < 2) return;
-    // No celular/toque, só captura seleção quando o modo seleção estiver ligado
     if (e.pointerType === 'touch' && !telTouchSelectMode) return;
 
     const { x, y } = getCanvasPointerPos(canvas, e);
@@ -240,7 +343,6 @@ function attachTelemetryCanvasInteractions(canvas) {
       const x1 = xPositions[telSelection.startIdx];
       const x2 = xPositions[telSelection.endIdx];
 
-      // 1) Redimensionar bordas
       if (Math.abs(x - x1) <= hitTol) {
         telDragState = { mode: 'resize-left', anchorIdx: telSelection.endIdx, pointerId: e.pointerId };
         return;
@@ -250,7 +352,6 @@ function attachTelemetryCanvasInteractions(canvas) {
         return;
       }
 
-      // 2) Mover seleção inteira para os lados
       if (x > x1 + hitTol && x < x2 - hitTol) {
         telDragState = {
           mode: 'move',
@@ -264,7 +365,6 @@ function attachTelemetryCanvasInteractions(canvas) {
       }
     }
 
-    // 3) Nova seleção
     const idx = findNearestStreamIdx(x);
     telDragState = { mode: 'new', anchorIdx: idx, pointerId: e.pointerId };
     telSelection = { startIdx: idx, endIdx: idx };
@@ -275,23 +375,34 @@ function attachTelemetryCanvasInteractions(canvas) {
     const { x, y } = getCanvasPointerPos(canvas, e);
     const { padL, padT, drawW, drawH, xPositions, stream } = telRenderMeta;
 
+    const insidePlot = x >= padL && x <= padL + drawW && y >= padT && y <= padT + drawH;
+
     if (!telDragState.mode) {
-      if (e.pointerType === 'mouse' && x >= padL && x <= padL + drawW && y >= padT && y <= padT + drawH) {
-        if (telSelection.startIdx !== null && telSelection.endIdx !== null && telSelection.endIdx > telSelection.startIdx) {
-          const x1 = xPositions[telSelection.startIdx];
-          const x2 = xPositions[telSelection.endIdx];
-          if (Math.abs(x - x1) <= 9 || Math.abs(x - x2) <= 9) {
-            canvas.style.cursor = 'ew-resize';
-            return;
+      if (insidePlot) {
+        const nearIdx = findNearestStreamIdx(x);
+        telHoverIdx = nearIdx;
+        updateTelemetryPointTooltip(canvas, nearIdx, e.clientX, e.clientY, e.pageX, e.pageY);
+        drawTelemetryFrame();
+
+        if (e.pointerType === 'mouse') {
+          if (telSelection.startIdx !== null && telSelection.endIdx !== null && telSelection.endIdx > telSelection.startIdx) {
+            const x1 = xPositions[telSelection.startIdx];
+            const x2 = xPositions[telSelection.endIdx];
+            if (Math.abs(x - x1) <= 9 || Math.abs(x - x2) <= 9) {
+              canvas.style.cursor = 'ew-resize';
+              return;
+            }
+            if (x > x1 + 9 && x < x2 - 9) {
+              canvas.style.cursor = 'grab';
+              return;
+            }
           }
-          if (x > x1 + 9 && x < x2 - 9) {
-            canvas.style.cursor = 'grab';
-            return;
-          }
+          canvas.style.cursor = 'crosshair';
         }
-        canvas.style.cursor = 'crosshair';
-      } else if (e.pointerType === 'mouse') {
-        canvas.style.cursor = 'default';
+      } else {
+        telHoverIdx = null;
+        hideTelemetryTooltip();
+        if (e.pointerType === 'mouse') canvas.style.cursor = 'default';
       }
       return;
     }
@@ -300,6 +411,8 @@ function attachTelemetryCanvasInteractions(canvas) {
 
     const clampedX = Math.max(padL, Math.min(padL + drawW, x));
     const idx = findNearestStreamIdx(clampedX);
+    telHoverIdx = idx;
+    updateTelemetryPointTooltip(canvas, idx, e.clientX, e.clientY, e.pageX, e.pageY);
 
     if (telDragState.mode === 'move') {
       canvas.style.cursor = 'grabbing';
@@ -404,6 +517,8 @@ window.initTelemetriaTab = function() {
 window.onTelSliderInput = function(val) {
   currentTelRideIndex = parseInt(val, 10) || 0;
   clearTelSelection();
+  telHoverIdx = null;
+  hideTelemetryTooltip();
   renderTelemetriaChart();
 };
 
@@ -511,7 +626,6 @@ function drawTelemetryFrame() {
   const getYSpd = (spd) => padT + drawH - (Math.max(0, Math.min(60, spd)) / 60) * drawH;
   const getYWind = (wnd) => (padT + drawH * 0.5) - (Math.max(-30, Math.min(30, wnd)) / 60) * drawH;
 
-  // Grade Horizontal
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
   ctx.lineWidth = 1;
   ctx.font = '10px "JetBrains Mono", monospace';
@@ -549,7 +663,6 @@ function drawTelemetryFrame() {
     }
   }
 
-  // Eixo Horizontal: Distância (km) + Tempo Decorrido (min/h)
   const kmStep = maxKm <= 15 ? 2 : (maxKm <= 40 ? 5 : (maxKm <= 90 ? 10 : 20));
   ctx.textAlign = 'center';
   for (let k = 0; k <= maxKm; k += kmStep) {
@@ -572,7 +685,6 @@ function drawTelemetryFrame() {
     ctx.fillText(formatAxisTime(elapsedSecs), x, padT + drawH + 30);
   }
 
-  // Altimetria
   if (telActiveLayers.alt && !isIndoor && validAltPts > 3 && (maxAlt - minAlt) >= 4) {
     ctx.save();
     const grad = ctx.createLinearGradient(0, padT + drawH * 0.35, 0, padT + drawH);
@@ -707,6 +819,20 @@ function drawTelemetryFrame() {
     ctx.fillStyle = '#34d399';
     ctx.textAlign = 'center';
     ctx.fillText(tag, tx + tw / 2, padT + 16);
+    ctx.restore();
+  }
+
+  // Linha guia vertical do cursor (tooltip pontual)
+  if (telHoverIdx !== null && telHoverIdx >= 0 && telHoverIdx < xPositions.length) {
+    const hx = xPositions[telHoverIdx];
+    ctx.save();
+    ctx.beginPath();
+    ctx.setLineDash([3, 3]);
+    ctx.moveTo(hx, padT);
+    ctx.lineTo(hx, padT + drawH);
+    ctx.strokeStyle = 'rgba(241, 245, 249, 0.45)';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
     ctx.restore();
   }
 }

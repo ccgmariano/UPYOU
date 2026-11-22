@@ -462,7 +462,19 @@ async function syncWithSupabaseCloud() {
     }
 
     if (missingInCloud.length > 0 && typeof window.upsertActivitiesToSupabase === 'function') {
-      window.upsertActivitiesToSupabase(missingInCloud).catch(e => console.warn('Push pendente Supabase:', e));
+      const totalMissing = missingInCloud.length;
+      if (msgEl) {
+        msgEl.style.color = '#38bdf8';
+        msgEl.innerText = `A enviar ${totalMissing} atividade(s) pendente(s) para o Supabase...`;
+      }
+      await window.upsertActivitiesToSupabase(missingInCloud, (done, total) => {
+        if (msgEl) msgEl.innerText = `A enviar para o Supabase: ${done} de ${total}...`;
+      });
+      if (msgEl) {
+        msgEl.style.color = '#10b981';
+        msgEl.innerText = `Sincronização completa! ${totalMissing} atividade(s) enviadas para a nuvem.`;
+        setTimeout(() => { if (msgEl.innerText.includes('Sincronização completa')) msgEl.innerText = ''; }, 4000);
+      }
     }
   } catch (e) {
     console.warn('Erro ao sincronizar com Supabase:', e);

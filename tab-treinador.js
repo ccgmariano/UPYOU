@@ -129,6 +129,7 @@ function saveWeightHistory(list) {
       if (typeof window.updatePowerEngineParams === 'function') window.updatePowerEngineParams();
     }
   }
+  if (typeof window.syncUserProfileToCloud === 'function') window.syncUserProfileToCloud();
 }
 
 function getTotalWeightForDate(refDate) {

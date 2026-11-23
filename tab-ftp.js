@@ -1,4 +1,4 @@
-// Aba 2: Evolução de FTP + Zoom Ancorado à Direita + Tooltip
+// Aba 2: Evolução de FTP & LTHR Histórico + Zoom Ancorado à Direita + Tooltip
 
 let ftpZoomState = { startFrac: 0, endFrac: 1 };
 let ftpPanState = { active: false, startX: 0, origStart: 0, origEnd: 1 };
@@ -56,9 +56,9 @@ function attachFtpZoomInteractions(canvas) {
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
-    const { pad, w, h, points } = lastFtpRenderMeta;
+    const { padL, padR, padT, padB, w, h, points } = lastFtpRenderMeta;
 
-    if (mx < pad || mx > w - pad || my < pad || my > h - pad) {
+    if (mx < padL || mx > w - padR || my < padT || my > h - padB) {
       tipEl.style.display = 'none';
       return;
     }
@@ -73,7 +73,7 @@ function attachFtpZoomInteractions(canvas) {
       }
     }
 
-    const tolX = Math.max(16, ((w - pad * 2) / Math.max(1, points.length)) * 0.8);
+    const tolX = Math.max(16, ((w - padL - padR) / Math.max(1, points.length)) * 0.8);
     if (bestDist > tolX) {
       tipEl.style.display = 'none';
       return;
@@ -124,7 +124,7 @@ function attachFtpZoomInteractions(canvas) {
   window.addEventListener('mousemove', (e) => {
     if (!ftpPanState.active) return;
     const rect = canvas.getBoundingClientRect();
-    const drawW = Math.max(1, rect.width - 90);
+    const drawW = Math.max(1, rect.width - 100);
     const span = ftpPanState.origEnd - ftpPanState.origStart;
     const deltaFrac = -((e.clientX - ftpPanState.startX) / drawW) * span;
 
@@ -186,9 +186,9 @@ function attachFtpZoomInteractions(canvas) {
     } else if (ftpPanState.active && e.touches.length === 1) {
       e.preventDefault();
       const rect = canvas.getBoundingClientRect();
-      const drawW = Math.max(1, rect.width - 90);
+      const drawW = Math.max(1, rect.width - 100);
       const span = ftpPanState.origEnd - ftpPanState.origStart;
-      const deltaFrac = -((e.touches[0].clientX - ftpPanState.startX) / drawW) * span;
+      const deltaFrac = -((e.clientX - ftpPanState.startX) / drawW) * span;
 
       let newStart = ftpPanState.origStart + deltaFrac;
       let newEnd = ftpPanState.origEnd + deltaFrac;
@@ -218,7 +218,10 @@ function renderFtpChart(data) {
   attachFtpZoomInteractions(canvas);
 
   const ctx = canvas.getContext('2d');
-  const w = canvas.offsetWidth || 900, h = 350; canvas.width = w; canvas.height = h; ctx.clearRect(0, 0, w, h);
+  const w = canvas.offsetWidth || 900, h = 350;
+  canvas.width = w; canvas.height = h;
+  ctx.clearRect(0, 0, w, h);
+
   if (!Array.isArray(data) || data.length < 2) {
     lastFtpRenderMeta = null;
     return;
@@ -229,33 +232,101 @@ function renderFtpChart(data) {
   const endIdx = Math.min(total - 1, Math.ceil(ftpZoomState.endFrac * (total - 1)));
   const viewData = data.slice(startIdx, Math.max(startIdx + 2, endIdx + 1));
 
-  const minT = viewData[0].date.getTime(), maxT = viewData[viewData.length - 1].date.getTime();
-  const minF = Math.max(0, Math.min(...viewData.map(d => d.ftp)) * 0.85), maxF = Math.max(...viewData.map(d => d.ftp)) * 1.1;
-  const pad = 45;
-  const getX = (t) => pad + ((t - minT) / Math.max(1, maxT - minT)) * (w - pad * 2);
-  const getY = (f) => h - pad - ((f - minF) / Math.max(1, maxF - minF)) * (h - pad * 2);
+  const minT = viewData[0].date.getTime();
+  const maxT = viewData[viewData.length - 1].date.getTime();
+  const minF = Math.max(0, Math.min(...viewData.map(d => d.ftp)) * 0.85);
+  const maxF = Math.max(...viewData.map(d => d.ftp)) * 1.1;
+
+  const validLthrs = viewData.map(d => d.lthr).filter(v => v && v >= 100);
+  const hasLthr = validLthrs.length >= 2;
+  const minL = hasLthr ? Math.floor((Math.min(...validLthrs) - 8) / 5) * 5 : 130;
+  const maxL = hasLthr ? Math.ceil((Math.max(...validLthrs) + 8) / 5) * 5 : 190;
+
+  const padL = 48, padR = hasLthr ? 54 : 30, padT = 30, padB = 36;
+  const drawW = w - padL - padR;
+  const drawH = h - padT - padB;
+
+  const getX = (t) => padL + ((t - minT) / Math.max(1, maxT - minT)) * drawW;
+  const getY = (f) => padT + drawH - ((f - minF) / Math.max(1, maxF - minF)) * drawH;
+  const getYLthr = (l) => padT + drawH - ((l - minL) / Math.max(1, maxL - minL)) * drawH;
+
+  // Legenda no topo
+  ctx.font = 'bold 10.5px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#fc5200';
+  ctx.fillText('● FTP (W)', padL, 16);
+  if (hasLthr) {
+    ctx.fillStyle = '#ef4444';
+    ctx.fillText('● LTHR (bpm)', padL + 72, 16);
+  }
 
   if (ftpZoomState.endFrac - ftpZoomState.startFrac < 0.999) {
     ctx.fillStyle = '#38bdf8';
     ctx.font = '10px sans-serif';
     ctx.textAlign = 'right';
-    ctx.fillText('Zoom à direita (duplo clique para resetar)', w - pad, 16);
+    ctx.fillText('Zoom à direita (duplo clique para resetar)', w - padR, 16);
   }
 
-  ctx.strokeStyle = '#334155'; ctx.lineWidth = 1;
+  // Grade e eixo Y esquerdo (FTP em W)
+  ctx.strokeStyle = '#334155';
+  ctx.lineWidth = 1;
   for (let f = Math.ceil(minF / 25) * 25; f <= maxF; f += 25) {
-    const y = getY(f); ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(w - pad, y); ctx.stroke();
-    ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right'; ctx.fillText(`${f}W`, pad - 6, y + 3);
+    const y = getY(f);
+    ctx.beginPath();
+    ctx.moveTo(padL, y);
+    ctx.lineTo(w - padR, y);
+    ctx.stroke();
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(`${f}W`, padL - 6, y + 3);
   }
 
+  // Eixo Y direito (LTHR em bpm)
+  if (hasLthr) {
+    const lStep = (maxL - minL) > 35 ? 10 : 5;
+    ctx.fillStyle = '#f87171';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'left';
+    for (let l = minL; l <= maxL; l += lStep) {
+      const y = getYLthr(l);
+      if (y >= padT - 4 && y <= padT + drawH + 4) {
+        ctx.fillText(`${l} bpm`, w - padR + 6, y + 3);
+      }
+    }
+  }
+
+  // Linha de LTHR (vermelha tracejada suave)
+  if (hasLthr) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(239, 68, 68, 0.85)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 3]);
+    let started = false;
+    viewData.forEach((pt) => {
+      if (!pt.lthr || pt.lthr < 100) return;
+      const x = getX(pt.date.getTime());
+      const y = getYLthr(pt.lthr);
+      if (!started) { ctx.moveTo(x, y); started = true; }
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Linha de FTP (laranja principal)
   const points = [];
-  ctx.beginPath(); ctx.strokeStyle = '#fc5200'; ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.strokeStyle = '#fc5200';
+  ctx.lineWidth = 2.5;
   viewData.forEach((pt, idx) => {
-    const x = getX(pt.date.getTime()), y = getY(pt.ftp);
+    const x = getX(pt.date.getTime());
+    const y = getY(pt.ftp);
     points.push({ x, y, date: pt.date, ftp: pt.ftp, lthr: pt.lthr });
     if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
   });
   ctx.stroke();
 
-  lastFtpRenderMeta = { pad, w, h, points };
+  lastFtpRenderMeta = { padL, padR, padT, padB, w, h, points };
 }

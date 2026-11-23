@@ -1,7 +1,8 @@
-// Aba: Diagnóstico & Coach (Coggan/Allen Power Profile W/kg + Idade Não Linear 50%, LTHR Consenso, Alvo EF/FC, Volume Real, TSS/IF e Auditoria)
+// Aba: Diagnóstico & Coach (Coggan/Allen Power Profile W/kg + Idade Dinâmica, Histórico de Peso, LTHR Consenso, Alvo EF/FC, Volume Real, TSS/IF e Auditoria)
 
 const COACH_CFG_KEY = 'upyou_coach_config_v1';
 const USER_AGE_KEY = 'upyou_user_age_v1';
+const WEIGHT_HISTORY_KEY = 'upyou_weight_history_v1';
 
 let coachConfig = { recentDays: 30, prevDays: 60 };
 let coachRefIdx = -1;
@@ -65,6 +66,13 @@ function getUserAge() {
   return 50;
 }
 
+function getUserAgeAtDate(refDate) {
+  const currentAge = getUserAge();
+  if (!(refDate instanceof Date) || isNaN(refDate.getTime())) return currentAge;
+  const yearsDiff = (Date.now() - refDate.getTime()) / (365.25 * 86400000);
+  return Math.max(15, Math.round(currentAge - Math.max(0, yearsDiff)));
+}
+
 window.onUserAgeChange = function(val) {
   const age = Math.max(15, Math.min(90, parseInt(val, 10) || 50));
   try { localStorage.setItem(USER_AGE_KEY, String(age)); } catch (e) {}
@@ -101,11 +109,121 @@ function getAgeRecoveryFactor(age) {
   return Math.min(1.225, 1.0 + extra);
 }
 
-function getEstimatedRiderWeightKg() {
-  const el = document.getElementById('totalWeightInput');
-  const totalW = el ? (parseFloat(el.value) || 82) : 82;
+// --- HISTÓRICO DE PESO ---
+function getWeightHistory() {
+  try {
+    const raw = localStorage.getItem(WEIGHT_HISTORY_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list.sort((a, b) => a.date.localeCompare(b.date)) : [];
+  } catch (e) { return []; }
+}
+
+function saveWeightHistory(list) {
+  list.sort((a, b) => a.date.localeCompare(b.date));
+  try { localStorage.setItem(WEIGHT_HISTORY_KEY, JSON.stringify(list)); } catch (e) {}
+  if (list.length > 0) {
+    const latest = list[list.length - 1];
+    const inp = document.getElementById('totalWeightInput');
+    if (inp) {
+      inp.value = latest.weight;
+      if (typeof window.updatePowerEngineParams === 'function') window.updatePowerEngineParams();
+    }
+  }
+}
+
+function getTotalWeightForDate(refDate) {
+  const inp = document.getElementById('totalWeightInput');
+  const fallback = inp ? (parseFloat(inp.value) || 82) : 82;
+  const list = getWeightHistory();
+  if (list.length === 0) return fallback;
+
+  const targetStr = (refDate instanceof Date && !isNaN(refDate.getTime()))
+    ? refDate.toISOString().slice(0, 10)
+    : new Date().toISOString().slice(0, 10);
+
+  let chosen = null;
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].date <= targetStr) chosen = list[i].weight;
+    else break;
+  }
+  return chosen !== null ? chosen : list[0].weight;
+}
+
+function getEstimatedRiderWeightKg(refDate = null) {
+  const totalW = getTotalWeightForDate(refDate);
   return Math.max(45, totalW - 8.5);
 }
+
+window.openWeightHistoryModal = function() {
+  let modal = document.getElementById('weightHistoryModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'weightHistoryModal';
+    modal.style.cssText = 'position:fixed; inset:0; background:rgba(2,6,23,0.75); z-index:9999; display:flex; align-items:center; justify-content:center; padding:16px;';
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
+    document.body.appendChild(modal);
+  }
+  renderWeightHistoryModal();
+  modal.style.display = 'flex';
+};
+
+function renderWeightHistoryModal() {
+  const modal = document.getElementById('weightHistoryModal');
+  if (!modal) return;
+  const list = getWeightHistory().slice().reverse();
+  const today = new Date().toISOString().slice(0, 10);
+  const curW = document.getElementById('totalWeightInput')?.value || 82;
+
+  const rows = list.length > 0
+    ? list.map(item => `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.06); font-size:0.8rem;">
+          <span style="color:#cbd5e1;">${item.date.split('-').reverse().join('/')}</span>
+          <strong style="color:#38bdf8;">${item.weight} kg</strong>
+          <button type="button" onclick="deleteWeightEntry('${item.date}')" style="background:none; border:none; color:#ef4444; cursor:pointer; font-weight:700;">✕</button>
+        </div>
+      `).join('')
+    : `<div style="color:#64748b; font-size:0.76rem; padding:10px; text-align:center;">Nenhum registro salvo ainda.</div>`;
+
+  modal.innerHTML = `
+    <div style="background:#0a0e17; border:1px solid #334155; border-radius:10px; width:100%; max-width:340px; padding:16px; color:#f8fafc;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <strong style="font-size:0.88rem; color:#34d399;">Histórico de Peso Total</strong>
+        <button type="button" onclick="document.getElementById('weightHistoryModal').style.display='none'" style="background:none; border:none; color:#94a3b8; cursor:pointer; font-size:1rem;">✕</button>
+      </div>
+      <div style="display:flex; gap:8px; margin-bottom:12px;">
+        <input type="date" id="whDateInput" value="${today}" class="custom-select" style="flex:1; font-size:0.78rem;">
+        <input type="number" id="whValInput" value="${curW}" min="45" max="160" step="0.1" class="custom-select" style="width:76px; font-size:0.78rem;" placeholder="kg">
+        <button type="button" onclick="addWeightEntry()" class="btn-cockpit primary" style="padding:5px 10px; font-size:0.76rem;">Salvar</button>
+      </div>
+      <div style="max-height:200px; overflow-y:auto; background:#0f1522; border-radius:6px; border:1px solid rgba(255,255,255,0.06);">
+        ${rows}
+      </div>
+    </div>
+  `;
+}
+
+window.addWeightEntry = function() {
+  const date = document.getElementById('whDateInput')?.value;
+  const weight = parseFloat(document.getElementById('whValInput')?.value);
+  if (!date || isNaN(weight) || weight < 45 || weight > 160) return;
+
+  const list = getWeightHistory().filter(item => item.date !== date);
+  list.push({ date, weight: parseFloat(weight.toFixed(1)) });
+  saveWeightHistory(list);
+  renderWeightHistoryModal();
+
+  const tab = document.getElementById('treinadorTab');
+  if (tab && tab.style.display !== 'none') renderTreinadorTab();
+};
+
+window.deleteWeightEntry = function(date) {
+  const list = getWeightHistory().filter(item => item.date !== date);
+  saveWeightHistory(list);
+  renderWeightHistoryModal();
+
+  const tab = document.getElementById('treinadorTab');
+  if (tab && tab.style.display !== 'none') renderTreinadorTab();
+};
 
 function getSortedCoachActivities() {
   if (typeof dbActivities === 'undefined' || !Array.isArray(dbActivities)) return [];
@@ -342,7 +460,7 @@ function computeWindowStats(acts, daysSpan) {
 }
 
 function buildCoachDiagnosis(rec, prev, ftp, allActs, refDate, age) {
-  const riderKg = getEstimatedRiderWeightKg();
+  const riderKg = getEstimatedRiderWeightKg(refDate);
   const profile = classifyCogganProfile(rec.mmp, ftp, riderKg, age);
   const recovFactor = getAgeRecoveryFactor(age);
 
@@ -756,7 +874,7 @@ function renderTreinadorTab() {
   const refDate = refAct.dateObj;
   const latestDate = allActs[allActs.length - 1].dateObj;
   const refFtp = refAct.currentFtp || 220;
-  const userAge = getUserAge();
+  const userAge = getUserAgeAtDate(refDate);
 
   const msDay = 86400000;
   const recentStart = new Date(refDate.getTime() - coachConfig.recentDays * msDay);

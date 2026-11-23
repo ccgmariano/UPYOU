@@ -81,6 +81,13 @@ function applyTabOrderByUsage(preserveScrollTabId = null) {
   }
 }
 
+function activateFirstOrderedTab(renderNow = false) {
+  const nav = document.getElementById('dashboardNavTabs');
+  const firstBtn = nav ? nav.querySelector('.tab-btn') : null;
+  const firstTabId = (firstBtn && firstBtn.dataset.tab) ? firstBtn.dataset.tab : 'tableTab';
+  window.switchDashboardTab(firstTabId, firstBtn, false, renderNow);
+}
+
 window.initGoogleSignIn = function() {
   const btnContainer = document.getElementById('googleSignInBtn');
   if (!btnContainer || btnContainer.childElementCount > 0) return;
@@ -187,6 +194,7 @@ window.addEventListener('DOMContentLoaded', () => {
       loadUserPreferences();
       if (typeof loadPowerEnginePreferences === 'function') loadPowerEnginePreferences();
       applyTabOrderByUsage();
+      activateFirstOrderedTab(false);
       document.getElementById('loginScreen').style.display = 'none';
       document.getElementById('mainApp').style.display = 'flex';
       document.getElementById('userGreeting').innerText = currentUserName;
@@ -245,6 +253,7 @@ window.handleCredentialResponse = function(response) {
   loadUserPreferences();
   if (typeof loadPowerEnginePreferences === 'function') loadPowerEnginePreferences();
   applyTabOrderByUsage();
+  activateFirstOrderedTab(false);
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('mainApp').style.display = 'flex';
   document.getElementById('userGreeting').innerText = currentUserName;
@@ -496,6 +505,7 @@ async function initializeAppForUser() {
     if (typeof window.applyGlobalPowerSource === 'function') window.applyGlobalPowerSource();
     processGlobalMetrics();
     renderSummaryTable();
+    updateDynamicCharts();
   } else {
     if (loadingEl) {
       loadingEl.innerText = 'Aguardando carregamento das atividades...';
@@ -796,18 +806,20 @@ window.triggerNavByTab = function(tabId) {
   window.switchDashboardTab(tabId, topBtn);
 };
 
-window.switchDashboardTab = function(tabId, el) {
+window.switchDashboardTab = function(tabId, el, shouldRecord = true, shouldRender = true) {
   activeDashboardTabId = tabId;
-  recordTabAccess(tabId);
+  if (shouldRecord) recordTabAccess(tabId);
 
-  document.getElementById('detailArea').style.display = 'none';
-  document.getElementById('summaryArea').style.display = 'block';
+  const detailArea = document.getElementById('detailArea');
+  const summaryArea = document.getElementById('summaryArea');
+  if (detailArea) detailArea.style.display = 'none';
+  if (summaryArea && shouldRender) summaryArea.style.display = 'block';
 
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.classList.toggle('active', btn.getAttribute('data-tab') === tabId);
   });
 
-  ['tableTab', 'ftpTab', 'curvaPotenciaTab', 'zonesTab', 'pwrTimeTab', 'hrTimeTab', 'driftChartTab', 'viChartTab', 'structureVolTab', 'eficienciaTab', 'dispersaoTab', 'isoPotenciaTab', 'telemetriaTab'].forEach(id => {
+  ['tableTab', 'ftpTab', 'curvaPotenciaTab', 'zonesTab', 'pwrTimeTab', 'hrTimeTab', 'driftChartTab', 'viChartTab', 'structureVolTab', 'eficienciaTab', 'dispersaoTab', 'isoPotenciaTab', 'telemetriaTab', 'treinadorTab'].forEach(id => {
     const sec = document.getElementById(id);
     if (sec) sec.style.display = 'none';
   });
@@ -816,8 +828,8 @@ window.switchDashboardTab = function(tabId, el) {
   const targetSec = document.getElementById(tabId);
   if (targetSec) targetSec.style.display = 'block';
 
-  applyTabOrderByUsage(tabId);
-  updateDynamicCharts();
+  if (shouldRecord) applyTabOrderByUsage(tabId);
+  if (shouldRender) updateDynamicCharts();
 };
 
 window.syncFiltersAndUpdate = function(value) {
@@ -1383,6 +1395,7 @@ function processGlobalMetrics() {
   if (activeDashboardTabId === 'ftpTab') renderFtpChart(cachedFtpHistory);
   if (activeDashboardTabId === 'zonesTab') renderDynamicZones();
 }
+
 updateDynamicCharts = function() {
   switch (activeDashboardTabId) {
     case 'tableTab':
@@ -1423,6 +1436,9 @@ updateDynamicCharts = function() {
       break;
     case 'telemetriaTab':
       if (typeof initTelemetriaTab === 'function') initTelemetriaTab();
+      break;
+    case 'treinadorTab':
+      if (typeof initTreinadorTab === 'function') initTreinadorTab();
       break;
   }
 };

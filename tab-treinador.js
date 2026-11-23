@@ -1,4 +1,4 @@
-// Aba: Diagnóstico & Coach (Coggan/Allen Power Profile W/kg + Idade Não Linear 50%, FC/LTHR, Volume Real, TSS/IF e Auditoria)
+// Aba: Diagnóstico & Coach (Coggan/Allen Power Profile W/kg + Idade Não Linear 50%, LTHR Consenso, Alvo EF/FC, Volume Real, TSS/IF e Auditoria)
 
 const COACH_CFG_KEY = 'upyou_coach_config_v1';
 const USER_AGE_KEY = 'upyou_user_age_v1';
@@ -77,11 +77,11 @@ function getAgePowerAttenuation(age, durationKey) {
   if (!age || age <= 35) return 1.0;
   let baseDrop = 0;
   if (age <= 45) {
-    baseDrop = (age - 35) * 0.0025; // 0.25%/ano
+    baseDrop = (age - 35) * 0.0025;
   } else if (age <= 55) {
-    baseDrop = 0.025 + (age - 45) * 0.0038; // 0.38%/ano
+    baseDrop = 0.025 + (age - 45) * 0.0038;
   } else {
-    baseDrop = 0.063 + (age - 55) * 0.0050; // 0.50%/ano
+    baseDrop = 0.063 + (age - 55) * 0.0050;
   }
   const mult = { s5: 1.45, m1: 1.35, m5: 1.00, ftp: 0.78 }[durationKey] || 1.0;
   return Math.max(0.78, 1.0 - (baseDrop * mult));
@@ -92,11 +92,11 @@ function getAgeRecoveryFactor(age) {
   if (!age || age <= 35) return 1.0;
   let extra = 0;
   if (age <= 45) {
-    extra = (age - 35) * 0.005; // +0.5%/ano
+    extra = (age - 35) * 0.005;
   } else if (age <= 55) {
-    extra = 0.05 + (age - 45) * 0.0075; // +0.75%/ano (~+8.75% aos 50)
+    extra = 0.05 + (age - 45) * 0.0075;
   } else {
-    extra = 0.125 + (age - 55) * 0.01; // +1.0%/ano
+    extra = 0.125 + (age - 55) * 0.01;
   }
   return Math.min(1.225, 1.0 + extra);
 }
@@ -333,7 +333,7 @@ function computeWindowStats(acts, daysSpan) {
     ef: efCnt > 0 ? (efSum / efCnt) : null,
     drift: avgDrift,
     durability,
-    lthr: lthrCnt > 0 ? Math.round(lthrSum / lthrCnt) : 165,
+    lthr: lthrCnt > 0 ? Math.round(lthrSum / lthrCnt) : 170,
     zones,
     hrZones,
     zonePct,
@@ -347,7 +347,6 @@ function buildCoachDiagnosis(rec, prev, ftp, allActs, refDate, age) {
   const profile = classifyCogganProfile(rec.mmp, ftp, riderKg, age);
   const recovFactor = getAgeRecoveryFactor(age);
 
-  // Fadiga residual pela Tabela 7.3 ajustada pela metade do fator de idade
   let tssPenalty = 0;
   const lookbackDays = 3 * recovFactor;
   const recentHeavy = allActs.filter(a => a.dateObj <= refDate && (refDate - a.dateObj) / 86400000 <= lookbackDays);
@@ -368,13 +367,12 @@ function buildCoachDiagnosis(rec, prev, ftp, allActs, refDate, age) {
   if (rec.drift !== null && rec.drift > 6.5) readiness -= 10;
   readiness = Math.max(15, Math.min(98, Math.round(readiness)));
 
-  const overloadReadinessCut = Math.round(50 + (recovFactor - 1.0) * 28); // ~52 aos 50a
-  const overloadTsbCut = Math.round(-15 + (recovFactor - 1.0) * 18);     // ~-13 aos 50a
+  const overloadReadinessCut = Math.round(50 + (recovFactor - 1.0) * 28);
+  const overloadTsbCut = Math.round(-15 + (recovFactor - 1.0) * 18);
 
   const readinessLabel = readiness >= 75 ? 'Ótima' : (readiness >= overloadReadinessCut + 3 ? 'Moderada' : 'Fadiga Alta');
   const readinessColor = readiness >= 75 ? '#10b981' : (readiness >= overloadReadinessCut + 3 ? '#eab308' : '#ef4444');
 
-  // Alerta de reavaliação de FTP (>75 dias)
   let daysSinceFtpTest = 999;
   for (let i = allActs.length - 1; i >= 0; i--) {
     const a = allActs[i];
@@ -389,7 +387,6 @@ function buildCoachDiagnosis(rec, prev, ftp, allActs, refDate, age) {
     ? ` • Reavalie o FTP (último esforço representativo há ${daysSinceFtpTest}d).`
     : '';
 
-  // Checa se faz >14 dias sem Z5 (manutenção de VO2máx para 45+, sem limitar empilhamento)
   const last14d = allActs.filter(a => a.dateObj <= refDate && (refDate - a.dateObj) / 86400000 <= 14);
   const stats14d = computeWindowStats(last14d, 14);
   const needsVo2Maintenance = age >= 45 && readiness >= 70 && ((stats14d.zones.Z5 + stats14d.zones.Z6) / 60) < 5;
@@ -508,9 +505,19 @@ function getSuggestedWorkout(focoKey, ftp, diag, rec, refIdx = 0) {
   const f = Math.max(120, Math.round(ftp || 220));
   const cautious = Boolean(diag && diag.lowConditioning);
   const w = (pct) => Math.round(f * (cautious ? Math.min(pct, 0.92) : pct));
-  const lthr = (rec && rec.lthr) ? rec.lthr : 165;
+  const lthr = (rec && rec.lthr) ? rec.lthr : 170;
   const z2HrLow = Math.round(lthr * 0.69);
   const z2HrHigh = Math.round(lthr * 0.83);
+  const z2HrMid = Math.round((z2HrLow + z2HrHigh) / 2);
+
+  // Quando há reconstrução de condicionamento ou drift alto, ancora os Watts de Z2 pelo EF recente (FC alvo × EF)
+  const useEfAnchor = cautious || (rec && rec.drift !== null && rec.drift > 6.0);
+  const efAnchorWatts = (rec && rec.ef && rec.ef > 0.5)
+    ? Math.max(Math.round(f * 0.45), Math.min(Math.round(f * 0.72), Math.round(z2HrMid * rec.ef)))
+    : w(0.65);
+  const efAnchorPct = efAnchorWatts / f;
+  const efWarmupPct = Math.max(0.42, efAnchorPct * 0.82);
+
   const pick = (arr) => arr[Math.abs(refIdx) % arr.length];
 
   const catalogs = {
@@ -525,26 +532,38 @@ function getSuggestedWorkout(focoKey, ftp, diag, rec, refIdx = 0) {
         ]
       }
     ],
-    base_z2: [
-      {
-        title: `L2 Endurance Oficial @ ${w(0.72)}W (${z2HrLow}–${z2HrHigh} bpm)`,
-        subtitle: `69–75% FTP • 69–83% FTHR • RPE 2–3`,
-        blocks: [
-          { label: 'Aquec.', mins: 15, pct: 0.55, zone: 'Z1', color: '#64748b' },
-          { label: 'L2 Endurance', mins: 60, pct: 0.72, zone: 'Z2', color: '#38bdf8' },
-          { label: 'Desaq.', mins: 15, pct: 0.55, zone: 'Z1', color: '#64748b' }
+    base_z2: useEfAnchor
+      ? [
+          {
+            title: `L2 Guiada por FC: ${z2HrLow}–${z2HrHigh} bpm (~${efAnchorWatts}W via EF)`,
+            subtitle: `Priorize a FC em Z2 (LTHR ${lthr} bpm) • Watts ajustados ao EF atual (${rec.ef ? rec.ef.toFixed(2) : '--'})`,
+            blocks: [
+              { label: 'Aquec.', mins: 15, pct: efWarmupPct, zone: 'Z1', color: '#64748b', hrTarget: `≤${z2HrLow} bpm` },
+              { label: 'Z2 por FC', mins: 55, pct: efAnchorPct, zone: 'Z2', color: '#38bdf8', hrTarget: `${z2HrLow}–${z2HrHigh} bpm` },
+              { label: 'Desaq.', mins: 15, pct: efWarmupPct, zone: 'Z1', color: '#64748b', hrTarget: `≤${z2HrLow} bpm` }
+            ]
+          }
         ]
-      },
-      {
-        title: `L2 Base Guiada por FC (${z2HrLow}–${z2HrHigh} bpm / ~${w(0.69)}W)`,
-        subtitle: `LTHR ${lthr} bpm • Mantenha FC em Z2 mesmo se os Watts caírem`,
-        blocks: [
-          { label: 'Aquec.', mins: 12, pct: 0.54, zone: 'Z1', color: '#64748b' },
-          { label: 'Z2 FC', mins: 50, pct: 0.69, zone: 'Z2', color: '#38bdf8' },
-          { label: 'Desaq.', mins: 12, pct: 0.52, zone: 'Z1', color: '#64748b' }
-        ]
-      }
-    ],
+      : [
+          {
+            title: `L2 Endurance Oficial @ ${w(0.72)}W (${z2HrLow}–${z2HrHigh} bpm)`,
+            subtitle: `69–75% FTP • 69–83% FTHR • RPE 2–3`,
+            blocks: [
+              { label: 'Aquec.', mins: 15, pct: 0.55, zone: 'Z1', color: '#64748b', hrTarget: `≤${z2HrLow} bpm` },
+              { label: 'L2 Endurance', mins: 60, pct: 0.72, zone: 'Z2', color: '#38bdf8', hrTarget: `${z2HrLow}–${z2HrHigh} bpm` },
+              { label: 'Desaq.', mins: 15, pct: 0.55, zone: 'Z1', color: '#64748b', hrTarget: `≤${z2HrLow} bpm` }
+            ]
+          },
+          {
+            title: `L2 Base Contínua @ ${w(0.69)}W (${z2HrLow}–${z2HrHigh} bpm)`,
+            subtitle: `LTHR ${lthr} bpm • Ritmo aeróbico estável em Z2`,
+            blocks: [
+              { label: 'Aquec.', mins: 12, pct: 0.54, zone: 'Z1', color: '#64748b', hrTarget: `≤${z2HrLow} bpm` },
+              { label: 'Z2 Base', mins: 50, pct: 0.69, zone: 'Z2', color: '#38bdf8', hrTarget: `${z2HrLow}–${z2HrHigh} bpm` },
+              { label: 'Desaq.', mins: 12, pct: 0.52, zone: 'Z1', color: '#64748b', hrTarget: `≤${z2HrLow} bpm` }
+            ]
+          }
+        ],
     sweetspot: [
       {
         title: `Sweet Spot Oficial — 2x20m @ ${w(0.91)}W (88–94% FTP)`,
@@ -1015,13 +1034,18 @@ function drawCoachWorkout(workout, ftp) {
     ctx.fillStyle = '#f8fafc';
     ctx.font = isNarrow ? 'bold 8.5px "JetBrains Mono", monospace' : 'bold 9.5px "JetBrains Mono", monospace';
     ctx.textAlign = 'center';
-    ctx.fillText(`${watts}W`, curX + bw / 2, Math.max(11, y - yOff));
+    const topLabel = b.hrTarget && bw >= 65 ? `~${watts}W (${b.hrTarget})` : `${watts}W`;
+    ctx.fillText(topLabel, curX + bw / 2, Math.max(11, y - yOff));
 
     ctx.fillStyle = '#94a3b8';
     ctx.font = isNarrow ? '8px sans-serif' : '9px sans-serif';
     ctx.fillText(`${b.mins}m`, curX + bw / 2, h - 8);
 
-    hitboxes.push({ x: curX, y: padT, w: bw, h: drawH, label: b.label, zone: b.zone, mins: b.mins, watts, color: b.color });
+    hitboxes.push({
+      x: curX, y: padT, w: bw, h: drawH,
+      label: b.label, zone: b.zone, mins: b.mins, watts,
+      hrTarget: b.hrTarget || '', color: b.color
+    });
     curX += bw;
   });
 
@@ -1043,8 +1067,11 @@ function drawCoachWorkout(workout, ftp) {
       const hit = boxes.find(b => mx >= b.x && mx <= b.x + b.w);
       if (!hit) { tip.style.display = 'none'; return; }
       const meta = ZONE_META[hit.zone] || { fthr: '--', rpe: '--', adapt: '' };
+      const hrLine = hit.hrTarget
+        ? `<span style="color:#38bdf8;">Guia FC: <b>${hit.hrTarget}</b></span> • `
+        : '';
       tip.innerHTML = `<strong style="color:${hit.color};">${hit.label} (${hit.zone})</strong><br/>` +
-                      `Alvo: <b>${hit.watts}W</b> • <b>${hit.mins} min</b><br/>` +
+                      `${hrLine}Ref. Potência: <b>${hit.watts}W</b> • <b>${hit.mins} min</b><br/>` +
                       `<span style="color:#94a3b8;">${meta.fthr} • ${meta.rpe}</span><br/>` +
                       `<span style="color:#34d399; font-size:11px;">${meta.adapt}</span>`;
       if (typeof window.positionTooltipSmart === 'function') {

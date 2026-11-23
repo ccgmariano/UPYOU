@@ -261,6 +261,85 @@ window.handleCredentialResponse = function(response) {
   initializeAppForUser();
 };
 
+// --- SINCRONIZAÇÃO DE PERFIL (NUVEM SUPABASE) ---
+let _isApplyingCloudProfile = false;
+
+function collectUserProfileSettings() {
+  let weightHistory = [];
+  try {
+    weightHistory = JSON.parse(localStorage.getItem('upyou_weight_history_v1') || '[]');
+  } catch (e) {}
+
+  return {
+    totalWeight: parseFloat(document.getElementById('totalWeightInput')?.value) || 82,
+    userHeight: parseFloat(document.getElementById('userHeightInput')?.value) || 175,
+    userAge: parseInt(document.getElementById('userAgeInput')?.value, 10) || 50,
+    maxHr: parseInt(document.getElementById('maxHrInput')?.value, 10) || userMaxHr || 187,
+    bikeType: document.getElementById('bikeTypeSelect')?.value || 'road',
+    weightHistory: Array.isArray(weightHistory) ? weightHistory : []
+  };
+}
+
+window.syncUserProfileToCloud = async function() {
+  if (_isApplyingCloudProfile || !currentUserId || typeof window.saveUserProfileToSupabase !== 'function') return;
+  const settings = collectUserProfileSettings();
+  await window.saveUserProfileToSupabase(settings);
+};
+
+async function syncUserProfileFromCloud() {
+  if (!currentUserId || typeof window.fetchUserProfileFromSupabase !== 'function') return;
+  const cloudRow = await window.fetchUserProfileFromSupabase();
+
+  if (!cloudRow || !cloudRow.settings || Object.keys(cloudRow.settings).length === 0) {
+    // Primeiro acesso sem perfil na nuvem: envia os dados locais atuais
+    await window.syncUserProfileToCloud();
+    return;
+  }
+
+  const s = cloudRow.settings;
+  _isApplyingCloudProfile = true;
+  try {
+    if (s.totalWeight) {
+      const el = document.getElementById('totalWeightInput');
+      if (el) el.value = s.totalWeight;
+    }
+    if (s.userHeight) {
+      const el = document.getElementById('userHeightInput');
+      if (el) el.value = s.userHeight;
+    }
+    if (s.userAge) {
+      const el = document.getElementById('userAgeInput');
+      if (el) el.value = s.userAge;
+      localStorage.setItem('upyou_user_age_v1', String(s.userAge));
+    }
+    if (s.maxHr) {
+      userMaxHr = parseInt(s.maxHr, 10) || 187;
+      const el = document.getElementById('maxHrInput');
+      if (el) el.value = userMaxHr;
+      localStorage.setItem(`upyou_maxhr_${currentUserId}`, String(userMaxHr));
+    }
+    if (s.bikeType) {
+      const el = document.getElementById('bikeTypeSelect');
+      if (el) el.value = s.bikeType;
+    }
+    if (Array.isArray(s.weightHistory)) {
+      localStorage.setItem('upyou_weight_history_v1', JSON.stringify(s.weightHistory));
+    }
+    if (typeof window.updatePowerEngineParams === 'function') window.updatePowerEngineParams();
+    updateHrSubtitle();
+  } finally {
+    _isApplyingCloudProfile = false;
+  }
+}
+
+// Salva na nuvem automaticamente quando qualquer campo do perfil mudar
+window.addEventListener('DOMContentLoaded', () => {
+  ['totalWeightInput', 'userHeightInput', 'userAgeInput', 'maxHrInput', 'bikeTypeSelect'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', () => window.syncUserProfileToCloud());
+  });
+});
+
 function logout() {
   currentUserId = null;
   dbActivities = [];
@@ -514,6 +593,7 @@ async function initializeAppForUser() {
     document.getElementById('summaryArea').style.display = 'none';
   }
 
+  await syncUserProfileFromCloud();
   await syncWithSupabaseCloud();
   await checkGarminConnectionStatus();
   await syncWithGarminCloud();

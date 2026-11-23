@@ -231,3 +231,42 @@ window.syncLocalTelemetryToSupabase = async function(onProgress = null) {
   }
   return uploaded;
 };
+
+const SUPABASE_PROFILES_TABLE = "upyou_profiles";
+
+window.fetchUserProfileFromSupabase = async function() {
+  if (!currentUserId) return null;
+  try {
+    const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_PROFILES_TABLE}?google_id=eq.${encodeURIComponent(String(currentUserId))}&select=settings,updated_at`;
+    const res = await fetch(url, {
+      method: "GET",
+      headers: getSupabaseHeaders()
+    });
+    if (!res.ok) return null;
+    const rows = await res.json();
+    return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+  } catch (e) {
+    console.warn("Falha ao buscar perfil do Supabase:", e);
+    return null;
+  }
+};
+
+window.saveUserProfileToSupabase = async function(settingsObj) {
+  if (!currentUserId || !settingsObj || typeof settingsObj !== "object") return false;
+  try {
+    const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_PROFILES_TABLE}?on_conflict=google_id`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: getSupabaseHeaders({ Prefer: "resolution=merge-duplicates,return=minimal" }),
+      body: JSON.stringify([{
+        google_id: String(currentUserId),
+        settings: settingsObj,
+        updated_at: new Date().toISOString()
+      }])
+    });
+    return res.ok;
+  } catch (e) {
+    console.warn("Falha ao salvar perfil no Supabase:", e);
+    return false;
+  }
+};

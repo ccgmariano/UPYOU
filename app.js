@@ -1335,7 +1335,7 @@ function processGlobalMetrics() {
   }
 
   let rollingFtp = firstValidMmp20 > 0 ? Math.round(firstValidMmp20 * 0.95) : 200;
-  let rollingLthr = firstValidMhr20 > 0 ? Math.round(firstValidMhr20) : Math.round(userMaxHr * 0.89);
+  let rollingLthr = firstValidMhr20 > 0 ? Math.round(firstValidMhr20 * 0.96) : Math.round(userMaxHr * 0.89);
 
   for (let i = 0; i < dbActivities.length; i++) {
     const curr = dbActivities[i];
@@ -1352,7 +1352,7 @@ function processGlobalMetrics() {
       .map(a => getActivityBest20MinHr(a))
       .filter(h => h >= 140 && h <= Math.round(userMaxHr * 0.98));
 
-    const windowBestLthr = validMhrs.length > 0 ? Math.round(Math.max(...validMhrs)) : 0;
+    const windowBestLthr = validMhrs.length > 0 ? Math.round(Math.max(...validMhrs) * 0.96) : 0;
 
     if (i > 0) {
       const daysDiff = Math.max(0, (curr.dateObj - dbActivities[i - 1].dateObj) / 86400000);
@@ -1367,14 +1367,22 @@ function processGlobalMetrics() {
     }
 
     curr.currentFtp = rollingFtp;
+    curr._rawLthr = rollingLthr;
     curr.currentLthr = rollingLthr;
     cachedFtpHistory.push({ date: curr.dateObj, ftp: rollingFtp, lthr: rollingLthr });
+  }
+
+  // Aplica LTHR Consenso automaticamente se a opção estiver ativada
+  if (typeof applyGlobalLthrMode === 'function' && localStorage.getItem('upyou_use_lthr_consensus') === 'true') {
+    const savedCons = parseInt(localStorage.getItem('upyou_lthr_consensus_val'), 10);
+    if (savedCons >= 120 && savedCons < 215) {
+      applyGlobalLthrMode(savedCons);
+    }
   }
 
   if (activeDashboardTabId === 'ftpTab') renderFtpChart(cachedFtpHistory);
   if (activeDashboardTabId === 'zonesTab') renderDynamicZones();
 }
-
 updateDynamicCharts = function() {
   switch (activeDashboardTabId) {
     case 'tableTab':

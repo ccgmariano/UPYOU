@@ -164,10 +164,10 @@ function applyGlobalLthrMode(consensusVal) {
       return window._activeConsensusLthr || consensusVal;
     };
 
-    // Aplica correção calibrada (96% sobre o LTHR bruto histórico, ancorado no consenso atual)
+    // Aplica correção calibrada sobre o LTHR histórico, ancorada no consenso atual
     const lastAct = dbActivities[dbActivities.length - 1];
     const lastRaw = lastAct._rawLthr || lastAct.currentLthr || consensusVal;
-    const ratio = lastRaw > 0 ? Math.min(1.0, Math.max(0.88, consensusVal / lastRaw)) : 0.96;
+    const ratio = lastRaw > 0 ? Math.min(1.05, Math.max(0.88, consensusVal / lastRaw)) : 1.0;
 
     dbActivities.forEach(act => {
       if (!act._rawLthr && act.currentLthr) act._rawLthr = act.currentLthr;
@@ -184,7 +184,19 @@ function applyGlobalLthrMode(consensusVal) {
     });
   }
 
+  // Sincroniza o histórico do gráfico FTP + LTHR
+  if (typeof cachedFtpHistory !== 'undefined' && Array.isArray(cachedFtpHistory)) {
+    cachedFtpHistory = dbActivities.map(act => ({
+      date: act.dateObj,
+      ftp: act.currentFtp,
+      lthr: act.currentLthr
+    }));
+  }
+
   if (typeof updateHrSubtitle === 'function') updateHrSubtitle();
+  if (typeof activeDashboardTabId !== 'undefined' && activeDashboardTabId === 'ftpTab' && typeof renderFtpChart === 'function') {
+    renderFtpChart(cachedFtpHistory);
+  }
 }
 
 window.toggleConsensusLthrGlobal = function(checked) {

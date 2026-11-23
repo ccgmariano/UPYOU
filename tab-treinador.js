@@ -132,12 +132,25 @@ function getActBestMmp(act, sec) {
 }
 
 function getReferenceLthr(act, fallbackMaxHr = 187) {
-  const m = (act && act.metrics) || {};
-  if (m.lthr && m.lthr > 100 && m.lthr < 215) return Math.round(m.lthr);
-  if (act && act.lthr && act.lthr > 100 && act.lthr < 215) return Math.round(act.lthr);
+  if (typeof window._activeConsensusLthr === 'number' && window._activeConsensusLthr >= 120) {
+    return Math.round(window._activeConsensusLthr);
+  }
+  try {
+    const saved = parseInt(localStorage.getItem('upyou_lthr_consensus_val'), 10);
+    if (saved >= 120 && saved < 215) return saved;
+  } catch (e) {}
+
+  if (act && act.currentLthr && act.currentLthr >= 120 && act.currentLthr < 215) {
+    return Math.round(act.currentLthr);
+  }
+  if (typeof window.getEstimatedLthr === 'function') {
+    const est = window.getEstimatedLthr();
+    if (est >= 120 && est < 215) return Math.round(est);
+  }
+
   const maxHrInput = document.getElementById('maxHrInput');
   const maxHr = maxHrInput ? (parseInt(maxHrInput.value, 10) || fallbackMaxHr) : fallbackMaxHr;
-  return Math.round(maxHr * 0.88);
+  return Math.round(maxHr * 0.90);
 }
 
 function classifyHrZone(hr, lthr) {

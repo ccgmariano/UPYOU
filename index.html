@@ -117,12 +117,16 @@
                 </div>
 
                 <div class="aero-menu-row">
-                  <label for="totalWeightInput">Peso Total</label>
-                  <div class="input-unit-compact">
-                    <input type="number" id="totalWeightInput" value="82" min="45" max="160" step="0.5" onchange="updatePowerEngineParams()">
-                    <span>kg</span>
-                  </div>
-                </div>
+  <label for="totalWeightInput">Peso Total</label>
+  <div style="display:flex; align-items:center; gap:6px;">
+    <div class="input-unit-compact">
+      <input type="number" id="totalWeightInput" value="82" min="45" max="160" step="0.5" onchange="updatePowerEngineParams()">
+      <span>kg</span>
+    </div>
+    <button type="button" onclick="openWeightHistoryModal()" title="Histórico de Peso"
+            style="background:#1e293b; color:#38bdf8; border:1px solid #334155; border-radius:4px; padding:3px 7px; font-size:0.75rem; font-weight:700; cursor:pointer;">+</button>
+  </div>
+</div>
 
                 <div class="aero-menu-row">
                   <label for="userHeightInput">Altura</label>

@@ -132,6 +132,9 @@ function getActBestMmp(act, sec) {
 }
 
 function getReferenceLthr(act, fallbackMaxHr = 187) {
+  if (act && act.currentLthr && act.currentLthr >= 120 && act.currentLthr < 215) {
+    return Math.round(act.currentLthr);
+  }
   if (typeof window._activeConsensusLthr === 'number' && window._activeConsensusLthr >= 120) {
     return Math.round(window._activeConsensusLthr);
   }
@@ -139,10 +142,6 @@ function getReferenceLthr(act, fallbackMaxHr = 187) {
     const saved = parseInt(localStorage.getItem('upyou_lthr_consensus_val'), 10);
     if (saved >= 120 && saved < 215) return saved;
   } catch (e) {}
-
-  if (act && act.currentLthr && act.currentLthr >= 120 && act.currentLthr < 215) {
-    return Math.round(act.currentLthr);
-  }
   if (typeof window.getEstimatedLthr === 'function') {
     const est = window.getEstimatedLthr();
     if (est >= 120 && est < 215) return Math.round(est);

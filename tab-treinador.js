@@ -1,6 +1,7 @@
-// Aba: Diagnóstico & Coach (Coggan/Allen Power Profile W/kg, FC/LTHR de Apoio, Volume Real, TSS/IF e Auditoria)
+// Aba: Diagnóstico & Coach (Coggan/Allen Power Profile W/kg + Idade Não Linear 50%, FC/LTHR, Volume Real, TSS/IF e Auditoria)
 
 const COACH_CFG_KEY = 'upyou_coach_config_v1';
+const USER_AGE_KEY = 'upyou_user_age_v1';
 
 let coachConfig = { recentDays: 30, prevDays: 60 };
 let coachRefIdx = -1;
@@ -36,6 +37,12 @@ function loadCoachConfig() {
       if (p.recentDays >= 7 && p.recentDays <= 180) coachConfig.recentDays = parseInt(p.recentDays, 10);
       if (p.prevDays >= 14 && p.prevDays <= 365) coachConfig.prevDays = parseInt(p.prevDays, 10);
     }
+    const savedAge = localStorage.getItem(USER_AGE_KEY);
+    const ageEl = document.getElementById('userAgeInput');
+    if (savedAge && ageEl) {
+      const parsedAge = parseInt(savedAge, 10);
+      if (parsedAge >= 15 && parsedAge <= 90) ageEl.value = parsedAge;
+    }
   } catch (e) {}
 }
 
@@ -45,10 +52,59 @@ function saveCoachConfig() {
   } catch (e) {}
 }
 
+function getUserAge() {
+  const el = document.getElementById('userAgeInput');
+  if (el) {
+    const v = parseInt(el.value, 10);
+    if (v >= 15 && v <= 90) return v;
+  }
+  try {
+    const saved = parseInt(localStorage.getItem(USER_AGE_KEY), 10);
+    if (saved >= 15 && saved <= 90) return saved;
+  } catch (e) {}
+  return 50;
+}
+
+window.onUserAgeChange = function(val) {
+  const age = Math.max(15, Math.min(90, parseInt(val, 10) || 50));
+  try { localStorage.setItem(USER_AGE_KEY, String(age)); } catch (e) {}
+  const tab = document.getElementById('treinadorTab');
+  if (tab && tab.style.display !== 'none') renderTreinadorTab();
+};
+
+// Atenuador não linear da Tabela 4.1 (metade do peso fisiológico padrão)
+function getAgePowerAttenuation(age, durationKey) {
+  if (!age || age <= 35) return 1.0;
+  let baseDrop = 0;
+  if (age <= 45) {
+    baseDrop = (age - 35) * 0.0025; // 0.25%/ano
+  } else if (age <= 55) {
+    baseDrop = 0.025 + (age - 45) * 0.0038; // 0.38%/ano
+  } else {
+    baseDrop = 0.063 + (age - 55) * 0.0050; // 0.50%/ano
+  }
+  const mult = { s5: 1.45, m1: 1.35, m5: 1.00, ftp: 0.78 }[durationKey] || 1.0;
+  return Math.max(0.78, 1.0 - (baseDrop * mult));
+}
+
+// Fator não linear de recuperação (metade do peso: ~1.09 aos 50 anos, teto 1.225)
+function getAgeRecoveryFactor(age) {
+  if (!age || age <= 35) return 1.0;
+  let extra = 0;
+  if (age <= 45) {
+    extra = (age - 35) * 0.005; // +0.5%/ano
+  } else if (age <= 55) {
+    extra = 0.05 + (age - 45) * 0.0075; // +0.75%/ano (~+8.75% aos 50)
+  } else {
+    extra = 0.125 + (age - 55) * 0.01; // +1.0%/ano
+  }
+  return Math.min(1.225, 1.0 + extra);
+}
+
 function getEstimatedRiderWeightKg() {
   const el = document.getElementById('totalWeightInput');
   const totalW = el ? (parseFloat(el.value) || 82) : 82;
-  return Math.max(45, totalW - 8.5); // Desconta bike + equipamento (~8.5kg)
+  return Math.max(45, totalW - 8.5);
 }
 
 function getSortedCoachActivities() {
@@ -94,20 +150,21 @@ function classifyHrZone(hr, lthr) {
   return 'Z5';
 }
 
-function getProfileRank(wkg, key) {
+function getProfileRank(wkg, key, age) {
   if (!wkg || wkg <= 0) return null;
+  const factor = getAgePowerAttenuation(age, key);
   for (let i = 0; i < COGGAN_PROFILE_TABLE.length; i++) {
-    if (wkg < COGGAN_PROFILE_TABLE[i][key]) {
+    const threshold = COGGAN_PROFILE_TABLE[i][key] * factor;
+    if (wkg < threshold) {
       if (i === 0) return 0.5;
-      const prev = COGGAN_PROFILE_TABLE[i - 1][key];
-      const cur = COGGAN_PROFILE_TABLE[i][key];
-      return (i - 1) + (wkg - prev) / Math.max(0.01, cur - prev);
+      const prev = COGGAN_PROFILE_TABLE[i - 1][key] * factor;
+      return (i - 1) + (wkg - prev) / Math.max(0.01, threshold - prev);
     }
   }
   return COGGAN_PROFILE_TABLE.length - 1;
 }
 
-function classifyCogganProfile(mmp, ftp, riderKg) {
+function classifyCogganProfile(mmp, ftp, riderKg, age) {
   const w5s = mmp[5] ? mmp[5] / riderKg : 0;
   const w1m = mmp[60] ? mmp[60] / riderKg : 0;
   const w5m = mmp[300] ? mmp[300] / riderKg : 0;
@@ -117,14 +174,12 @@ function classifyCogganProfile(mmp, ftp, riderKg) {
     return { type: 'Indefinido', caption: 'Dados insuficientes para classificar perfil (Tabela 4.1).', vWarning: false };
   }
 
-  const r5s = getProfileRank(w5s, 's5');
-  const r1m = getProfileRank(w1m, 'm1');
-  const r5m = getProfileRank(w5m, 'm5');
-  const rFtp = getProfileRank(wFtp, 'ftp');
+  const r5s = getProfileRank(w5s, 's5', age);
+  const r1m = getProfileRank(w1m, 'm1', age);
+  const r5m = getProfileRank(w5m, 'm5', age);
+  const rFtp = getProfileRank(wFtp, 'ftp', age);
 
   const ftpTier = COGGAN_PROFILE_TABLE[Math.max(0, Math.min(COGGAN_PROFILE_TABLE.length - 1, Math.round(rFtp || 0)))].label;
-
-  // Alerta de padrão em V agudo (5s e FTP altos com 1m/5m muito baixos)
   const vWarning = (r5s !== null && r1m !== null && r5m !== null && rFtp !== null) &&
                    (r5s - r1m > 1.8 && rFtp - r5m > 1.8);
 
@@ -146,7 +201,8 @@ function classifyCogganProfile(mmp, ftp, riderKg) {
     desc = `V invertido (forte em 1m–5m: ${w5m.toFixed(2)} W/kg); potencial para elevar o limiar.`;
   }
 
-  return { type, caption: `${type}: ${desc} (Ref. adultos jovens)`, vWarning, ftpTier, wFtp };
+  const ageTag = age > 35 ? `Ajuste ${age}a` : 'Ref. padrão';
+  return { type, caption: `${type}: ${desc} (${ageTag})`, vWarning, ftpTier, wFtp };
 }
 
 function computeWindowStats(acts, daysSpan) {
@@ -157,7 +213,6 @@ function computeWindowStats(acts, daysSpan) {
   let durabSum = 0, durabCnt = 0;
   let lthrSum = 0, lthrCnt = 0;
   let maxSingleTss = 0, ifSum = 0, ifCnt = 0;
-  let lastHeavyDate = null;
 
   const zones = { Z1: 0, Z2: 0, Z3: 0, Z4: 0, Z5: 0, Z6: 0, Z7: 0, total: 0 };
   const hrZones = { Z1: 0, Z2: 0, Z3: 0, Z4: 0, Z5: 0, total: 0 };
@@ -181,7 +236,6 @@ function computeWindowStats(acts, daysSpan) {
     const tss = (dur * np * ifVal) / (Math.max(100, ftp) * 36);
     totalTss += tss;
     if (tss > maxSingleTss) maxSingleTss = tss;
-    if (tss >= 150) lastHeavyDate = act.dateObj;
 
     const dayKey = act.date || act.dateObj.toISOString().slice(0, 10);
     dailyLoads[dayKey] = (dailyLoads[dayKey] || 0) + tss;
@@ -262,7 +316,6 @@ function computeWindowStats(acts, daysSpan) {
     tssPerDay: totalTss / Math.max(1, daysSpan),
     maxSingleTss,
     avgIf: ifCnt > 0 ? (ifSum / ifCnt) : 0.72,
-    lastHeavyDate,
     monotony,
     ef: efCnt > 0 ? (efSum / efCnt) : null,
     drift: avgDrift,
@@ -276,23 +329,25 @@ function computeWindowStats(acts, daysSpan) {
   };
 }
 
-function buildCoachDiagnosis(rec, prev, ftp, allActs, refDate) {
+function buildCoachDiagnosis(rec, prev, ftp, allActs, refDate, age) {
   const riderKg = getEstimatedRiderWeightKg();
-  const profile = classifyCogganProfile(rec.mmp, ftp, riderKg);
+  const profile = classifyCogganProfile(rec.mmp, ftp, riderKg, age);
+  const recovFactor = getAgeRecoveryFactor(age);
 
-  // Fadiga residual pela Tabela 7.3 (TSS de sessões recentes nos últimos 3 dias)
+  // Fadiga residual pela Tabela 7.3 ajustada pela metade do fator de idade
   let tssPenalty = 0;
-  const last3d = allActs.filter(a => a.dateObj <= refDate && (refDate - a.dateObj) / 86400000 <= 3);
-  last3d.forEach(a => {
+  const lookbackDays = 3 * recovFactor;
+  const recentHeavy = allActs.filter(a => a.dateObj <= refDate && (refDate - a.dateObj) / 86400000 <= lookbackDays);
+  recentHeavy.forEach(a => {
     const m = a.metrics || {};
     const dur = getActDurationSec(a);
     const np = m.np || m.avgPwr || 0;
     const f = a.currentFtp || ftp || 220;
     const tss = (dur * np * (np / f)) / (f * 36);
     const daysAgo = (refDate - a.dateObj) / 86400000;
-    if (tss > 450 && daysAgo <= 3) tssPenalty += 18;
-    else if (tss >= 300 && daysAgo <= 2) tssPenalty += 12;
-    else if (tss >= 150 && daysAgo <= 1.5) tssPenalty += 6;
+    if (tss > 450 && daysAgo <= 3 * recovFactor) tssPenalty += 18 * recovFactor;
+    else if (tss >= 300 && daysAgo <= 2 * recovFactor) tssPenalty += 12 * recovFactor;
+    else if (tss >= 150 && daysAgo <= 1.5 * recovFactor) tssPenalty += 6 * recovFactor;
   });
 
   const tsb = Math.round(prev.tssPerDay - rec.tssPerDay);
@@ -300,10 +355,13 @@ function buildCoachDiagnosis(rec, prev, ftp, allActs, refDate) {
   if (rec.drift !== null && rec.drift > 6.5) readiness -= 10;
   readiness = Math.max(15, Math.min(98, Math.round(readiness)));
 
-  const readinessLabel = readiness >= 75 ? 'Ótima' : (readiness >= 55 ? 'Moderada' : 'Fadiga Alta');
-  const readinessColor = readiness >= 75 ? '#10b981' : (readiness >= 55 ? '#eab308' : '#ef4444');
+  const overloadReadinessCut = Math.round(50 + (recovFactor - 1.0) * 28); // ~52 aos 50a
+  const overloadTsbCut = Math.round(-15 + (recovFactor - 1.0) * 18);     // ~-13 aos 50a
 
-  // Checa se faz > 75 dias desde o último esforço representativo de 20m (livro sugere 4–6x/ano)
+  const readinessLabel = readiness >= 75 ? 'Ótima' : (readiness >= overloadReadinessCut + 3 ? 'Moderada' : 'Fadiga Alta');
+  const readinessColor = readiness >= 75 ? '#10b981' : (readiness >= overloadReadinessCut + 3 ? '#eab308' : '#ef4444');
+
+  // Alerta de reavaliação de FTP (>75 dias)
   let daysSinceFtpTest = 999;
   for (let i = allActs.length - 1; i >= 0; i--) {
     const a = allActs[i];
@@ -317,6 +375,11 @@ function buildCoachDiagnosis(rec, prev, ftp, allActs, refDate) {
   const ftpTestAlert = daysSinceFtpTest > 75
     ? ` • Reavalie o FTP (último esforço representativo há ${daysSinceFtpTest}d).`
     : '';
+
+  // Checa se faz >14 dias sem Z5 (manutenção de VO2máx para 45+, sem limitar empilhamento)
+  const last14d = allActs.filter(a => a.dateObj <= refDate && (refDate - a.dateObj) / 86400000 <= 14);
+  const stats14d = computeWindowStats(last14d, 14);
+  const needsVo2Maintenance = age >= 45 && readiness >= 70 && ((stats14d.zones.Z5 + stats14d.zones.Z6) / 60) < 5;
 
   const lowPwrPct = rec.zonePct.Z1 + rec.zonePct.Z2;
   const lowHrPct = rec.hrZonePct.Z1 + rec.hrZonePct.Z2;
@@ -335,10 +398,10 @@ function buildCoachDiagnosis(rec, prev, ftp, allActs, refDate) {
   let pontoForte = 'Consistência Geral';
   let lacuna = 'Estímulo de VO2máx (Z5)';
   let focoKey = 'vo2max';
-  let focoLabel = '1x Treino VO2máx/semana';
+  let focoLabel = 'Treino VO2máx (L5: 106–120% FTP)';
   let texto = '';
 
-  if (readiness < 50 || (tsb < -15 && driftDelta > 1.5) || tssPenalty >= 15) {
+  if (readiness < overloadReadinessCut || (tsb < overloadTsbCut && driftDelta > 1.5) || tssPenalty >= 15) {
     estado = 'Sobrecarga / Fadiga Acumulada';
     estadoColor = '#ef4444';
     pontoForte = 'Alto Volume de Carga';
@@ -362,14 +425,16 @@ function buildCoachDiagnosis(rec, prev, ftp, allActs, refDate) {
     focoKey = 'base_z2';
     focoLabel = 'Endurance Contínua (69–75% FTP)';
     texto = `Você concentrou ${midPct.toFixed(0)}% em L3 e apenas ${lowPwrPct.toFixed(0)}% em L1–L2. Segure os treinos leves estritamente em L2 (69–75% FTP / 69–83% FTHR) para consolidar a base aeróbica.${ftpTestAlert}`;
-  } else if ((highPct < 6 && highHrPct < 8) || (prev.mmp[300] > 0 && rec.mmp[300] < prev.mmp[300] * 0.96)) {
+  } else if ((highPct < 6 && highHrPct < 8) || (prev.mmp[300] > 0 && rec.mmp[300] < prev.mmp[300] * 0.96) || needsVo2Maintenance) {
     estado = efDelta >= 0 ? 'Base Sólida / Pronto p/ Pico' : 'Estável / Em Evolução';
     estadoColor = '#10b981';
     pontoForte = efDelta >= 0 ? 'Eficiência Aeróbica (EF)' : 'Resistência de Base (L2)';
     lacuna = 'Potência Aeróbica Máxima (L5)';
     focoKey = 'vo2max';
-    focoLabel = '1x VO2máx (L5: 106–120% FTP)';
-    texto = `Base consistente (${rec.hoursPerWeek.toFixed(1)}h/sem), mas baixo estímulo em L5. Uma sessão semanal de VO2máx eleva volume plasmático, débito cardíaco e teto aeróbico.${ftpTestAlert}`;
+    focoLabel = 'VO2máx (L5: 106–120% FTP)';
+    texto = needsVo2Maintenance
+      ? `Boa prontidão (${readiness}/100) e mais de 14 dias sem estímulo relevante em Z5. Inserir VO2máx ajuda a preservar o teto aeróbico e o débito cardíaco.${ftpTestAlert}`
+      : `Base consistente (${rec.hoursPerWeek.toFixed(1)}h/sem), mas baixo estímulo em L5. Sessões de VO2máx elevam volume plasmático, débito cardíaco e teto aeróbico.${ftpTestAlert}`;
   } else if (rec.drift !== null && rec.drift > 5.5) {
     estado = 'Boa Intensidade / Drift Elevado';
     estadoColor = '#eab308';
@@ -385,7 +450,7 @@ function buildCoachDiagnosis(rec, prev, ftp, allActs, refDate) {
     lacuna = 'Sustentação no Limiar (L4)';
     focoKey = 'threshold';
     focoLabel = 'Limiar Funcional (91–105% FTP)';
-    texto = `Ótimo equilíbrio entre volume (${rec.hoursPerWeek.toFixed(1)}h/sem), EF (${rec.ef ? rec.ef.toFixed(2) : '--'}) e prontidão (${readiness}/100). Aplique 1 sessão semanal em L4 para empurrar enzimas mitocondriais e FTP.${ftpTestAlert}`;
+    texto = `Ótimo equilíbrio entre volume (${rec.hoursPerWeek.toFixed(1)}h/sem), EF (${rec.ef ? rec.ef.toFixed(2) : '--'}) e prontidão (${readiness}/100). Aplique sessões em L4 para empurrar enzimas mitocondriais e FTP.${ftpTestAlert}`;
   }
 
   return {
@@ -529,7 +594,7 @@ function getSuggestedWorkout(focoKey, ftp, diag, rec, refIdx = 0) {
           },
       {
         title: `L5 VO2máx Build — Progressivo @ ${w(1.13)}W`,
-        subtitle: `Séries crescentes (5m → 5.5m → 6m) a 113% FTP • RPE 6–7`,
+        subtitle: `Séries crescentes (5m → 6m → 7m) a 113% FTP • RPE 6–7`,
         blocks: [
           { label: 'Aquec.', mins: 15, pct: 0.66, zone: 'Z2', color: '#38bdf8' },
           { label: '5m FTP', mins: 5, pct: 1.00, zone: 'Z4', color: '#eab308' },
@@ -607,7 +672,6 @@ function auditCompliance(allActs, refDate, focoKey, latestDate) {
     const bestMin = Math.max(z34PwrMin, z34HrMin);
     score = bestMin >= 30 ? 2 : (bestMin >= 15 ? 1 : 0);
   } else if (focoKey === 'recovery') {
-    // Regra L1 do livro: pode haver picos >55%, mas média final <55% FTP
     const hasL1Ride = nextActs.some(a => {
       const m = a.metrics || {};
       const f = a.currentFtp || 220;
@@ -661,6 +725,7 @@ function renderTreinadorTab() {
   const refDate = refAct.dateObj;
   const latestDate = allActs[allActs.length - 1].dateObj;
   const refFtp = refAct.currentFtp || 220;
+  const userAge = getUserAge();
 
   const msDay = 86400000;
   const recentStart = new Date(refDate.getTime() - coachConfig.recentDays * msDay);
@@ -671,7 +736,7 @@ function renderTreinadorTab() {
 
   const rec = computeWindowStats(recentActs, coachConfig.recentDays);
   const prev = computeWindowStats(prevActs, coachConfig.prevDays);
-  const diag = buildCoachDiagnosis(rec, prev, refFtp, allActs, refDate);
+  const diag = buildCoachDiagnosis(rec, prev, refFtp, allActs, refDate, userAge);
   const workout = getSuggestedWorkout(diag.focoKey, refFtp, diag, rec, coachRefIdx);
   const audit = auditCompliance(allActs, refDate, diag.focoKey, latestDate);
 

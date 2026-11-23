@@ -1,4 +1,4 @@
-// Aba: Diagnóstico & Coach (Coggan/Allen Power Profile W/kg + Idade Dinâmica, Histórico de Peso, LTHR Consenso, Alvo EF/FC, Volume Real, TSS/IF e Auditoria)
+// Aba: Diagnóstico & Coach (Coggan/Allen Power Profile W/kg + Idade Dinâmica, Histórico de Peso, LTHR Consenso, Contraste de IF/Polarização, Alvo EF/FC, Volume Real, TSS/IF e Auditoria)
 
 const COACH_CFG_KEY = 'upyou_coach_config_v1';
 const USER_AGE_KEY = 'upyou_user_age_v1';
@@ -343,6 +343,7 @@ function computeWindowStats(acts, daysSpan) {
   let durabSum = 0, durabCnt = 0;
   let lthrSum = 0, lthrCnt = 0;
   let maxSingleTss = 0, ifSum = 0, ifCnt = 0;
+  let easyIfCnt = 0, hardIfCnt = 0;
 
   const zones = { Z1: 0, Z2: 0, Z3: 0, Z4: 0, Z5: 0, Z6: 0, Z7: 0, total: 0 };
   const hrZones = { Z1: 0, Z2: 0, Z3: 0, Z4: 0, Z5: 0, total: 0 };
@@ -362,7 +363,12 @@ function computeWindowStats(acts, daysSpan) {
     totalDist += parseFloat(m.distKm) || 0;
 
     const ifVal = ftp > 0 && np > 0 ? (np / ftp) : 0.7;
-    if (np > 0 && ftp > 0) { ifSum += ifVal; ifCnt++; }
+    if (np > 0 && ftp > 0) {
+      ifSum += ifVal;
+      ifCnt++;
+      if (ifVal <= 0.75) easyIfCnt++;
+      else if (ifVal > 0.80) hardIfCnt++;
+    }
     const tss = (dur * np * ifVal) / (Math.max(100, ftp) * 36);
     totalTss += tss;
     if (tss > maxSingleTss) maxSingleTss = tss;
@@ -446,6 +452,9 @@ function computeWindowStats(acts, daysSpan) {
     tssPerDay: totalTss / Math.max(1, daysSpan),
     maxSingleTss,
     avgIf: ifCnt > 0 ? (ifSum / ifCnt) : 0.72,
+    validIfCount: ifCnt,
+    easyIfPct: ifCnt > 0 ? (easyIfCnt / ifCnt) * 100 : 0,
+    hardIfPct: ifCnt > 0 ? (hardIfCnt / ifCnt) * 100 : 0,
     monotony,
     ef: efCnt > 0 ? (efSum / efCnt) : null,
     drift: avgDrift,
@@ -500,7 +509,8 @@ function buildCoachDiagnosis(rec, prev, ftp, allActs, refDate, age) {
       break;
     }
   }
-  const ftpTestAlert = daysSinceFtpTest > 75
+  const ftpFresh = daysSinceFtpTest <= 75;
+  const ftpTestAlert = !ftpFresh
     ? ` • Reavalie o FTP (último esforço representativo há ${daysSinceFtpTest}d).`
     : '';
 
@@ -519,6 +529,15 @@ function buildCoachDiagnosis(rec, prev, ftp, allActs, refDate, age) {
   const efDropPct = (rec.ef !== null && prev.ef !== null && prev.ef > 0) ? ((rec.ef - prev.ef) / prev.ef) * 100 : 0;
   const driftDelta = (rec.drift !== null && prev.drift !== null) ? (rec.drift - prev.drift) : 0;
   const lowConditioning = (efDropPct < -8) || (rec.drift !== null && rec.drift > 6.5 && lowPwrPct > 55 && z2HrPct >= 25);
+
+  // Detecção científica de falta de contraste / excesso de intensidade (Seiler, Foster, Coggan/Allen)
+  // Nuance piramidal: em baixo volume (<6h/sem), só dispara se realmente faltarem dias leves (<40% com IF <= 0.75)
+  const easyCut = rec.hoursPerWeek < 6 ? 40 : 50;
+  const lackOfContrast = rec.validIfCount >= 4 && rec.easyIfPct < easyCut && (rec.hardIfPct >= 50 || rec.avgIf >= 0.82);
+  const efStagnantOrDown = (rec.ef !== null && prev.ef !== null) ? (efDelta <= 0.01) : false;
+  const driftElevated = (rec.drift !== null && rec.drift > 5.0) || (driftDelta > 1.0);
+  const loadPressure = readiness < 72 || tsb < -5 || rec.monotony > 1.6;
+  const highIntensityNoContrast = ftpFresh && lackOfContrast && (efStagnantOrDown || driftElevated || loadPressure);
 
   let estado = 'Estável / Em Evolução';
   let estadoColor = '#10b981';
@@ -544,6 +563,17 @@ function buildCoachDiagnosis(rec, prev, ftp, allActs, refDate, age) {
     focoKey = 'base_z2';
     focoLabel = 'Endurance Guiada por FC (69–83% FTHR)';
     texto = `O EF variou de ${prev.ef ? prev.ef.toFixed(2) : '--'} para ${rec.ef ? rec.ef.toFixed(2) : '--'}${rec.drift !== null ? ` com Drift de ${rec.drift.toFixed(1)}%` : ''}. Com a FC em Z2 (LTHR ~${rec.lthr} bpm) mesmo em Watts baixos, priorize Endurance contínua controlada por FC para reconstruir mitocôndrias e capilarização.${ftpTestAlert}`;
+  } else if (highIntensityNoContrast) {
+    estado = 'Atenção: Intensidade Alta Sem Contraste';
+    estadoColor = '#eab308';
+    pontoForte = `Intensidade Relativa (IF méd. ${rec.avgIf.toFixed(2)})`;
+    lacuna = 'Dias Leves / Polarização (IF ≤ 0.75)';
+    focoKey = 'base_z2';
+    focoLabel = 'Endurance Z2 Limpa (IF 0.65–0.75)';
+    const costNote = efStagnantOrDown
+      ? `EF sem evolução (${rec.ef.toFixed(2)} vs ${prev.ef.toFixed(2)})`
+      : (driftElevated ? `Drift em ${rec.drift !== null ? rec.drift.toFixed(1) + '%' : 'alta'}` : `pressão de carga (TSB ${tsb}, monotonia ${rec.monotony.toFixed(1)})`);
+    texto = `Apenas ${rec.easyIfPct.toFixed(0)}% dos seus pedais recentes foram realmente leves (IF ≤ 0.75) e ${rec.hardIfPct.toFixed(0)}% passaram de IF 0.80, já cobrando custo fisiológico (${costNote}). Polarize a semana: segure os treinos de base em Z2 limpa (IF 0.65–0.75) e concentre a intensidade em 1 sessão descansada.${ftpTestAlert}`;
   } else if (lowPwrPct < 55 && lowHrPct < 55 && midPct > 28) {
     estado = 'Atenção: Excesso de Zona Cinza';
     estadoColor = '#eab308';
@@ -582,7 +612,7 @@ function buildCoachDiagnosis(rec, prev, ftp, allActs, refDate, age) {
 
   return {
     tsb, readiness, readinessLabel, readinessColor,
-    lowConditioning, profile, mmpCaption: profile.caption,
+    lowConditioning, highIntensityNoContrast, profile, mmpCaption: profile.caption,
     estado, estadoColor, pontoForte, lacuna, focoKey, focoLabel, texto
   };
 }
@@ -933,8 +963,8 @@ function renderTreinadorTab() {
         <canvas id="coachGaugeCanvas" style="width:100%; height:135px;"></canvas>
         <div style="display:flex; justify-content:space-between; font-size:0.74rem; color:#cbd5e1; margin-top:6px; border-top:1px solid rgba(255,255,255,0.06); padding-top:6px;">
           <span>TSB: <strong style="color:${diag.tsb >= 0 ? '#10b981' : '#f97316'};">${diag.tsb >= 0 ? '+' : ''}${diag.tsb}</strong></span>
-          <span>IF Méd: <strong>${rec.avgIf.toFixed(2)}</strong></span>
-          <span>Pedais: <strong>${rec.count}</strong></span>
+          <span>IF Méd: <strong style="color:${diag.highIntensityNoContrast ? '#eab308' : '#f8fafc'};">${rec.avgIf.toFixed(2)}</strong></span>
+          <span title="Percentual de pedais leves (IF ≤ 0.75)">Leves: <strong>${rec.easyIfPct.toFixed(0)}%</strong></span>
         </div>
       </div>
 

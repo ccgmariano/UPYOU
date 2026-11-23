@@ -133,6 +133,14 @@
                 </div>
 
                 <div class="aero-menu-row">
+                  <label for="userAgeInput">Idade</label>
+                  <div class="input-unit-compact">
+                    <input type="number" id="userAgeInput" value="50" min="15" max="90" step="1" onchange="if(window.onUserAgeChange) onUserAgeChange(this.value)">
+                    <span>anos</span>
+                  </div>
+                </div>
+
+                <div class="aero-menu-row">
                   <label for="maxHrInput">FC Máx</label>
                   <div class="input-unit-compact">
                     <input type="number" id="maxHrInput" value="187" min="120" max="230" onchange="updateUserMaxHr(this.value)">

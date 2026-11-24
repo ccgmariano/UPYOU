@@ -68,7 +68,8 @@ window.downloadTelemetryStreamFromSupabase = async function(activityKey) {
   if (!currentUserId || !activityKey) return null;
   try {
     const path = getTelemetryStoragePath(currentUserId, activityKey);
-    const url = `${SUPABASE_URL}/storage/v1/object/${SUPABASE_TELEMETRY_BUCKET}/${path}?t=${Date.now()}`;
+    // Sem ?t=Date.now() para aproveitar o Cached Egress gratuito do Supabase
+    const url = `${SUPABASE_URL}/storage/v1/object/${SUPABASE_TELEMETRY_BUCKET}/${path}`;
     const res = await fetch(url, {
       method: "GET",
       headers: {
@@ -83,6 +84,59 @@ window.downloadTelemetryStreamFromSupabase = async function(activityKey) {
     console.warn("Falha ao baixar telemetria do Supabase Storage:", e);
     return null;
   }
+};
+
+window.fetchActivitiesFromSupabase = async function(options = {}) {
+  if (!currentUserId) return { activities: [], maxUpdatedAt: null };
+  const { sinceIso = null, onBatch = null, pageSize = 50 } = options;
+  let from = 0;
+  let allActs = [];
+  let maxUpdatedAt = sinceIso || null;
+  const msgEl = document.getElementById("statusMsg");
+
+  while (true) {
+    if (msgEl) {
+      msgEl.style.color = "#38bdf8";
+      msgEl.innerText = sinceIso
+        ? `Verificando novidades na nuvem...`
+        : `Baixando histórico em segundo plano: ${allActs.length} atividades...`;
+    }
+
+    const sinceFilter = sinceIso ? `&updated_at=gt.${encodeURIComponent(sinceIso)}` : "";
+    const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_ACTIVITIES_TABLE}?google_id=eq.${encodeURIComponent(String(currentUserId))}${sinceFilter}&order=date_obj.desc&select=activity_key,date_obj,source,has_telemetry,payload,updated_at`;
+    const res = await fetch(url, {
+      method: "GET",
+      headers: getSupabaseHeaders({
+        Range: `${from}-${from + pageSize - 1}`
+      })
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      throw new Error(`Supabase fetch falhou (${res.status}): ${errText}`);
+    }
+
+    const rows = await res.json();
+    if (!Array.isArray(rows) || rows.length === 0) break;
+
+    rows.forEach(r => {
+      if (r.updated_at && (!maxUpdatedAt || r.updated_at > maxUpdatedAt)) {
+        maxUpdatedAt = r.updated_at;
+      }
+    });
+
+    const batchActs = rows.map(deserializeActivityFromCloud);
+    allActs = allActs.concat(batchActs);
+
+    if (typeof onBatch === "function") {
+      onBatch(batchActs, allActs.length);
+    }
+
+    if (rows.length < pageSize) break;
+    from += pageSize;
+  }
+
+  return { activities: allActs, maxUpdatedAt };
 };
 
 window.upsertActivitiesToSupabase = async function(activities, onProgress = null) {
@@ -148,45 +202,7 @@ window.upsertActivitiesToSupabase = async function(activities, onProgress = null
   }
 };
 
-window.fetchActivitiesFromSupabase = async function() {
-  if (!currentUserId) return [];
-  const pageSize = 250;
-  let from = 0;
-  let allRows = [];
-  const msgEl = document.getElementById("statusMsg");
 
-  while (true) {
-    if (msgEl) {
-      msgEl.style.color = "#38bdf8";
-      msgEl.innerText = `Baixando histórico da nuvem: ${allRows.length} atividades...`;
-    }
-
-    const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_ACTIVITIES_TABLE}?google_id=eq.${encodeURIComponent(String(currentUserId))}&order=date_obj.desc&select=activity_key,date_obj,source,has_telemetry,payload`;
-    const res = await fetch(url, {
-      method: "GET",
-      headers: getSupabaseHeaders({
-        Range: `${from}-${from + pageSize - 1}`
-      })
-    });
-
-    if (!res.ok) {
-      const errText = await res.text().catch(() => "");
-      if (msgEl) {
-        msgEl.style.color = "#ef4444";
-        msgEl.innerText = `Erro Supabase (${res.status}): ${errText}`;
-      }
-      throw new Error(`Supabase fetch falhou (${res.status}): ${errText}`);
-    }
-
-    const rows = await res.json();
-    if (!Array.isArray(rows) || rows.length === 0) break;
-    allRows = allRows.concat(rows);
-    if (rows.length < pageSize) break;
-    from += pageSize;
-  }
-
-  return allRows.map(deserializeActivityFromCloud);
-};
 
 window.deleteActivityFromSupabase = async function(activityKey) {
   if (!currentUserId || !activityKey) return;

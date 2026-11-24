@@ -461,15 +461,7 @@ window.loadTelemetryForActivityOnDemand = async function(act) {
   if (!act || (Array.isArray(act.telemetry15s) && act.telemetry15s.length > 0)) return act?.telemetry15s || [];
   const uKey = typeof window.getActivityUniqueKey === 'function' ? window.getActivityUniqueKey(act) : String(act.garminId || act.file);
 
-  if (typeof window.downloadTelemetryStreamFromSupabase === 'function') {
-    const cloudStream = await window.downloadTelemetryStreamFromSupabase(uKey);
-    if (Array.isArray(cloudStream) && cloudStream.length > 0) {
-      act.telemetry15s = cloudStream;
-      act.hasSavedTelemetry = true;
-      return act.telemetry15s;
-    }
-  }
-
+  // 1. Checa o IndexedDB local primeiro (zero Egress)
   try {
     const db = await initDB();
     const tx = db.transaction(TELEMETRY_STORE, "readonly");
@@ -484,6 +476,21 @@ window.loadTelemetryForActivityOnDemand = async function(act) {
       return act.telemetry15s;
     }
   } catch (e) {}
+
+  // 2. Só baixa do Supabase Storage se não existir localmente (e já salva no cache)
+  if (typeof window.downloadTelemetryStreamFromSupabase === 'function') {
+    const cloudStream = await window.downloadTelemetryStreamFromSupabase(uKey);
+    if (Array.isArray(cloudStream) && cloudStream.length > 0) {
+      act.telemetry15s = cloudStream;
+      act.hasSavedTelemetry = true;
+      try {
+        const db = await initDB();
+        const tx = db.transaction(TELEMETRY_STORE, "readwrite");
+        tx.objectStore(TELEMETRY_STORE).put({ id: `${currentUserId}_${uKey}`, stream: cloudStream });
+      } catch (e) {}
+      return act.telemetry15s;
+    }
+  }
 
   return [];
 };
@@ -504,28 +511,18 @@ async function clearLocalDatabase() {
 async function syncWithSupabaseCloud() {
   if (!currentUserId || typeof window.fetchActivitiesFromSupabase !== 'function') return;
   const msgEl = document.getElementById('statusMsg');
+  const syncKey = `upyou_last_sync_${currentUserId}`;
+  const lastSync = dbActivities.length > 0 ? localStorage.getItem(syncKey) : null;
 
-  try {
-    const cloudActs = await window.fetchActivitiesFromSupabase();
-    if (!Array.isArray(cloudActs)) return;
+  const deletedKeys = getDeletedActivityKeys();
+  const getKey = (a) => typeof window.getActivityUniqueKey === 'function'
+    ? window.getActivityUniqueKey(a)
+    : String(a.garminId || a.file || `${a.date}_${a.name}`);
 
-    const deletedKeys = getDeletedActivityKeys();
-    const getKey = (a) => typeof window.getActivityUniqueKey === 'function'
-      ? window.getActivityUniqueKey(a)
-      : String(a.garminId || a.file || `${a.date}_${a.name}`);
+  const mergedMap = new Map();
+  dbActivities.forEach(a => mergedMap.set(getKey(a), a));
 
-    const validCloudActs = cloudActs.filter(a => {
-      const k = getKey(a);
-      return !deletedKeys.includes(k) && (!a.garminId || !deletedKeys.includes(String(a.garminId)));
-    });
-
-    const mergedMap = new Map();
-    validCloudActs.forEach(a => mergedMap.set(getKey(a), a));
-    dbActivities.forEach(a => {
-      const k = getKey(a);
-      if (!mergedMap.has(k)) mergedMap.set(k, a);
-    });
-
+  const applyProgressiveUpdate = () => {
     dbActivities = Array.from(mergedMap.values());
     dbActivities.forEach(a => { a.dateObj = new Date(a.dateObj); });
     if (typeof window.applyGlobalPowerSource === 'function') window.applyGlobalPowerSource();
@@ -538,26 +535,35 @@ async function syncWithSupabaseCloud() {
       processGlobalMetrics();
       renderSummaryTable();
       updateDynamicCharts();
+    }
+  };
+
+  try {
+    const result = await window.fetchActivitiesFromSupabase({
+      sinceIso: lastSync,
+      pageSize: 50,
+      onBatch: (batchActs) => {
+        let changed = false;
+        batchActs.forEach(a => {
+          const k = getKey(a);
+          if (!deletedKeys.includes(k) && (!a.garminId || !deletedKeys.includes(String(a.garminId)))) {
+            mergedMap.set(k, a);
+            changed = true;
+          }
+        });
+        // Já libera e atualiza o painel a cada lote (permite usar durante o 1º download)
+        if (changed) applyProgressiveUpdate();
+      }
+    });
+
+    if (result.activities.length > 0) {
       saveToDB(dbActivities, false).catch(() => {});
     }
-
-    const cloudKeySet = new Set(validCloudActs.map(getKey));
-    const missingInCloud = dbActivities.filter(a => !cloudKeySet.has(getKey(a)));
-
-    if (missingInCloud.length > 0 && typeof window.upsertActivitiesToSupabase === 'function') {
-      const totalMissing = missingInCloud.length;
-      if (msgEl) {
-        msgEl.style.color = '#38bdf8';
-        msgEl.innerText = `A enviar ${totalMissing} atividade(s) para o Supabase...`;
-      }
-      await window.upsertActivitiesToSupabase(missingInCloud, (done, total) => {
-        if (msgEl) msgEl.innerText = `A enviar para o Supabase: ${done} de ${total}...`;
-      });
+    if (result.maxUpdatedAt) {
+      localStorage.setItem(syncKey, result.maxUpdatedAt);
     }
 
-    if (msgEl) {
-      msgEl.innerText = '';
-    }
+    if (msgEl) msgEl.innerText = '';
   } catch (e) {
     console.warn('Erro ao sincronizar com Supabase:', e);
     const loadingEl = document.getElementById('loadingCloudArea');

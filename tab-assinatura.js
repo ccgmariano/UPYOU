@@ -25,7 +25,7 @@ function getBestSustained45to60MinHr(act, maxHr) {
   if (best === 0 && Array.isArray(dw[900]) && dw[900].length >= 3) {
     for (let i = 0; i <= dw[900].length - 3; i++) {
       const avg = (dw[900][i][1] + dw[900][i + 1][1] + dw[900][i + 2][1]) / 3;
-      if (avg > best && avg <= maxHr) best = avg;
+      if (avg > best && avg <= maxHr * 0.96) best = avg;
     }
   }
 
@@ -38,7 +38,7 @@ function getBestSustained45to60MinHr(act, maxHr) {
       sum = sum - dw[300][i - 9][1] + dw[300][i][1];
       if (sum / 9 > localBest) localBest = sum / 9;
     }
-    if (localBest <= maxHr *) best = localBest;
+    if (localBest <= maxHr * 0.96) best = localBest;
   }
 
   // 4) Janela móvel de 45 min via blocos de 1 min (45 blocos)
@@ -50,7 +50,7 @@ function getBestSustained45to60MinHr(act, maxHr) {
       sum = sum - dw[60][i - 45][1] + dw[60][i][1];
       if (sum / 45 > localBest) localBest = sum / 45;
     }
-    if (localBest <= maxHr) best = localBest;
+    if (localBest <= maxHr * 0.96) best = localBest;
   }
 
   return best >= 120 ? Math.round(best) : 0;
@@ -70,7 +70,7 @@ function computeConsensusLthr(filteredActs, anchorSumHr, anchorSecs, z4AvgHr, z4
     p1Info = `${Math.round(z4Secs / 60)} min em Z4 (91–105% FTP)`;
   }
 
-  // Pilar 2: Pico 20 min Corrigido 100% da MMP20-FC)
+  // Pilar 2: Pico 20 min Corrigido (96% da MMP20-FC)
   let bestMhr20 = 0;
   let bestMhr20Date = '';
   filteredActs.forEach(act => {
@@ -82,7 +82,7 @@ function computeConsensusLthr(filteredActs, anchorSumHr, anchorSecs, z4AvgHr, z4
       bestMhr20Date = act.date || '';
     }
   });
-  const p2Val = bestMhr20 > 0 ? Math.round(bestMhr20) : 0;
+  const p2Val = bestMhr20 > 0 ? Math.round(bestMhr20 * 0.96) : 0;
   const p2Info = bestMhr20 > 0
     ? `96% de ${bestMhr20} bpm${bestMhr20Date ? ' (' + bestMhr20Date + ')' : ''}`
     : 'Sem bloco de 20 min no período';
@@ -104,7 +104,7 @@ function computeConsensusLthr(filteredActs, anchorSumHr, anchorSecs, z4AvgHr, z4
 
   const pillars = [
     { key: 'anchor', label: 'Âncora de Potência', baseWeight: 0.50, value: p1Val, info: p1Info, color: '#eab308' },
-    { key: 'mhr20',  label: 'Pico 20 min ', baseWeight: 0.30, value: p2Val, info: p2Info, color: '#38bdf8' },
+    { key: 'mhr20',  label: 'Pico 20 min (×96%)', baseWeight: 0.30, value: p2Val, info: p2Info, color: '#38bdf8' },
     { key: 'long',   label: 'Platô 45–60 min',    baseWeight: 0.20, value: p3Val, info: p3Info, color: '#10b981' }
   ];
 
